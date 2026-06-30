@@ -1,7 +1,7 @@
 // 기본적으로 React 라이브러리 불러들여놓기
 import React from "react";
 
-import { getTestData } from "../springApi/TestSpringBootApi";
+import { getTestData } from "../../springApi/TestSpringBootApi";
 
 import { useEffect, useState } from "react";
 
