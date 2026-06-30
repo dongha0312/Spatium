@@ -11,9 +11,11 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
+@RequiredArgsConstructor
 @Slf4j
 public class RoomService {
 
@@ -51,6 +53,7 @@ public class RoomService {
                 .getFileName()
                 .toString();
 
+        // 무슨 코드?
         Path jsonPath = uploadDir.resolve(jsonFileName).normalize();
         Path usdzPath = uploadDir.resolve(usdzFileName).normalize();
 
