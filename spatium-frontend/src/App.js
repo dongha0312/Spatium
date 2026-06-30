@@ -1,25 +1,23 @@
-import logo from './logo.svg';
-import './App.css';
+// React 라이브러리 가져오기
+import React from "react";
+
+// React Router 라이브러리 가져오기
+import { BrowserRouter } from "react-router-dom";
+import HomeRouters from "./routers/HomeRouters";
+import MemberRouters from "./routers/MemberRouters";
+import AuthRouters from "./routers/AuthRouters";
+
+
+
 
 function App() {
-  return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
-  );
+    return (
+        <BrowserRouter>
+            <HomeRouters></HomeRouters>
+            <MemberRouters></MemberRouters>
+            <AuthRouters></AuthRouters>
+        </BrowserRouter>
+    );
 }
 
 export default App;
