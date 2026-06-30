@@ -10,7 +10,9 @@ import { Route, Routes } from "react-router-dom";
 // 공통으로 사용할 메인 메뉴 페이지 : HomePage.js
 import HomePage from "../pages/HomePage";
 
-import TestPage from "../pages/TestPage";
+import TestPage from "../pages/test/TestPage";
+import TestRenderingPage from "../pages/test/TestRenderingPage";
+import TestThreeStagingPage from "../pages/testThree/TestThreeStagingPage";
 
 // HomeRouters.js 컴포넌트 정의하기
 function HomeRouters() {
@@ -24,6 +26,8 @@ function HomeRouters() {
             {/* 루트(http://localhost:3000/) URL로 들어오면 -> HomePage.js 페이지 호출하기  */}
             <Route path="/" element={<HomePage></HomePage>}></Route>
             <Route path="/test" element={<TestPage></TestPage>}></Route>
+            <Route path="/test/render" element={<TestRenderingPage></TestRenderingPage>}></Route>
+            <Route path="/test/three" element={<TestThreeStagingPage></TestThreeStagingPage>}></Route>
 
         </Routes>
     );
