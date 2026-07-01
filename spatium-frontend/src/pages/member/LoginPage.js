@@ -1,6 +1,10 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../../styles/loginpage.css";
+import { saveLoginSession } from "../../utils/authSession";
+
+// 이메일 형식 검증용 정규식
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function LoginPage({ onLoginSuccess }) {
   // 이메일을 저장할 수 있는 상태변수(객체) 정의
@@ -12,16 +16,30 @@ function LoginPage({ onLoginSuccess }) {
   // 로그인 상태 유지 체크 여부
   const [keep, setKeep] = useState(false);
 
+  // 이메일 형식 오류 메시지
+  const [emailError, setEmailError] = useState("");
+
   const navigate = useNavigate();
 
   const handleSubmit = (e) => {
     e.preventDefault();
+
+    // 이메일 형식이 아니면 로그인을 진행하지 않음
+    if (!EMAIL_REGEX.test(email)) {
+      setEmailError("올바른 이메일 형식이 아닙니다. (예: name@example.com)");
+      return;
+    }
+    setEmailError("");
+
+    // 로그인 세션 저장 (닉네임은 이메일 앞부분으로 유추 : 추후 백엔드 연동 시 교체)
+    saveLoginSession(email);
 
     alert(`이메일 : ${email} / 비밀번호 : ${pw}`);
 
     if (onLoginSuccess) {
       onLoginSuccess();
     } else {
+      // 로그인 성공 시 메인 페이지로 이동 (메인 페이지 우측 상단에 닉네임 표시)
       navigate("/");
     }
   };
@@ -65,13 +83,17 @@ function LoginPage({ onLoginSuccess }) {
             <div className="lg-fgrp">
               <label className="lg-flabel">이메일</label>
               <input
-                className="lg-finput"
+                className={`lg-finput${emailError ? " lg-finput-error" : ""}`}
                 type="email"
                 value={email}
                 required
                 placeholder="name@example.com"
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (emailError) setEmailError("");
+                }}
               />
+              {emailError && <div className="lg-field-error">{emailError}</div>}
             </div>
 
             <div className="lg-fgrp">
@@ -150,6 +172,16 @@ function LoginPage({ onLoginSuccess }) {
             </div>
           </form>
         </div>
+      </div>
+
+      {/* 하단 푸터 : 쿠키 정책 / 개인정보처리방침 */}
+      <div className="lg-footer">
+        <span className="lg-footer-brand">SPATIUM</span>
+        <span className="lg-footer-sep">·</span>
+        <Link to="/cookie-policy">쿠키 정책</Link>
+        <span className="lg-footer-sep">·</span>
+        <Link to="/privacy-consent">개인정보처리방침</Link>
+        <div className="lg-footer-copy">© SPATIUM 2026</div>
       </div>
     </div>
   );
