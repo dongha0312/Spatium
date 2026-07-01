@@ -1,7 +1,10 @@
 {
   "room": {
     "modelUrl": "",
-    "metadataUrl": "/testdata/spatium-room-edited-2026-07-01T06-32-49-156Z.json"
+    "metadataUrl": "/testdata/spatium-room-edited-2026-07-01T07-25-10-396Z.json"
+  },
+  "save": {
+    "metadataApiUrl": "/api/test-three/metadata"
   },
   "models": {
     "bathtub": "/testdata/3d_models/bathtub.glb",
