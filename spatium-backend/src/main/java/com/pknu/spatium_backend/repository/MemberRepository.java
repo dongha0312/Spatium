@@ -1,11 +1,13 @@
 package com.pknu.spatium_backend.repository;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import com.pknu.spatium_backend.model.Member;
 
-@Repository
-public interface MemberRepository extends JpaRepository<Member, String>{
+public interface MemberRepository extends JpaRepository<Member, String> {
 
+    @Query("SELECT COUNT(m) > 0 FROM Member m WHERE m.mem_email = :memEmail")
+    boolean existsByMemEmail(@Param("memEmail") String memEmail);
 }
