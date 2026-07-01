@@ -33,11 +33,14 @@ public class RoomController {
     public ResponseEntity<String> post3dData(
         @RequestPart("metadata") String jsonDataFile,
         @RequestPart("file") MultipartFile usdzDataFile
-    ) throws IOException {
+    ) 
+    // 이게 왜 있는거지?
+    throws IOException {
 
         log.info("===========================================================================================================");
         // log.info("metadata file name = {}", jsonDataFile.getOriginalFilename());
         // log.info("metadata content type = {}", jsonDataFile.getContentType());
+        // JSON 데이터는 SpringBoot에서 들어올 때 String 타입으로 변환해버리는 것 같음.
         log.info(jsonDataFile);
         log.info("usdz file name = {}", usdzDataFile.getOriginalFilename());
         log.info("usdz file size = {}", usdzDataFile.getSize());

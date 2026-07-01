@@ -2,9 +2,6 @@ package com.pknu.spatium_backend.model;
 
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import lombok.ToString;
-
-import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -14,7 +11,7 @@ import lombok.Setter;
 import lombok.ToString;
 
 @Entity
-@Table(name="Member")
+@Table(name="Community")
 @Getter
 @Setter
 
@@ -24,19 +21,13 @@ import lombok.ToString;
 @Builder
 
 @ToString
-public class Member {
-
+public class Community {
+    
     @Id
-    private String mem_id;
+    private String com_code;
 
-    private String mem_email;
+    private String com_mem;
 
-    private String mem_nick;
-
-    private String mem_path;
-
-    private String mem_bir;
-
-    private String mem_sex;
+    private String com_com;
 
 }
