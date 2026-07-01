@@ -1,0 +1,224 @@
+.hp-root {
+  --g: #5C3D2E;
+  --ga: #C4956A;
+  --t: #1C1209;
+  --t2: #5A4535;
+  --t3: #A08878;
+  --bd: #DDD3C6;
+  --bg: #F2EDE6;
+  --sur: #FAF7F3;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--sur);
+  font-family: -apple-system, "Pretendard", sans-serif;
+}
+
+.hp-root *,
+.hp-root *::before,
+.hp-root *::after {
+  box-sizing: border-box;
+}
+
+/* 상단 네비게이션 */
+.hp-nav {
+  display: flex;
+  align-items: center;
+  height: 56px;
+  padding: 0 32px;
+  background: var(--sur);
+  border-bottom: 1px solid var(--bd);
+  flex-shrink: 0;
+}
+
+.hp-logo {
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 6px;
+  color: var(--t);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  text-decoration: none;
+}
+
+.hp-logo-sq {
+  width: 17px;
+  height: 17px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, var(--ga), var(--g));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hp-logo-sq-i {
+  width: 7px;
+  height: 7px;
+  border: 2px solid #fff;
+  border-radius: 1px;
+}
+
+.hp-nav-link {
+  font-size: 13px;
+  color: var(--t2);
+  font-weight: 500;
+  margin-left: 28px;
+}
+
+.hp-nav-right {
+  margin-left: auto;
+}
+
+.hp-btn-prim {
+  padding: 8px 20px;
+  border-radius: 8px;
+  background: var(--g);
+  border: none;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+/* 히어로 영역 */
+.hp-hero {
+  flex: 1;
+  background: #1C1209;
+  padding: 80px 40px 72px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hp-hero::before {
+  content: '';
+  position: absolute;
+  top: -80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 800px;
+  height: 480px;
+  background: radial-gradient(ellipse, rgba(196, 149, 106, .14) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+.hp-hero-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.hp-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: rgba(196, 149, 106, .1);
+  border: 1px solid rgba(196, 149, 106, .25);
+  color: var(--ga);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 16px;
+  border-radius: 20px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-bottom: 24px;
+}
+
+.hp-hero-h1 {
+  font-size: clamp(32px, 5vw, 52px);
+  font-weight: 900;
+  color: #fff;
+  line-height: 1.12;
+  letter-spacing: -1.5px;
+  margin-bottom: 18px;
+}
+
+.hp-hero-h1 .hp-grad {
+  background: linear-gradient(90deg, var(--ga), #E8C49A);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hp-hero-desc {
+  font-size: 16px;
+  color: rgba(255, 255, 255, .42);
+  max-width: 480px;
+  margin: 0 auto 36px;
+  line-height: 1.75;
+}
+
+.hp-hero-btn-main {
+  padding: 14px 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--ga), var(--g));
+  border: none;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 28px rgba(155, 107, 69, .4);
+  transition: transform .2s;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.hp-hero-btn-main:hover {
+  transform: translateY(-2px);
+}
+
+.hp-hero-stats {
+  display: flex;
+  justify-content: center;
+  margin-top: 56px;
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-radius: 14px;
+  overflow: hidden;
+  max-width: 560px;
+  margin-left: auto;
+  margin-right: auto;
+  background: rgba(255, 255, 255, .03);
+}
+
+.hp-hero-stat {
+  flex: 1;
+  padding: 22px 16px;
+  text-align: center;
+  border-right: 1px solid rgba(255, 255, 255, .07);
+}
+
+.hp-hero-stat:last-child {
+  border-right: none;
+}
+
+.hp-hero-stat-num {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--ga);
+  margin-bottom: 4px;
+}
+
+.hp-hero-stat-label {
+  font-size: 11px;
+  color: rgba(255, 255, 255, .3);
+}
+
+@media (max-width: 600px) {
+  .hp-hero {
+    padding: 56px 20px;
+  }
+  .hp-hero-stats {
+    flex-wrap: wrap;
+  }
+  .hp-hero-stat {
+    flex: 1 1 50%;
+    border-bottom: 1px solid rgba(255, 255, 255, .07);
+  }
+}
