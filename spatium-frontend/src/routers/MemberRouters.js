@@ -6,12 +6,18 @@ import React from "react";
 //  - Route : 
 import { Route, Routes } from "react-router-dom";
 import MyPage from "../pages/member/MyPage";
+import AccountSettings from "../pages/member/AccountSettings";
+import ThreeDEditor from "../pages/3dEditor";
+import ThreeDEditorDetail from "../pages/3dEditor_detail";
 
 
 function MemberRouters(){
     return(
         <Routes>
             <Route path="member/mypage" element={<MyPage></MyPage>}></Route>
+            <Route path="member/account" element={<AccountSettings></AccountSettings>}></Route>
+            <Route path="member/editor" element={<ThreeDEditor></ThreeDEditor>}></Route>
+            <Route path="member/editor/detail" element={<ThreeDEditorDetail></ThreeDEditorDetail>}></Route>
         </Routes>
     )
 }
