@@ -3,11 +3,16 @@ import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { USDLoader } from "three/examples/jsm/loaders/USDLoader.js";
 
-const DEFAULT_ROOM_MODEL_URL = "/testdata/4550c4e3-a2e9-49cb-867b-5e5d5ca38732_room-scan.usdz";
+const DEFAULT_ROOM_MODEL_URL =
+  "/testdata/4550c4e3-a2e9-49cb-867b-5e5d5ca38732_room-scan.usdz";
 
 function disposeMaterial(material) {
   Object.values(material).forEach((value) => {
-    if (value && typeof value === "object" && typeof value.dispose === "function") {
+    if (
+      value &&
+      typeof value === "object" &&
+      typeof value.dispose === "function"
+    ) {
       value.dispose();
     }
   });
@@ -70,7 +75,12 @@ export default function TestRenderingPage({
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xf4f1ea);
 
-    const camera = new THREE.PerspectiveCamera(50, width / heightPx, 0.01, 1000);
+    const camera = new THREE.PerspectiveCamera(
+      50,
+      width / heightPx,
+      0.01,
+      1000,
+    );
     camera.position.set(3.5, 3, 5);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -130,9 +140,11 @@ export default function TestRenderingPage({
         if (!isMounted) return;
         setLoadingText("");
         setError(
-          caughtError instanceof Error ? caughtError.message : String(caughtError)
+          caughtError instanceof Error
+            ? caughtError.message
+            : String(caughtError),
         );
-      }
+      },
     );
 
     function animate() {

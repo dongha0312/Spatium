@@ -75,7 +75,7 @@ module.exports = function (app) {
         createProxyMiddleware({
             // 요청을 보낼 백엔드 실제 서버 주소 설정
             // target : "http://localhost:8080",
-            target : "http://210.119.12.115:8080",
+            target : "http://localhost:8080",
 
             // 요청을 보내는 주소(프론트엔드)를 백엔드 주소로 바꿔치기 하기
             //  - 실제 URL 주소가 바뀌는 부분
