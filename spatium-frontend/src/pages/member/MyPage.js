@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import "../../styles/mypage.css";
+import { clearLoginSession } from "../../utils/authSession";
 
 // 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
 const USER = {
@@ -52,8 +53,7 @@ function formatToday() {
 }
 
 function MyPage() {
-  // 메인 영역에 표시할 뷰 : 'proj'(프로젝트) | 'acct'(계정설정)
-  const [view, setView] = useState("proj");
+  const navigate = useNavigate();
 
   // 우측 슬라이드 패널(내 정보) 열림 여부
   const [panelOpen, setPanelOpen] = useState(false);
@@ -78,11 +78,6 @@ function MyPage() {
   const [nameInput, setNameInput] = useState("");
   const [modalError, setModalError] = useState("");
 
-  // 계정설정 폼 상태
-  const [nickname, setNickname] = useState(USER.name);
-  const [birth, setBirth] = useState(USER.birth);
-  const [password, setPassword] = useState("");
-
   const totalRoomCount = projects.reduce((sum, p) => sum + p.rooms.length, 0);
   const totalFurnitureCount = projects.reduce(
     (sum, p) => sum + p.rooms.reduce((rSum, r) => rSum + r.furnitureCount, 0),
@@ -91,38 +86,21 @@ function MyPage() {
 
   const togglePanel = () => setPanelOpen((prev) => !prev);
 
+  // 계정설정 페이지(AccountSettings.js)로 이동
   const handleGoAccount = () => {
-    setView("acct");
     setPanelOpen(false);
-  };
-
-  const handleSave = (e) => {
-    e.preventDefault();
-    alert(`저장되었습니다.\n닉네임 : ${nickname}\n생년월일 : ${birth}`);
-  };
-
-  const handleCancel = () => {
-    setNickname(USER.name);
-    setBirth(USER.birth);
-    setPassword("");
-  };
-
-  const handleWithdraw = () => {
-    if (
-      window.confirm(
-        "정말 탈퇴하시겠습니까? 모든 프로젝트와 데이터가 삭제됩니다.",
-      )
-    ) {
-      alert("회원 탈퇴 기능은 준비 중입니다.");
-    }
+    navigate("/member/account");
   };
 
   const handleLogout = () => {
     alert("로그아웃 되었습니다.");
+    clearLoginSession();
+    navigate("/");
   };
 
-  const handleOpenRoom = (room) => {
-    alert(`"${room.name}" 편집 기능은 준비 중입니다.`);
+  // 프로젝트(룸) 클릭 → 3D 에디터로 이동
+  const handleOpenRoom = () => {
+    navigate("/member/editor");
   };
 
   // 프로젝트 이름 더블클릭 → 인라인 수정 시작
@@ -268,11 +246,7 @@ function MyPage() {
           <div className="mp-sb-sec">
             <span className="mp-sb-label">내 공간</span>
             {projects.map((project) => (
-              <div
-                key={project.id}
-                className={`mp-sb-item${view === "proj" ? " mp-active" : ""}`}
-                onClick={() => setView("proj")}
-              >
+              <div key={project.id} className="mp-sb-item mp-active">
                 <div className="mp-sb-dot"></div>
                 <span>{project.name}</span>
               </div>
@@ -290,193 +264,106 @@ function MyPage() {
         {/* 메인 영역 */}
         <div className="mp-main">
           {/* 프로젝트 뷰 */}
-          {view === "proj" && (
-            <div>
-              <div style={{ marginBottom: 22 }}>
-                <div className="mp-main-title">최근 룸</div>
-                <div className="mp-main-sub">
-                  총 {totalRoomCount}개의 룸이 있습니다
-                </div>
+          <div>
+            <div style={{ marginBottom: 22 }}>
+              <div className="mp-main-title">최근 룸</div>
+              <div className="mp-main-sub">
+                총 {totalRoomCount}개의 룸이 있습니다
               </div>
+            </div>
 
-              <div className="mp-projects-list">
-                {projects.map((project) => (
-                  <div className="mp-room-card" key={project.id}>
-                    <div className="mp-room-card-header">
-                      {editingProjectId === project.id ? (
-                        <input
-                          className="mp-room-card-title-input"
-                          value={editingName}
-                          onChange={(e) => setEditingName(e.target.value)}
-                          onBlur={saveRenameProject}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") saveRenameProject();
-                            if (e.key === "Escape") cancelRenameProject();
-                          }}
-                          autoFocus
-                        />
-                      ) : (
-                        <div
-                          className="mp-room-card-title"
-                          onDoubleClick={() => startRenameProject(project)}
-                          title="더블클릭하여 이름 변경"
-                        >
-                          {project.name}
-                        </div>
-                      )}
-                      <div className="mp-room-card-actions">
-                        <button
-                          className="mp-new-btn"
-                          onClick={() => openProjectModal("room", project.id)}
-                        >
-                          ＋ 새 룸 만들기
-                        </button>
-                        <div className="mp-room-card-count">
-                          총 {project.rooms.length}개
-                        </div>
+            <div className="mp-projects-list">
+              {projects.map((project) => (
+                <div className="mp-room-card" key={project.id}>
+                  <div className="mp-room-card-header">
+                    {editingProjectId === project.id ? (
+                      <input
+                        className="mp-room-card-title-input"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onBlur={saveRenameProject}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveRenameProject();
+                          if (e.key === "Escape") cancelRenameProject();
+                        }}
+                        autoFocus
+                      />
+                    ) : (
+                      <div
+                        className="mp-room-card-title"
+                        onDoubleClick={() => startRenameProject(project)}
+                        title="더블클릭하여 이름 변경"
+                      >
+                        {project.name}
+                      </div>
+                    )}
+                    <div className="mp-room-card-actions">
+                      <button
+                        className="mp-new-btn"
+                        onClick={() => openProjectModal("room", project.id)}
+                      >
+                        ＋ 새 룸 만들기
+                      </button>
+                      <div className="mp-room-card-count">
+                        총 {project.rooms.length}개
                       </div>
                     </div>
-                    {project.rooms.map((room) => {
-                      const isEditingRoom =
-                        editingRoomKey &&
-                        editingRoomKey.projectId === project.id &&
-                        editingRoomKey.roomId === room.id;
-                      return (
-                        <div
-                          key={room.id}
-                          className="mp-room-row"
-                          onClick={() => {
-                            if (!isEditingRoom) handleOpenRoom(room);
-                          }}
-                        >
-                          <div className="mp-room-thumb">{room.thumb}</div>
-                          <div className="mp-room-info">
-                            {isEditingRoom ? (
-                              <input
-                                className="mp-room-name-input"
-                                value={editingRoomName}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) =>
-                                  setEditingRoomName(e.target.value)
-                                }
-                                onBlur={saveRenameRoom}
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter") saveRenameRoom();
-                                  if (e.key === "Escape") cancelRenameRoom();
-                                }}
-                                autoFocus
-                              />
-                            ) : (
-                              <div
-                                className="mp-room-name"
-                                onDoubleClick={(e) => {
-                                  e.stopPropagation();
-                                  startRenameRoom(project, room);
-                                }}
-                                title="더블클릭하여 이름 변경"
-                              >
-                                {room.name}
-                              </div>
-                            )}
-                            <div className="mp-room-meta">
-                              최근 수정 {room.updatedAt} · 가구{" "}
-                              {room.furnitureCount}개
+                  </div>
+                  {project.rooms.map((room) => {
+                    const isEditingRoom =
+                      editingRoomKey &&
+                      editingRoomKey.projectId === project.id &&
+                      editingRoomKey.roomId === room.id;
+                    return (
+                      <div
+                        key={room.id}
+                        className="mp-room-row"
+                        onClick={() => {
+                          if (!isEditingRoom) handleOpenRoom(room);
+                        }}
+                      >
+                        <div className="mp-room-thumb">{room.thumb}</div>
+                        <div className="mp-room-info">
+                          {isEditingRoom ? (
+                            <input
+                              className="mp-room-name-input"
+                              value={editingRoomName}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) =>
+                                setEditingRoomName(e.target.value)
+                              }
+                              onBlur={saveRenameRoom}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") saveRenameRoom();
+                                if (e.key === "Escape") cancelRenameRoom();
+                              }}
+                              autoFocus
+                            />
+                          ) : (
+                            <div
+                              className="mp-room-name"
+                              onDoubleClick={(e) => {
+                                e.stopPropagation();
+                                startRenameRoom(project, room);
+                              }}
+                              title="더블클릭하여 이름 변경"
+                            >
+                              {room.name}
                             </div>
+                          )}
+                          <div className="mp-room-meta">
+                            최근 수정 {room.updatedAt} · 가구{" "}
+                            {room.furnitureCount}개
                           </div>
-                          <div className="mp-room-arrow">›</div>
                         </div>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
+                        <div className="mp-room-arrow">›</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
-          )}
-
-          {/* 계정설정 뷰 */}
-          {view === "acct" && (
-            <div className="mp-acct-view">
-              <div style={{ marginBottom: 24 }}>
-                <div className="mp-main-title">계정설정</div>
-                <div className="mp-main-sub">
-                  프로필과 계정 정보를 관리하세요
-                </div>
-              </div>
-
-              <div className="mp-acct-sec">
-                <div className="mp-acct-sec-title">프로필</div>
-                <div className="mp-profile-row">
-                  <div className="mp-avatar">{USER.initial}</div>
-                  <div className="mp-avatar-actions">
-                    <button className="mp-avatar-btn mp-avatar-edit">
-                      사진 변경
-                    </button>
-                    <button className="mp-avatar-btn mp-avatar-del">
-                      사진 삭제
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <form className="mp-acct-sec" onSubmit={handleSave}>
-                <div className="mp-acct-sec-title">기본 정보</div>
-                <div className="mp-acct-field">
-                  <label>이메일</label>
-                  <input value={USER.email} readOnly />
-                </div>
-                <div className="mp-acct-field">
-                  <label>닉네임</label>
-                  <input
-                    value={nickname}
-                    onChange={(e) => setNickname(e.target.value)}
-                  />
-                </div>
-                <div className="mp-acct-field">
-                  <label>생년월일</label>
-                  <input
-                    value={birth}
-                    onChange={(e) => setBirth(e.target.value)}
-                  />
-                </div>
-                <div className="mp-acct-field">
-                  <label>비밀번호</label>
-                  <input
-                    type="password"
-                    value={password}
-                    placeholder="변경 시에만 입력하세요"
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                </div>
-                <div className="mp-save-row">
-                  <button type="submit" className="mp-save-btn">
-                    저장
-                  </button>
-                  <button
-                    type="button"
-                    className="mp-cancel-btn"
-                    onClick={handleCancel}
-                  >
-                    취소
-                  </button>
-                </div>
-              </form>
-
-              <div className="mp-acct-sec" style={{ marginBottom: 0 }}>
-                <div className="mp-acct-sec-title">회원 탈퇴</div>
-                <div className="mp-danger-box">
-                  <div>
-                    <div className="mp-danger-title">회원 탈퇴</div>
-                    <div className="mp-danger-desc">
-                      탈퇴 시 모든 프로젝트와 데이터가 삭제됩니다
-                    </div>
-                  </div>
-                  <button className="mp-danger-btn" onClick={handleWithdraw}>
-                    회원 탈퇴
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
+          </div>
 
           {/* 우측 슬라이드 패널 (내 정보) */}
           <div className={`mp-panel${panelOpen ? " mp-panel-open" : ""}`}>

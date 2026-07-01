@@ -9,6 +9,8 @@ import { Route, Routes } from "react-router-dom";
 // 외부 컴포넌트 가지고 오기
 // 공통으로 사용할 메인 메뉴 페이지 : HomePage.js
 import HomePage from "../pages/HomePage";
+import CookiePolicy from "../pages/CookiePolicy";
+import PrivacyConsent from "../pages/PrivacyConsent";
 
 // HomeRouters.js 컴포넌트 정의하기
 function HomeRouters() {
@@ -20,6 +22,8 @@ function HomeRouters() {
             {/* URL 패턴 및 매핑 컴포넌트 정의 */}
             {/* 루트(http://localhost:3000/) URL로 들어오면 -> HomePage.js 페이지 호출하기  */}
             <Route path="/" element={<HomePage></HomePage>}></Route>
+            <Route path="cookie-policy" element={<CookiePolicy></CookiePolicy>}></Route>
+            <Route path="privacy-consent" element={<PrivacyConsent></PrivacyConsent>}></Route>
 
         </Routes>
     );

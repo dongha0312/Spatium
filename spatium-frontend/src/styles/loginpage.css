@@ -162,6 +162,20 @@
   box-shadow: 0 0 0 3px rgba(196, 149, 106, .12);
 }
 
+.lg-finput.lg-finput-error {
+  border-color: #DC2626;
+}
+
+.lg-finput.lg-finput-error:focus {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, .12);
+}
+
+.lg-field-error {
+  font-size: 11px;
+  color: #DC2626;
+  margin-top: 5px;
+}
+
 .lg-form-hint {
   display: flex;
   justify-content: flex-end;
@@ -281,4 +295,38 @@
   .lg-auth-card {
     padding: 32px 24px;
   }
+}
+
+/* 하단 푸터 : 쿠키 정책 / 개인정보처리방침 */
+.lg-footer {
+  flex-shrink: 0;
+  padding: 16px 24px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--t3);
+  border-top: 1px solid var(--bd);
+  background: var(--sur);
+}
+
+.lg-footer-brand {
+  font-weight: 700;
+  color: var(--t2);
+}
+
+.lg-footer-sep {
+  margin: 0 6px;
+}
+
+.lg-footer a {
+  color: var(--t3);
+  text-decoration: underline;
+}
+
+.lg-footer a:hover {
+  color: var(--g);
+}
+
+.lg-footer-copy {
+  margin-top: 4px;
+  color: var(--t3);
 }
