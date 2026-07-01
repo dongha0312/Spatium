@@ -12,7 +12,7 @@ import lombok.Setter;
 import lombok.ToString;
 
 @Entity
-@Table(name="Member")
+@Table(name="Project")
 @Getter
 @Setter
 
@@ -22,22 +22,15 @@ import lombok.ToString;
 @Builder
 
 @ToString
-public class Member {
+public class Project {
 
     @Id
-    private String mem_id;
+    private String proj_code;
 
-    private String mem_nick;
+    private String proj_mem;
 
-    private String mem_email;
+    private String proj_room;
 
-    private String mem_pass;
-    
-    private String mem_bir;
-
-    private String mem_sex;
-
-    @Lob
-    private byte[] mem_img;
+    private String proj_name;
 
 }

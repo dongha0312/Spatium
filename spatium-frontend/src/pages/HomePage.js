@@ -34,6 +34,11 @@ function HomePage() {
 
       <p>
         <a href="/test/three">[3d 모델링 편집 페이지 바로가기]</a>
+        <a href="/member/account">[계정설정 페이지 바로가기]</a>
+      </p>
+
+      <p>
+        <a href="/member/editor">[3D 에디터 페이지 바로가기]</a>
       </p>
     </div>
   );

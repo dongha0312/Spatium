@@ -60,6 +60,9 @@ dependencies {
 		자동 리로딩은 안되며, java 코드 수정 후 브라우저 새로고침시
 		수정사항이 자동으로 반영되도록 처리됩니다. */
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
 }
 
 tasks.named('test') {
