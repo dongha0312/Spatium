@@ -1,0 +1,71 @@
+{
+  "room": {
+    "modelUrl": "",
+    "metadataUrl": "/testdata/spatium-room-edited-2026-07-01T06-32-49-156Z.json"
+  },
+  "models": {
+    "bathtub": "/testdata/3d_models/bathtub.glb",
+    "bed": "/testdata/3d_models/bed.glb",
+    "door": "/testdata/3d_models/door.glb",
+    "chair": "/testdata/3d_models/chair.glb",
+    "dishwasher": "/testdata/3d_models/dishwasher.glb",
+    "oven": "/testdata/3d_models/oven.glb",
+    "refrigerator": "/testdata/3d_models/refrigerator.glb",
+    "sink": "/testdata/3d_models/sink.glb",
+    "sofa": "/testdata/3d_models/sofa.glb",
+    "stove": "/testdata/3d_models/stove.glb",
+    "storage": "/testdata/3d_models/storage.glb",
+    "table": "/testdata/3d_models/table.glb",
+    "television": "/testdata/3d_models/television.glb",
+    "toilet": "/testdata/3d_models/toilet.glb",
+    "washerDryer": "/testdata/3d_models/washerDryer.glb",
+    "window": "/testdata/3d_models/window.glb"
+  },
+  "colors": {
+    "category": {
+      "chair": "#5f8f74",
+      "table": "#c08b57",
+      "storage": "#8fa4b8",
+      "sofa": "#7f9fb0",
+      "refrigerator": "#b7c7cf",
+      "oven": "#c98282",
+      "stove": "#c98282",
+      "bed": "#9a8fba",
+      "bathtub": "#7fb7c7",
+      "dishwasher": "#a8b8c8",
+      "sink": "#8fb8b0",
+      "television": "#4f5861",
+      "toilet": "#cfd8df",
+      "washerDryer": "#aeb8c2",
+      "object": "#9aa0a6"
+    },
+    "collision": "#d94b4b",
+    "collisionFill": "#f2aaaa",
+    "selectedEdge": "#ffcf5a",
+    "defaultEdge": "#1f2724",
+    "wallColliderDebug": "#00a6ff",
+    "sceneBackground": "#f4f1ea",
+    "hemisphereSky": "#ffffff",
+    "hemisphereGround": "#d8cfc0",
+    "sun": "#ffffff",
+    "roomMaterialDefault": "#d8d2c4",
+    "doorReference": "#d9903d",
+    "windowReference": "#4ba3c7",
+    "selectionHandle": "#17211d"
+  },
+  "referenceFallbackThickness": {
+    "door": 0.08,
+    "window": 0.08
+  },
+  "wallConstraints": {
+    "collisionEpsilon": 0,
+    "clampIterations": 14,
+    "sweepStep": 0.03,
+    "sweepRotationStepDegrees": 2,
+    "sweepMaxSteps": 240,
+    "colliderHalfThickness": 0.005,
+    "boundaryEpsilon": 0.002,
+    "boundarySpanPadding": 0.04,
+    "showColliderDebug": true
+  }
+}
