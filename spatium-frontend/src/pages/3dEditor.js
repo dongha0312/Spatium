@@ -2,14 +2,6 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../styles/3deditor.css";
 
-// 데모용 사용자/프로젝트 정보 (추후 백엔드 연동 시 API 응답으로 대체)
-const USER = {
-  initial: "김",
-  name: "김스파티",
-  email: "spatium@example.com",
-  birth: "1998. 06. 07",
-};
-
 const ROOM_NAME = "우리집 거실 리모델링";
 const TEAM_LABEL = "1조";
 
@@ -44,21 +36,11 @@ function ThreeDEditor() {
   // 가격 안내 배너 표시 여부
   const [priceBannerVisible, setPriceBannerVisible] = useState(true);
 
-  // 계정설정 슬라이드 패널 열림 여부
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
   // 캔버스 하단 뷰 툴바 상태 (IKEA 3D 플래너 참고 : Skyview / 벽 색깔 바꾸기 / 측정 옵션 표시)
   const [isSkyview, setIsSkyview] = useState(false);
   const [wallColor, setWallColor] = useState(null);
   const [wallColorPickerOpen, setWallColorPickerOpen] = useState(false);
   const [showMeasurements, setShowMeasurements] = useState(false);
-
-  // 계정설정 폼 상태
-  const [nickname, setNickname] = useState(USER.name);
-  const [birth, setBirth] = useState(USER.birth);
-  const [password, setPassword] = useState("");
-
-  const toggleSettings = () => setSettingsOpen((prev) => !prev);
 
   const toggleRoomDropdown = () => setRoomDropdownOpen((prev) => !prev);
 
@@ -102,27 +84,6 @@ function ThreeDEditor() {
     alert("저장되었습니다. (추후 백엔드 연동 예정)");
   };
 
-  const handleSaveAccount = (e) => {
-    e.preventDefault();
-    alert(`저장되었습니다.\n닉네임 : ${nickname}\n생년월일 : ${birth}`);
-  };
-
-  const handleCancelAccount = () => {
-    setNickname(USER.name);
-    setBirth(USER.birth);
-    setPassword("");
-  };
-
-  const handleWithdraw = () => {
-    if (
-      window.confirm(
-        "정말 탈퇴하시겠습니까? 모든 프로젝트와 데이터가 삭제됩니다.",
-      )
-    ) {
-      alert("탈퇴 기능은 준비 중입니다.");
-    }
-  };
-
   return (
     <div className="ed-root">
       {/* 상단 네비게이션 */}
@@ -134,11 +95,6 @@ function ThreeDEditor() {
           SPATIUM
         </Link>
         <div className="ed-nav-center">{ROOM_NAME}</div>
-        <div className="ed-nav-right">
-          <button className="ed-settings-toggle" onClick={toggleSettings}>
-            ⚙
-          </button>
-        </div>
       </div>
 
       <div className="ed-wrap">
@@ -375,94 +331,6 @@ function ThreeDEditor() {
           >
             저장하기
           </button>
-        </div>
-
-        {/* 우측 계정설정 슬라이드 패널 */}
-        <div className={`ed-settings-panel${settingsOpen ? " ed-open" : ""}`}>
-          <div className="ed-settings-head">
-            <div className="ed-settings-title">계정설정</div>
-            <button className="ed-settings-close" onClick={toggleSettings}>
-              ✕
-            </button>
-          </div>
-          <div className="ed-settings-body">
-            <div className="ed-settings-section">
-              <div className="ed-settings-section-title">프로필</div>
-              <div className="ed-settings-profile-row">
-                <div className="ed-settings-avatar">{USER.initial}</div>
-                <div className="ed-settings-avatar-actions">
-                  <button className="ed-settings-avatar-btn ed-settings-avatar-edit">
-                    사진 변경
-                  </button>
-                  <button className="ed-settings-avatar-btn ed-settings-avatar-del">
-                    사진 삭제
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <form className="ed-settings-section" onSubmit={handleSaveAccount}>
-              <div className="ed-settings-section-title">기본 정보</div>
-              <div className="ed-settings-field">
-                <label>이메일</label>
-                <input value={USER.email} readOnly />
-              </div>
-              <div className="ed-settings-field">
-                <label>닉네임</label>
-                <input
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                />
-              </div>
-              <div className="ed-settings-field">
-                <label>생년월일</label>
-                <input
-                  value={birth}
-                  onChange={(e) => setBirth(e.target.value)}
-                />
-              </div>
-              <div className="ed-settings-field">
-                <label>비밀번호</label>
-                <input
-                  type="password"
-                  value={password}
-                  placeholder="변경 시에만 입력하세요"
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              <div className="ed-settings-save-row">
-                <button type="submit" className="ed-settings-save-btn">
-                  저장
-                </button>
-                <button
-                  type="button"
-                  className="ed-settings-cancel-btn"
-                  onClick={handleCancelAccount}
-                >
-                  취소
-                </button>
-              </div>
-            </form>
-
-            <div className="ed-settings-section" style={{ marginBottom: 0 }}>
-              <div className="ed-settings-section-title">회원 탈퇴</div>
-              <div className="ed-settings-danger-box">
-                <div className="ed-settings-danger-title">회원 탈퇴</div>
-                <div className="ed-settings-danger-desc">
-                  탈퇴 시 모든 프로젝트와 데이터가 삭제됩니다
-                </div>
-                <button
-                  className="ed-settings-danger-btn"
-                  onClick={handleWithdraw}
-                >
-                  회원 탈퇴
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="ed-settings-foot">
-            <button className="ed-settings-logout-btn">로그아웃</button>
-          </div>
         </div>
       </div>
     </div>
