@@ -8,7 +8,9 @@ export function hasSceneConfig() {
 }
 
 export async function loadSceneConfig() {
-  const response = await fetch(SCENE_CONFIG_URL);
+  const response = await fetch(`${SCENE_CONFIG_URL}?t=${Date.now()}`, {
+    cache: "no-store",
+  });
   if (!response.ok) {
     throw new Error(`Failed to load scene config (${response.status})`);
   }

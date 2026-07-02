@@ -14,17 +14,17 @@ import com.pknu.spatium_backend.exception.ApiException;
 import com.pknu.spatium_backend.service.MemberService;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 
 import com.pknu.spatium_backend.dto.MemberDTO;
-
-
-
 @RestController
 @RequiredArgsConstructor
-@RequestMapping(path="/api/auth")
+@RequestMapping(path="/api")
+@Slf4j
+
 public class MemberController {
 
     private final MemberService memberService;
@@ -47,6 +47,8 @@ public class MemberController {
     @PostMapping(path = "/social-users")
     public ResponseEntity<?> postSocialSignup(@RequestBody MemberSocialSignupDTO memDTO) {
         try {
+            // 추후 ResponseDTO로 리팩토링
+            log.info("controller");
             return ResponseEntity.status(201).body(Map.of(
                 "statusCode", 201,
                 "message", "소셜 회원가입이 완료되었습니다.",
