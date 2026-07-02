@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../../styles/loginpage.css";
 import { saveLoginSession } from "../../utils/authSession";
+import { useGoogleLogin } from "@react-oauth/google";
+import { postSocialLogin } from "../../springApi/MemberSpringBootApi";
 
 // 이메일 형식 검증용 정규식
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -44,13 +46,74 @@ function LoginPage({ onLoginSuccess }) {
     }
   };
 
+  //---------------------------------------------------------------------------
+
   // 소셜 로그인 : 아직 백엔드 연동 전이라, 우선 회원가입 페이지로 안내
   const handleAppleLogin = () => {
     navigate("/auth/signup", { state: { socialProvider: "apple" } });
   };
 
+  // 구글 인증(access_token) 성공 후, 구글 프로필 조회
+  //  -> 백엔드에 provider="GOOGLE" + providerUserId(구글 sub)로 로그인 시도
+  //  -> 이미 가입된 회원이면 로그인 처리, 미가입(404)이면 회원가입 페이지로 안내
+  const fetchGoogleProfileAndGoSignup = async (accessToken) => {
+    try {
+      const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!res.ok) throw new Error("구글 프로필 조회 실패");
+      const profile = await res.json();
+
+      try {
+        const result = await postSocialLogin({
+          provider: "GOOGLE",
+          providerUserId: profile.sub,
+          email: profile.email,
+        });
+
+        // 기존 가입된 구글 계정 : 로그인 처리
+        saveLoginSession(profile.email, result.data?.nickname, "GOOGLE");
+
+        if (onLoginSuccess) {
+          onLoginSuccess();
+        } else {
+          navigate("/");
+        }
+      } catch (loginErr) {
+        if (loginErr.status === 404) {
+          // 가입되지 않은 구글 계정 : 회원가입 페이지로 안내
+          navigate("/auth/signup", {
+            state: {
+              socialProvider: "google",
+              provider: "GOOGLE",
+              providerUserId: profile.sub,
+              email: profile.email,
+            },
+          });
+        } else {
+          throw loginErr;
+        }
+      }
+    } catch (err) {
+      console.error("구글 로그인 처리 중 오류:", err);
+      alert(
+        err.message || "구글 로그인 중 문제가 발생했습니다. 다시 시도해주세요.",
+      );
+    }
+  };
+
+  // 구글 인증 팝업을 여는 트리거 함수 : 실제 구글 로그인 화면(계정 선택/동의)을 띄움
+  const triggerGoogleLogin = useGoogleLogin({
+    onSuccess: (tokenResponse) =>
+      fetchGoogleProfileAndGoSignup(tokenResponse.access_token),
+    onError: () => {
+      console.error("구글 로그인에 실패했습니다.");
+      alert("구글 로그인에 실패했습니다. 다시 시도해주세요.");
+    },
+  });
+
   const handleGoogleLogin = () => {
-    navigate("/auth/signup", { state: { socialProvider: "google" } });
+    triggerGoogleLogin();
   };
 
   return (
@@ -136,6 +199,7 @@ function LoginPage({ onLoginSuccess }) {
                 onClick={handleAppleLogin}
                 aria-label="Apple로 로그인"
               >
+                {/* 애플 로고 이미지 */}
                 <svg viewBox="0 0 384 512" xmlns="http://www.w3.org/2000/svg">
                   <path
                     fill="#000"
@@ -150,6 +214,7 @@ function LoginPage({ onLoginSuccess }) {
                 onClick={handleGoogleLogin}
                 aria-label="Google로 로그인"
               >
+                {/* 구글 로고 이미지  */}
                 <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
                   <path
                     fill="#EA4335"
