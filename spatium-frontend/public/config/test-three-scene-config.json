@@ -1,28 +1,28 @@
 {
   "room": {
-    "modelUrl": "",
-    "metadataUrl": "/testdata/spatium-room-edited-2026-07-01T07-25-10-396Z.json"
+    "modelUrl": "/testdata/room-scan.usdz",
+    "metadataUrl": "/testdata/ai-edit-request.json"
   },
   "save": {
     "metadataApiUrl": "/api/test-three/metadata"
   },
   "models": {
-    "bathtub": "/testdata/3d_models/bathtub.glb",
-    "bed": "/testdata/3d_models/bed.glb",
-    "door": "/testdata/3d_models/door.glb",
-    "chair": "/testdata/3d_models/chair.glb",
-    "dishwasher": "/testdata/3d_models/dishwasher.glb",
-    "oven": "/testdata/3d_models/oven.glb",
-    "refrigerator": "/testdata/3d_models/refrigerator.glb",
-    "sink": "/testdata/3d_models/sink.glb",
-    "sofa": "/testdata/3d_models/sofa.glb",
-    "stove": "/testdata/3d_models/stove.glb",
-    "storage": "/testdata/3d_models/storage.glb",
-    "table": "/testdata/3d_models/table.glb",
-    "television": "/testdata/3d_models/television.glb",
-    "toilet": "/testdata/3d_models/toilet.glb",
-    "washerDryer": "/testdata/3d_models/washerDryer.glb",
-    "window": "/testdata/3d_models/window.glb"
+    "bathtub": "/testdata/default_3d_models/bathtub.glb",
+    "bed": "/testdata/default_3d_models/bed.glb",
+    "door": "/testdata/default_3d_models/door.glb",
+    "chair": "/testdata/default_3d_models/chair.glb",
+    "dishwasher": "/testdata/default_3d_models/dishwasher.glb",
+    "oven": "/testdata/default_3d_models/oven.glb",
+    "refrigerator": "/testdata/default_3d_models/refrigerator.glb",
+    "sink": "/testdata/default_3d_models/sink.glb",
+    "sofa": "/testdata/default_3d_models/sofa.glb",
+    "stove": "/testdata/default_3d_models/stove.glb",
+    "storage": "/testdata/default_3d_models/storage.glb",
+    "table": "/testdata/default_3d_models/table.glb",
+    "television": "/testdata/default_3d_models/television.glb",
+    "toilet": "/testdata/default_3d_models/toilet.glb",
+    "washerDryer": "/testdata/default_3d_models/washerDryer.glb",
+    "window": "/testdata/default_3d_models/window.glb"
   },
   "colors": {
     "category": {

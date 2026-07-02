@@ -43,6 +43,7 @@ export function disposeMaterial(material) {
 
 export function disposeScene(scene) {
   scene.traverse((object) => {
+    object.element?.remove?.();
     if (object.geometry) object.geometry.dispose();
     if (object.material) {
       if (Array.isArray(object.material)) {
