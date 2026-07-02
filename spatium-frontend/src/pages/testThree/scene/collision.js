@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import { wallConfigNumber, wallSweepRotationStep } from "./sceneConfig";
 
+const WALL_PARALLEL_RELAXATION = 0.012;
+const WALL_ALIGNMENT_RELAXATION_ANGLE = Math.PI / 4;
+const WALL_SLIDE_CONTACT_DISTANCE = 0.018;
+
 export function editableObjectLabel(object) {
   const item = object.userData.roomItem;
   return `${item.category || object.userData.category || "object"} ${
@@ -79,6 +83,39 @@ export function projectionRadiusForObb(obb, axis) {
   );
 }
 
+export function objectWallFaceNormalAngle(objectObb, wall) {
+  if (!wall.roomFacingNormal) return Math.PI / 2;
+
+  const normal = wall.roomFacingNormal.clone().normalize();
+  const axes = [
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+  ];
+  objectObb.rotation.extractBasis(axes[0], axes[1], axes[2]);
+
+  const bestAlignment = axes.reduce(
+    (best, axis) => Math.max(best, Math.abs(axis.normalize().dot(normal))),
+    0,
+  );
+
+  return Math.acos(THREE.MathUtils.clamp(bestAlignment, -1, 1));
+}
+
+export function wallBoundaryEpsilonForObjectAngle(objectObb, wall) {
+  const baseEpsilon = wallConfigNumber("boundaryEpsilon");
+  const faceNormalAngle = objectWallFaceNormalAngle(objectObb, wall);
+  const parallelWeight =
+    1 -
+    THREE.MathUtils.clamp(
+      faceNormalAngle / WALL_ALIGNMENT_RELAXATION_ANGLE,
+      0,
+      1,
+    );
+
+  return baseEpsilon + parallelWeight * WALL_PARALLEL_RELAXATION;
+}
+
 export function objectOverlapsWallSpan(objectObb, wall) {
   if (!wall.spanAxes?.length) return true;
 
@@ -106,14 +143,81 @@ export function objectObbViolatesWallBoundary(objectObb, wall) {
   const radius = projectionRadiusForObb(objectObb, wall.roomFacingNormal);
   const innerMostProjection =
     objectObb.center.dot(wall.roomFacingNormal) - radius;
+  const boundaryEpsilon = wallBoundaryEpsilonForObjectAngle(objectObb, wall);
 
-  return (
-    innerMostProjection <
-    wall.roomFacingProjection - wallConfigNumber("boundaryEpsilon")
+  return innerMostProjection < wall.roomFacingProjection - boundaryEpsilon;
+}
+
+export function objectWallBoundaryPenetration(objectObb, wall) {
+  if (!wall.roomFacingNormal || !Number.isFinite(wall.roomFacingProjection)) {
+    return 0;
+  }
+
+  if (!objectOverlapsWallSpan(objectObb, wall)) {
+    return 0;
+  }
+
+  const radius = projectionRadiusForObb(objectObb, wall.roomFacingNormal);
+  const innerMostProjection =
+    objectObb.center.dot(wall.roomFacingNormal) - radius;
+  const boundaryEpsilon = wallBoundaryEpsilonForObjectAngle(objectObb, wall);
+
+  return Math.max(
+    0,
+    wall.roomFacingProjection - boundaryEpsilon - innerMostProjection,
+  );
+}
+
+export function objectWallBoundaryClearance(objectObb, wall) {
+  if (!wall.roomFacingNormal || !Number.isFinite(wall.roomFacingProjection)) {
+    return Infinity;
+  }
+
+  if (!objectOverlapsWallSpan(objectObb, wall)) {
+    return Infinity;
+  }
+
+  const radius = projectionRadiusForObb(objectObb, wall.roomFacingNormal);
+  const innerMostProjection =
+    objectObb.center.dot(wall.roomFacingNormal) - radius;
+  const boundaryEpsilon = wallBoundaryEpsilonForObjectAngle(objectObb, wall);
+
+  return innerMostProjection - (wall.roomFacingProjection - boundaryEpsilon);
+}
+
+export function objectTouchesWallForSlide(objectObb, wall) {
+  if (wall.roomFacingNormal && Number.isFinite(wall.roomFacingProjection)) {
+    return (
+      objectWallBoundaryClearance(objectObb, wall) <=
+      WALL_SLIDE_CONTACT_DISTANCE
+    );
+  }
+
+  return objectObb.intersectsOBB(wall.obb, wallConfigNumber("collisionEpsilon"));
+}
+
+export function wallBoundaryPenetrationsForObject(object, wallColliders) {
+  if (!object || !wallColliders.length) return [];
+
+  const objectObb = worldObbForObject(object);
+  return wallColliders.map((wall) =>
+    objectWallBoundaryPenetration(objectObb, wall),
+  );
+}
+
+export function wallBoundaryPenetrationDidNotIncrease(previous, next) {
+  const tolerance = wallConfigNumber("boundaryEpsilon") + 1e-5;
+
+  return next.every(
+    (depth, index) => depth <= (previous[index] || 0) + tolerance,
   );
 }
 
 export function wallBlocksObjectObb(objectObb, wall) {
+  if (wall.roomFacingNormal && Number.isFinite(wall.roomFacingProjection)) {
+    return objectObbViolatesWallBoundary(objectObb, wall);
+  }
+
   return (
     objectObb.intersectsOBB(wall.obb, wallConfigNumber("collisionEpsilon")) ||
     objectObbViolatesWallBoundary(objectObb, wall)
@@ -156,13 +260,13 @@ export function applyInterpolatedTransform(object, from, to, t, scratch) {
 export function adjustedMovementForWallSlide(movement, blockingWalls) {
   const adjusted = movement.clone();
 
-  for (let pass = 0; pass < 2; pass += 1) {
+  for (let pass = 0; pass < 4; pass += 1) {
     blockingWalls.forEach((wall) => {
       if (!wall.roomFacingNormal) return;
 
-      const intoRoomDistance = adjusted.dot(wall.roomFacingNormal);
-      if (intoRoomDistance < 0) {
-        adjusted.addScaledVector(wall.roomFacingNormal, -intoRoomDistance);
+      const normalDistance = adjusted.dot(wall.roomFacingNormal);
+      if (Math.abs(normalDistance) > 1e-10) {
+        adjusted.addScaledVector(wall.roomFacingNormal, -normalDistance);
       }
     });
   }
@@ -182,11 +286,22 @@ export function tryApplyWallSlide(
   const movement = target.position.clone().sub(valid.position);
   if (movement.lengthSq() <= 1e-10) return false;
 
+  object.position.copy(valid.position);
+  object.quaternion.copy(valid.quaternion);
+  object.scale.copy(valid.scale);
+  object.updateWorldMatrix(true, false);
+
+  const validObb = worldObbForObject(object);
+  const contactWalls = blockingWalls.filter((wall) =>
+    objectTouchesWallForSlide(validObb, wall),
+  );
+  if (!contactWalls.length) return false;
+
   const adjustedMovement = adjustedMovementForWallSlide(
     movement,
-    blockingWalls,
+    contactWalls,
   );
-  if (adjustedMovement.distanceToSquared(movement) <= 1e-10) return false;
+  if (adjustedMovement.lengthSq() <= 1e-10) return false;
 
   object.position.copy(valid.position).add(adjustedMovement);
   object.quaternion.copy(target.quaternion);
@@ -194,6 +309,40 @@ export function tryApplyWallSlide(
   object.updateWorldMatrix(true, false);
 
   if (!hasWallCollision(object, wallColliders)) {
+    rememberValidTransform(object);
+    return true;
+  }
+
+  const best = {
+    position: valid.position.clone(),
+    quaternion: valid.quaternion.clone(),
+    scale: valid.scale.clone(),
+  };
+  let low = 0;
+  let high = 1;
+
+  for (let i = 0; i < wallConfigNumber("clampIterations"); i += 1) {
+    const t = (low + high) / 2;
+    object.position.copy(valid.position).addScaledVector(adjustedMovement, t);
+    object.quaternion.copy(target.quaternion);
+    object.scale.copy(target.scale);
+    object.updateWorldMatrix(true, false);
+
+    if (hasWallCollision(object, wallColliders)) {
+      high = t;
+    } else {
+      low = t;
+      best.position.copy(object.position);
+      best.quaternion.copy(object.quaternion);
+      best.scale.copy(object.scale);
+    }
+  }
+
+  if (low > 1e-4) {
+    object.position.copy(best.position);
+    object.quaternion.copy(best.quaternion);
+    object.scale.copy(best.scale);
+    object.updateWorldMatrix(true, false);
     rememberValidTransform(object);
     return true;
   }
@@ -207,12 +356,64 @@ export function tryApplyWallSlide(
 
 export function clampObjectToWallBoundary(object, wallColliders) {
   if (object?.userData.ignoreWallConstraint && wallColliders.length) {
-    if (!objectIntersectsWalls(object, wallColliders)) {
+    const target = {
+      position: object.position.clone(),
+      quaternion: object.quaternion.clone(),
+      scale: object.scale.clone(),
+    };
+    const targetIntersectsWalls = objectIntersectsWalls(object, wallColliders);
+
+    if (!targetIntersectsWalls) {
       object.userData.ignoreWallConstraint = false;
+      rememberValidTransform(object);
+      return false;
     }
 
-    rememberValidTransform(object);
-    return false;
+    const previous = {
+      position: object.userData.lastValidPosition?.clone(),
+      quaternion: object.userData.lastValidQuaternion?.clone(),
+      scale: object.userData.lastValidScale?.clone(),
+    };
+
+    if (!previous.position || !previous.quaternion || !previous.scale) {
+      rememberValidTransform(object);
+      return false;
+    }
+
+    const targetPenetrations = wallBoundaryPenetrationsForObject(
+      object,
+      wallColliders,
+    );
+
+    object.position.copy(previous.position);
+    object.quaternion.copy(previous.quaternion);
+    object.scale.copy(previous.scale);
+    object.updateWorldMatrix(true, false);
+    const previousPenetrations = wallBoundaryPenetrationsForObject(
+      object,
+      wallColliders,
+    );
+
+    object.position.copy(target.position);
+    object.quaternion.copy(target.quaternion);
+    object.scale.copy(target.scale);
+    object.updateWorldMatrix(true, false);
+
+    if (
+      wallBoundaryPenetrationDidNotIncrease(
+        previousPenetrations,
+        targetPenetrations,
+      )
+    ) {
+      rememberValidTransform(object);
+      return false;
+    }
+
+    object.position.copy(previous.position);
+    object.quaternion.copy(previous.quaternion);
+    object.scale.copy(previous.scale);
+    object.updateWorldMatrix(true, false);
+    return true;
   }
 
   if (!shouldConstrainToWalls(object) || !wallColliders.length) {
@@ -347,6 +548,10 @@ export function setFurnitureVisualState(object, selectedObject) {
   }
 
   if (edge?.material) {
+    edge.visible = hasCollision || isSelected;
+    edge.renderOrder = 32;
+    edge.material.depthTest = false;
+    edge.material.depthWrite = false;
     edge.material.color.copy(
       hasCollision
         ? object.userData.collisionColor
