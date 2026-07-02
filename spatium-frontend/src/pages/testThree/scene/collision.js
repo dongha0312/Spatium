@@ -114,10 +114,7 @@ export function objectObbViolatesWallBoundary(objectObb, wall) {
 }
 
 export function wallBlocksObjectObb(objectObb, wall) {
-  return (
-    objectObb.intersectsOBB(wall.obb, wallConfigNumber("collisionEpsilon")) ||
-    objectObbViolatesWallBoundary(objectObb, wall)
-  );
+  return objectObbViolatesWallBoundary(objectObb, wall);
 }
 
 export function shouldCheckFurnitureCollision(object) {
@@ -209,9 +206,9 @@ export function clampObjectToWallBoundary(object, wallColliders) {
   if (object?.userData.ignoreWallConstraint && wallColliders.length) {
     if (!objectIntersectsWalls(object, wallColliders)) {
       object.userData.ignoreWallConstraint = false;
+      rememberValidTransform(object);
     }
 
-    rememberValidTransform(object);
     return false;
   }
 

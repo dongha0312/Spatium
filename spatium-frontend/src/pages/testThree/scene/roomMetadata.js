@@ -11,10 +11,24 @@ import { isUsdFloorMesh, isUsdReplacedMesh, isUsdWallMesh } from "./wallCollider
 
 export function objectToEditableJson(object) {
   object.updateMatrix();
+  object.updateWorldMatrix(true, true);
   const item = object.userData.roomItem;
   const sourceType = object.userData.sourceType || "object";
   const sourceIndex = object.userData.sourceIndex;
   const collisions = object.userData.collisions || [];
+  const bounds = new THREE.Box3().setFromObject(object);
+  const fallbackSize = bounds.isEmpty()
+    ? new THREE.Vector3(
+        item.dimensions?.x || 0,
+        item.dimensions?.y || 0,
+        item.dimensions?.z || 0,
+      )
+    : bounds.getSize(new THREE.Vector3());
+  const stableSize = new THREE.Vector3(
+    Number(item.dimensions?.x) || fallbackSize.x,
+    Number(item.dimensions?.y) || fallbackSize.y,
+    Number(item.dimensions?.z) || fallbackSize.z,
+  );
   const matrix = new THREE.Matrix4().compose(
     object.position,
     object.quaternion,
@@ -26,8 +40,21 @@ export function objectToEditableJson(object) {
     id: `${sourceType}-${sourceIndex}`,
     sourceType,
     index: sourceIndex,
+    catalogId: item.catalogId,
+    name: item.name,
     category: item.category || object.userData.category || "object",
-    dimensions: item.dimensions,
+    path: item.path || item.modelUrl,
+    modelUrl: item.modelUrl,
+    dimensions: {
+      x: Number(stableSize.x.toFixed(4)),
+      y: Number(stableSize.y.toFixed(4)),
+      z: Number(stableSize.z.toFixed(4)),
+    },
+    dimensionsCm: {
+      width: Math.round(stableSize.x * 100),
+      height: Math.round(stableSize.y * 100),
+      depth: Math.round(stableSize.z * 100),
+    },
     position: {
       x: Number(object.position.x.toFixed(4)),
       y: Number(object.position.y.toFixed(4)),
@@ -237,26 +264,47 @@ export function createRoomModelFromJson(roomJson) {
 
 export function createReplayableMetadataJson(metadata, editedItems, roomModel) {
   const nextMetadata = cloneJsonValue(metadata) || {};
-  const editsByObjectIndex = new Map(
-    editedItems
-      .filter((item) => item.sourceType === "object")
-      .map((item) => [item.index, item]),
-  );
+  const originalObjects = nextMetadata.objects || [];
+  const originalDoors = nextMetadata.doors || [];
+  const originalWindows = nextMetadata.windows || [];
+  const objectEdits = editedItems.filter((item) => item.sourceType === "object");
+  const doorEdits = editedItems.filter((item) => item.sourceType === "door");
+  const windowEdits = editedItems.filter((item) => item.sourceType === "window");
 
-  nextMetadata.objects = (nextMetadata.objects || []).map((item, index) => {
-    const edit = editsByObjectIndex.get(index);
-    if (!edit) return item;
-
+  const applyReferenceEdit = (edit, originalItems) => {
+    const original = originalItems[edit.index] || {};
     return {
-      ...item,
+      ...original,
+      catalogId: edit.catalogId,
+      name: edit.name,
       category: edit.category,
+      path: edit.path,
+      modelUrl: edit.modelUrl,
+      dimensions: edit.dimensions,
+      transform: edit.transform,
+    };
+  };
+
+  nextMetadata.objects = objectEdits.map((edit) => {
+    const original = originalObjects[edit.index] || {};
+    return {
+      ...original,
+      catalogId: edit.catalogId,
+      name: edit.name,
+      category: edit.category,
+      path: edit.path,
+      modelUrl: edit.modelUrl,
       dimensions: edit.dimensions,
       transform: edit.transform,
     };
   });
 
-  nextMetadata.doors = nextMetadata.doors || [];
-  nextMetadata.windows = nextMetadata.windows || [];
+  nextMetadata.doors = doorEdits.length
+    ? doorEdits.map((edit) => applyReferenceEdit(edit, originalDoors))
+    : originalDoors;
+  nextMetadata.windows = windowEdits.length
+    ? windowEdits.map((edit) => applyReferenceEdit(edit, originalWindows))
+    : originalWindows;
   nextMetadata._spatiumRoom =
     serializeRoomModelToJson(roomModel) || nextMetadata._spatiumRoom || null;
   nextMetadata._spatiumExport = {

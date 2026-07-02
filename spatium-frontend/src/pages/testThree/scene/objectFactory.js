@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { OBB } from "three/examples/jsm/math/OBB.js";
 import { categoryColor, referenceFallbackThickness, sceneColor } from "./sceneConfig";
-import { createLabel, decomposeRoomTransform } from "./threeUtils";
+import { decomposeRoomTransform } from "./threeUtils";
 
 export function createEditableFurniture(item, index) {
   const dimensions = item.dimensions || {};
@@ -28,7 +28,6 @@ export function createEditableFurniture(item, index) {
   );
   const root = new THREE.Group();
   const transform = decomposeRoomTransform(item);
-  const label = createLabel(`${category} ${index + 1}`);
 
   root.name = `${category}-${index + 1}`;
   root.position.copy(transform.position);
@@ -62,10 +61,11 @@ export function createEditableFurniture(item, index) {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.userData.editableRoot = root;
-  edge.userData.editableRoot = root;
-  label.position.set(0, (dimensions.y || 0.1) / 2 + 0.12, 0);
 
-  root.add(mesh, edge, label);
+  edge.visible = false;
+  edge.userData.editableRoot = root;
+
+  root.add(mesh, edge);
   return { root, pickTargets: [mesh] };
 }
 
@@ -104,6 +104,40 @@ export function fitModelToTargetSize(model, targetSize) {
   model.updateWorldMatrix(true, true);
 }
 
+function removeReferenceModelArtifacts(model) {
+  const artifactNamePatterns = [
+    /^Blender Bros Sci-Fi UI Pack/i,
+    /^Solid 25$/i,
+  ];
+  const artifactMaterialPatterns = [
+    /^\.?Blender Bros Sci-Fi UI Pack/i,
+    /^Black plastic PL$/i,
+    /^Monitor Screen$/i,
+  ];
+  const artifacts = [];
+
+  model.traverse((object) => {
+    const materials = Array.isArray(object.material)
+      ? object.material
+      : [object.material];
+    if (
+      object !== model &&
+      (artifactNamePatterns.some((pattern) => pattern.test(object.name || "")) ||
+        materials.some((material) =>
+          artifactMaterialPatterns.some((pattern) =>
+            pattern.test(material?.name || ""),
+          ),
+        ))
+    ) {
+      artifacts.push(object);
+    }
+  });
+
+  artifacts.forEach((object) => {
+    object.parent?.remove(object);
+  });
+}
+
 export function createEditableFurnitureModel(modelTemplate, item, index) {
   const dimensions = item.dimensions || {};
   const category = item.category || "object";
@@ -115,7 +149,6 @@ export function createEditableFurnitureModel(modelTemplate, item, index) {
   const root = new THREE.Group();
   const model = modelTemplate.clone(true);
   const transform = decomposeRoomTransform(item);
-  const label = createLabel(`${category} ${index + 1}`);
   const hitGeometry = new THREE.BoxGeometry(
     targetSize.x,
     targetSize.y,
@@ -175,10 +208,10 @@ export function createEditableFurnitureModel(modelTemplate, item, index) {
 
   fitModelToTargetSize(model, targetSize);
   hitBox.userData.editableRoot = root;
+  edge.visible = false;
   edge.userData.editableRoot = root;
-  label.position.set(0, targetSize.y / 2 + 0.12, 0);
 
-  root.add(model, hitBox, edge, label);
+  root.add(model, hitBox, edge);
   return { root, pickTargets: [hitBox] };
 }
 
@@ -194,7 +227,6 @@ export function createDoorModel(doorTemplate, item, index) {
   const root = new THREE.Group();
   const model = doorTemplate.clone(true);
   const transform = decomposeRoomTransform(item);
-  const label = createLabel(`door ${index + 1}`, "reference-label");
   const hitGeometry = new THREE.BoxGeometry(
     targetSize.x,
     targetSize.y,
@@ -245,6 +277,7 @@ export function createDoorModel(doorTemplate, item, index) {
     lastValidScale: transform.scale.clone(),
   };
 
+  removeReferenceModelArtifacts(model);
   model.traverse((object) => {
     if (object.isMesh) {
       object.castShadow = true;
@@ -255,10 +288,10 @@ export function createDoorModel(doorTemplate, item, index) {
 
   fitModelToTargetSize(model, targetSize);
   hitBox.userData.editableRoot = root;
+  edge.visible = false;
   edge.userData.editableRoot = root;
-  label.position.set(0, targetSize.y / 2 + 0.12, 0);
 
-  root.add(model, hitBox, edge, label);
+  root.add(model, hitBox, edge);
   return { root, pickTargets: [hitBox] };
 }
 
@@ -274,7 +307,6 @@ export function createWindowModel(windowTemplate, item, index) {
   const root = new THREE.Group();
   const model = windowTemplate.clone(true);
   const transform = decomposeRoomTransform(item);
-  const label = createLabel(`window ${index + 1}`, "reference-label");
   const hitGeometry = new THREE.BoxGeometry(
     targetSize.x,
     targetSize.y,
@@ -325,6 +357,7 @@ export function createWindowModel(windowTemplate, item, index) {
     lastValidScale: transform.scale.clone(),
   };
 
+  removeReferenceModelArtifacts(model);
   model.traverse((object) => {
     if (object.isMesh) {
       object.castShadow = true;
@@ -335,9 +368,9 @@ export function createWindowModel(windowTemplate, item, index) {
 
   fitModelToTargetSize(model, targetSize);
   hitBox.userData.editableRoot = root;
+  edge.visible = false;
   edge.userData.editableRoot = root;
-  label.position.set(0, targetSize.y / 2 + 0.12, 0);
 
-  root.add(model, hitBox, edge, label);
+  root.add(model, hitBox, edge);
   return { root, pickTargets: [hitBox] };
 }
