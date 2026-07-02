@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../../styles/signuppage.css";
+import { saveLoginSession } from "../../utils/authSession";
 
 function SignupPage() {
   // 이메일을 저장할 수 있는 상태변수(객체) 정의
@@ -36,7 +37,9 @@ function SignupPage() {
     );
 
     // TODO: 추후 백엔드(springApi) 회원가입 API 연동
-    navigate("/auth/login");
+    // 회원가입 완료 시 바로 로그인 세션 저장 (입력한 닉네임 그대로 사용)
+    saveLoginSession(email, nickname);
+    navigate("/");
   };
 
   return (

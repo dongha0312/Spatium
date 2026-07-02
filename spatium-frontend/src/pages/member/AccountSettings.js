@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import "../../styles/accountsettings.css";
 
 // 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
@@ -11,6 +11,8 @@ const USER = {
 };
 
 function AccountSettings() {
+  const navigate = useNavigate();
+
   // 계정설정 폼 상태
   const [nickname, setNickname] = useState(USER.name);
   const [birth, setBirth] = useState(USER.birth);
@@ -76,6 +78,7 @@ function AccountSettings() {
       )
     ) {
       alert("탈퇴되었습니다.");
+      navigate("/");
     }
   };
 
