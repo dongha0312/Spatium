@@ -115,4 +115,17 @@ public class RoomController {
         }
     }
 
+    // 룸 생성하기
+    @PostMapping("path")
+    public String postMethodName(@RequestBody String entity) {
+        //TODO: process POST request
+        
+        return entity;
+    }
+    
+
+    // 룸 조회하기
+    
+
+
 }
