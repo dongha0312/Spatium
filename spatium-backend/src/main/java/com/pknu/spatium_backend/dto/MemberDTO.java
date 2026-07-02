@@ -19,18 +19,19 @@ public class MemberDTO{
     public static class MemberSignupDTO {
 
         @NotBlank(message = "이메일을 입력해주세요")
-        private String memEmail;
+        private String email;
 
-        private String memNick;
+        private String nickname;
         
-        private String memPass;
+        private String password;
 
-        private String memBir;
+        private String birthDate;
 
-        private String memSex;
+        private String gender;
 
-        private String memImg;
+        private boolean termsAgreed;
 
+        private boolean privacyAgreed;
     }
 
     @Getter

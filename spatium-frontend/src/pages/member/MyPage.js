@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../../styles/mypage.css";
 import { clearLoginSession } from "../../utils/authSession";
@@ -60,6 +60,10 @@ function MyPage() {
 
   // 프로젝트 목록 (프로젝트 각각이 카드 하나 = "칸")
   const [projects, setProjects] = useState(INITIAL_PROJECTS);
+
+  useEffect(()=>{
+    
+  }, [])
 
   // 프로젝트 이름 인라인 수정 (더블클릭) 상태
   const [editingProjectId, setEditingProjectId] = useState(null);
