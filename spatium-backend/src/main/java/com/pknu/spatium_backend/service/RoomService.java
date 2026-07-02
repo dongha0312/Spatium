@@ -21,8 +21,7 @@ public class RoomService {
 
     public void post3dData(
             String jsonDataFile,
-            MultipartFile usdzDataFile
-    ) throws IOException {
+            MultipartFile usdzDataFile) throws IOException {
 
         if (jsonDataFile == null || jsonDataFile.isBlank()) {
             throw new IOException("metadata JSON 데이터가 비어 있습니다.");
@@ -64,13 +63,67 @@ public class RoomService {
         Files.writeString(
                 jsonPath,
                 jsonDataFile,
-                StandardCharsets.UTF_8
-        );
+                StandardCharsets.UTF_8);
 
         Files.copy(
                 usdzDataFile.getInputStream(),
                 usdzPath,
-                StandardCopyOption.REPLACE_EXISTING
-        );
+                StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    public Path saveEditedMetadata(
+            String metadataUrl,
+            String metadataJson) throws IOException {
+
+        if (metadataJson == null || metadataJson.isBlank()) {
+            throw new IOException("metadata JSON data is empty.");
+        }
+
+        Path uploadDir = Paths
+                .get(System.getProperty("user.dir"), "uploads", "models")
+                .toAbsolutePath()
+                .normalize();
+
+        Files.createDirectories(uploadDir);
+
+        String sourceFileName = sanitizedJsonFileName(metadataUrl);
+        String baseName = sourceFileName.replaceFirst("(?i)\\.json$", "");
+        // 수정된 ROOM JSON 파일 저장 이름
+        String jsonFileName = baseName + "_edited_" + UUID.randomUUID() + ".json";
+        Path jsonPath = uploadDir.resolve(jsonFileName).normalize();
+
+        if (!jsonPath.startsWith(uploadDir)) {
+            throw new IOException("Invalid metadata save path.");
+        }
+
+        Files.writeString(
+                jsonPath,
+                metadataJson,
+                StandardCharsets.UTF_8);
+
+        log.info("Edited room metadata saved = {}", jsonPath);
+
+        return jsonPath;
+    }
+
+    private String sanitizedJsonFileName(String metadataUrl) {
+        String value = metadataUrl == null ? "" : metadataUrl.trim();
+        int queryIndex = value.indexOf('?');
+        if (queryIndex >= 0) {
+            value = value.substring(0, queryIndex);
+        }
+
+        value = value.replace("\\", "/");
+        int slashIndex = value.lastIndexOf('/');
+        String fileName = slashIndex >= 0 ? value.substring(slashIndex + 1) : value;
+
+        fileName = fileName.replaceAll("[^a-zA-Z0-9._-]", "_");
+        if (fileName.isBlank()) {
+            fileName = "room-metadata.json";
+        }
+        if (!fileName.toLowerCase().endsWith(".json")) {
+            fileName = fileName + ".json";
+        }
+        return fileName;
     }
 }
