@@ -1,46 +1,74 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../styles/3deditor.css";
+import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
 
 const ROOM_NAME = "우리집 거실 리모델링";
 const TEAM_LABEL = "1조";
+const FURNITURE_CATALOG_URL = "/data/furniture_catalog.json";
 
-// 레이어(공간) 목록
 const INITIAL_LAYERS = [
   { id: "living", name: "거실", color: "#C4956A" },
   { id: "kitchen", name: "주방", color: "#D4A96A" },
   { id: "bedroom", name: "침실", color: "#7B9EC2" },
 ];
 
-// 가구 카테고리 필터 목록 (이케아 3D 플래너 참고, 지금은 실제 가구 데이터가 없어 형식만 구현)
-const CATEGORY_FILTERS = ["침대", "옷장/시스템행거", "서랍장"];
-
-// 벽 색상 스와치 목록 (하단 뷰 툴바의 "벽 색깔 바꾸기"에서 사용)
 const WALL_COLORS = ["#F5F0EA", "#E8DCC8", "#C4956A", "#3A3A3A"];
+
+function normalizeCatalogItem(item) {
+  return {
+    ...item,
+    path: item.path || item.modelUrl || null,
+    modelUrl: item.modelUrl || item.path || null,
+  };
+}
 
 function ThreeDEditor() {
   const navigate = useNavigate();
-
-  // 현재 선택된 레이어(공간) : 가구 카탈로그 패널 상단의 룸 이름으로 표시됨
+  const editorRef = useRef(null);
   const [activeLayerId, setActiveLayerId] = useState(INITIAL_LAYERS[0].id);
-  const activeLayer =
-    INITIAL_LAYERS.find((layer) => layer.id === activeLayerId) ??
-    INITIAL_LAYERS[0];
-
-  // 룸 선택 드롭다운 열림 여부
   const [roomDropdownOpen, setRoomDropdownOpen] = useState(false);
-
-  // 가구 카테고리 필터 (실제 가구 데이터가 없어 선택만 가능, 목록은 비어있음)
+  const [furnitureCatalog, setFurnitureCatalog] = useState([]);
   const [activeCategory, setActiveCategory] = useState(null);
-
-  // 가격 안내 배너 표시 여부
   const [priceBannerVisible, setPriceBannerVisible] = useState(true);
-
-  // 캔버스 하단 뷰 툴바 상태 (IKEA 3D 플래너 참고 : Skyview / 벽 색깔 바꾸기 / 측정 옵션 표시)
   const [isSkyview, setIsSkyview] = useState(false);
   const [wallColor, setWallColor] = useState(null);
   const [wallColorPickerOpen, setWallColorPickerOpen] = useState(false);
   const [showMeasurements, setShowMeasurements] = useState(false);
+
+  const activeLayer =
+    INITIAL_LAYERS.find((layer) => layer.id === activeLayerId) ??
+    INITIAL_LAYERS[0];
+  const categoryFilters = Array.from(
+    new Set(furnitureCatalog.map((item) => item.group).filter(Boolean)),
+  );
+  const visibleCatalogItems = activeCategory
+    ? furnitureCatalog.filter((item) => item.group === activeCategory)
+    : furnitureCatalog;
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetch(FURNITURE_CATALOG_URL, { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Failed to load furniture catalog (${response.status})`);
+        }
+        return response.json();
+      })
+      .then((data) => {
+        if (isMounted) {
+          setFurnitureCatalog((Array.isArray(data) ? data : []).map(normalizeCatalogItem));
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load furniture catalog", error);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const toggleRoomDropdown = () => setRoomDropdownOpen((prev) => !prev);
 
@@ -51,6 +79,14 @@ function ThreeDEditor() {
 
   const selectCategory = (category) => {
     setActiveCategory((prev) => (prev === category ? null : category));
+  };
+
+  const showAllCategories = () => {
+    setActiveCategory(null);
+  };
+
+  const handleAddFurniture = async (item) => {
+    await editorRef.current?.addFurniture(item);
   };
 
   const toggleSkyview = () => {
@@ -80,17 +116,16 @@ function ThreeDEditor() {
     alert("미리보기 기능은 준비 중입니다.");
   };
 
-  const handleSaveRoom = () => {
-    alert("저장되었습니다. (추후 백엔드 연동 예정)");
+  const handleSaveRoom = async () => {
+    await editorRef.current?.saveEditedSceneJson();
   };
 
   return (
     <div className="ed-root">
-      {/* 상단 네비게이션 */}
       <div className="ed-nav">
         <Link to="/" className="ed-logo">
           <div className="ed-logo-sq">
-            <div className="ed-logo-sq-i"></div>
+            <div className="ed-logo-sq-i" />
           </div>
           SPATIUM
         </Link>
@@ -98,16 +133,14 @@ function ThreeDEditor() {
       </div>
 
       <div className="ed-wrap">
-        {/* 툴바 */}
         <div className="ed-toolbar">
-          <button className="ed-toolbar-btn ed-proj">{TEAM_LABEL}</button>
+          <button className="ed-toolbar-btn ed-proj" type="button">
+            {TEAM_LABEL}
+          </button>
         </div>
 
-        {/* 본문 : 레이어 패널 + 3D 캔버스 */}
         <div className="ed-main">
-          {/* 좌측 가구 카탈로그 패널 (이케아 3D 플래너 참고) : 지금은 가구 데이터가 없어 형식만 구현 */}
           <div className="ed-layers-panel">
-            {/* 룸 선택 드롭다운 : 현재 룸 이름이 표시됨 */}
             <div
               className={`ed-cat-header${roomDropdownOpen ? " ed-cat-open" : ""}`}
               onClick={toggleRoomDropdown}
@@ -129,12 +162,15 @@ function ThreeDEditor() {
               {roomDropdownOpen && (
                 <div
                   className="ed-cat-room-dropdown"
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={(event) => event.stopPropagation()}
                 >
                   {INITIAL_LAYERS.map((layer) => (
                     <button
                       key={layer.id}
-                      className={`ed-cat-room-option${layer.id === activeLayerId ? " ed-active" : ""}`}
+                      type="button"
+                      className={`ed-cat-room-option${
+                        layer.id === activeLayerId ? " ed-active" : ""
+                      }`}
                       onClick={() => selectRoom(layer)}
                     >
                       {layer.name}
@@ -144,18 +180,24 @@ function ThreeDEditor() {
               )}
             </div>
 
-            {/* 가구 카테고리 필터 */}
             <div className="ed-cat-filters">
-              {CATEGORY_FILTERS.map((category) => (
+              {categoryFilters.map((category) => (
                 <button
                   key={category}
+                  type="button"
                   className={`ed-cat-filter${activeCategory === category ? " ed-active" : ""}`}
                   onClick={() => selectCategory(category)}
                 >
                   {category}
                 </button>
               ))}
-              <button className="ed-cat-filter ed-cat-filter-more">
+              <button
+                type="button"
+                className={`ed-cat-filter ed-cat-filter-more${
+                  activeCategory === null ? " ed-active" : ""
+                }`}
+                onClick={showAllCategories}
+              >
                 모든 카테고리
                 <svg
                   viewBox="0 0 24 24"
@@ -172,10 +214,23 @@ function ThreeDEditor() {
               </button>
             </div>
 
-            {/* 가구 상품 목록 : 실제 데이터 연동 전이라 비워둠 */}
-            <div className="ed-cat-products"></div>
+            <div className="ed-cat-products">
+              {visibleCatalogItems.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className="ed-cat-product"
+                  onClick={() => handleAddFurniture(item)}
+                >
+                  <span className="ed-cat-product-thumb" />
+                  <span className="ed-cat-product-body">
+                    <span className="ed-cat-product-name">{item.name}</span>
+                    <span className="ed-cat-product-meta">{item.group}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
 
-            {/* 가격 안내 배너 */}
             {priceBannerVisible && (
               <div className="ed-cat-banner">
                 <span className="ed-cat-banner-icon">ⓘ</span>
@@ -184,6 +239,7 @@ function ThreeDEditor() {
                   <div>결제 시 가격 세부 정보를 확인하세요.</div>
                 </div>
                 <button
+                  type="button"
                   className="ed-cat-banner-close"
                   onClick={() => setPriceBannerVisible(false)}
                 >
@@ -193,30 +249,30 @@ function ThreeDEditor() {
             )}
           </div>
 
-          {/* 3D 캔버스 영역 : 추후 Three.js 렌더러가 이 자리에 마운트될 예정이라 지금은 비워둠.
-              벽 색깔을 고르면 미리보기로 배경색만 바뀜 */}
           <div
             className="ed-canvas"
             id="editor-canvas-mount"
             style={wallColor ? { background: wallColor } : undefined}
           >
-            <div className="ed-canvas-placeholder"></div>
+            <div className="ed-canvas-placeholder">
+              <TestThreeStagingPage ref={editorRef} isSkyview={isSkyview} />
+            </div>
 
             {isSkyview && (
               <div className="ed-canvas-badge ed-canvas-badge-sky">
-                ☁ Skyview 모드
+                Skyview 모드
               </div>
             )}
 
             {showMeasurements && (
               <div className="ed-canvas-badge ed-canvas-badge-measure">
-                📏 측정 모드 · 가로 3.2m × 세로 4.1m
+                측정 모드
               </div>
             )}
 
-            {/* 하단 뷰 툴바 (IKEA 3D 플래너 참고) : Skyview / 벽 색깔 바꾸기 / 측정 옵션 표시 */}
             <div className="ed-viewbar">
               <button
+                type="button"
                 className={`ed-viewbar-btn${isSkyview ? " ed-viewbar-active" : ""}`}
                 onClick={toggleSkyview}
               >
@@ -235,11 +291,14 @@ function ThreeDEditor() {
                 Skyview
               </button>
 
-              <div className="ed-viewbar-divider"></div>
+              <div className="ed-viewbar-divider" />
 
               <div className="ed-viewbar-icon-wrap">
                 <button
-                  className={`ed-viewbar-icon-btn${wallColorPickerOpen ? " ed-viewbar-active" : ""}`}
+                  type="button"
+                  className={`ed-viewbar-icon-btn${
+                    wallColorPickerOpen ? " ed-viewbar-active" : ""
+                  }`}
                   onClick={toggleWallColorPicker}
                   aria-label="벽 색깔 바꾸기"
                   title="벽 색깔 바꾸기"
@@ -267,17 +326,21 @@ function ThreeDEditor() {
                     {WALL_COLORS.map((color) => (
                       <button
                         key={color}
-                        className={`ed-wallcolor-swatch${wallColor === color ? " ed-wallcolor-swatch-active" : ""}`}
+                        type="button"
+                        className={`ed-wallcolor-swatch${
+                          wallColor === color ? " ed-wallcolor-swatch-active" : ""
+                        }`}
                         style={{ background: color }}
                         onClick={() => handleSelectWallColor(color)}
                         aria-label={`벽 색상 ${color}`}
-                      ></button>
+                      />
                     ))}
                   </div>
                 )}
               </div>
 
               <button
+                type="button"
                 className={`ed-viewbar-icon-btn${showMeasurements ? " ed-viewbar-active" : ""}`}
                 onClick={toggleMeasurements}
                 aria-label="측정 옵션 표시"
@@ -311,21 +374,23 @@ function ThreeDEditor() {
           </div>
         </div>
 
-        {/* 하단 액션바 */}
         <div className="ed-footer">
           <button
+            type="button"
             className="ed-footer-btn ed-footer-cancel"
             onClick={handleCancel}
           >
             취소하기
           </button>
           <button
+            type="button"
             className="ed-footer-btn ed-footer-preview"
             onClick={handlePreview}
           >
             미리보기
           </button>
           <button
+            type="button"
             className="ed-footer-btn ed-footer-save"
             onClick={handleSaveRoom}
           >
