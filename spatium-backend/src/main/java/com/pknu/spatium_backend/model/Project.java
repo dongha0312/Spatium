@@ -29,8 +29,6 @@ public class Project {
 
     private String proj_mem;
 
-    private String proj_room;
-
     private String proj_name;
 
 }

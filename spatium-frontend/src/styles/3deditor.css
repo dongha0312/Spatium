@@ -7,11 +7,13 @@
   --bd: #DDD3C6;
   --bg: #F2EDE6;
   --sur: #FAF7F3;
-  min-height: 100vh;
+  height: 100vh;
+  max-height: 100vh;
   display: flex;
   flex-direction: column;
   background: #1E1B18;
   font-family: -apple-system, "Pretendard", sans-serif;
+  overflow: hidden;
 }
 
 .ed-root *,
@@ -76,6 +78,7 @@
   flex-direction: column;
   position: relative;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -132,6 +135,8 @@
   display: flex;
   overflow: hidden;
   flex: 1;
+  min-height: 0;
+  max-height: 100%;
 }
 
 .ed-layers-panel {
@@ -141,6 +146,8 @@
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  min-height: 0;
+  max-height: 100%;
   color: var(--t);
   position: relative;
 }
@@ -332,8 +339,63 @@
 
 .ed-cat-products {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ed-cat-product {
+  width: 100%;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--t);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.ed-cat-product:hover {
+  border-color: var(--ga);
+  background: #FBF4EC;
+}
+
+.ed-cat-product-thumb {
+  width: 38px;
+  height: 38px;
+  border-radius: 7px;
+  background: linear-gradient(135deg, #EFEAE3, #D7C5B1);
+  border: 1px solid rgba(92, 61, 46, .12);
+  flex-shrink: 0;
+}
+
+.ed-cat-product-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ed-cat-product-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--t);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ed-cat-product-meta {
+  font-size: 11px;
+  color: var(--t3);
 }
 
 .ed-cat-banner {
@@ -555,7 +617,39 @@
 }
 
 @media (max-width: 700px) {
+  .ed-nav {
+    justify-content: space-between;
+    padding: 0 14px;
+  }
+
+  .ed-logo {
+    letter-spacing: 4px;
+  }
+
+  .ed-nav-center {
+    position: static;
+    max-width: 52%;
+    margin-left: 12px;
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    transform: none;
+    white-space: nowrap;
+  }
+
+  .ed-main {
+    flex-direction: column;
+  }
+
   .ed-layers-panel {
-    width: 220px;
+    width: 100%;
+    height: 280px;
+    border-right: 0;
+    border-bottom: 1px solid var(--bd);
+    max-height: none;
+  }
+
+  .ed-canvas {
+    min-height: 0;
   }
 }

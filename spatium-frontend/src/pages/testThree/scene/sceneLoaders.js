@@ -11,8 +11,12 @@ import { saveRoomMetadataJson } from "../../../springApi/RoomSpringBootApi";
 export function loadUsdRoomModel(url) {
   if (!url) return Promise.resolve(null);
 
+  const separator = url.includes("?") ? "&" : "?";
+  const cacheSafeUrl = `${url}${separator}t=${Date.now()}`;
   return new Promise((resolve) => {
-    new USDLoader().load(url, resolve, undefined, () => resolve(null));
+    new USDLoader().load(cacheSafeUrl, resolve, undefined, () =>
+      resolve(null),
+    );
   });
 }
 
@@ -89,7 +93,10 @@ export function fetchJson(url, label) {
     return Promise.reject(new Error(`Missing JSON URL for ${label}.`));
   }
 
-  return fetch(url).then((response) => {
+  const separator = url.includes("?") ? "&" : "?";
+  return fetch(`${url}${separator}t=${Date.now()}`, {
+    cache: "no-store",
+  }).then((response) => {
     if (!response.ok) {
       throw new Error(`Failed to load ${label} (${response.status})`);
     }

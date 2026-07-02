@@ -15,26 +15,30 @@ import com.pknu.spatium_backend.repository.MemberRepository;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class MemberService {
 
     private final MemberRepository memberRepository;
+
+    
+    // 디폴트 이미지 위치.
+    private static final String DEFAULT_PROFILE_IMAGE_URL = "http://localhost:8080/images/default-profile.png";
 
     // 일반 회원가입 (POST /api/users)
     @Transactional
     public Map<String, Object> postUserSignup(MemberSignupDTO memDTO) {
 
-        // ERD엔 동의여부 저장 컬럼이 없어서, 검증만 하고 DB엔 저장하지 않음
-        if (!memDTO.isTermsAgreed() || !memDTO.isPrivacyAgreed()) {
-            throw new ApiException(400, "TERMS_NOT_AGREED", "이용약관 및 개인정보처리방침에 동의해야 합니다.");
+        if (memberRepository.existsByMemEmail(memDTO.getEmail())) {
+            throw new IllegalArgumentException("이미 가입된 이메일입니다.");
         }
 
-        if (memberRepository.existsByMemEmail(memDTO.getEmail())) {
-            throw new ApiException(409, "DUPLICATED_EMAIL", "이미 사용 중인 이메일입니다.");
-        }
+        log.info("service");
 
         Member member = Member.builder()
             .mem_id(UUID.randomUUID().toString())
@@ -96,14 +100,16 @@ public class MemberService {
 
         Member savedMember = memberRepository.save(member);
 
-        return Map.of(
-            "userId", savedMember.getMem_id(),
-            "email", savedMember.getMem_email(),
-            "nickname", savedMember.getMem_nick(),
-            "profileImageUrl", ""
-        );
-    }
+        Map<String, Object> data = new HashMap<>();
+            data.put("userId", savedMember.getMem_id());
+            data.put("email", savedMember.getMem_email());
+            data.put("nickname", savedMember.getMem_nick());
+            data.put("profileImageUrl", DEFAULT_PROFILE_IMAGE_URL);
 
+            return data;
+        }
+
+    // 회원 조회
     public Map<String, Object> getMyInfo(String memId) {
         Member member = memberRepository.findById(memId)
             .orElseThrow(() -> new ApiException(404, "USER_NOT_FOUND", "회원을 찾을 수 없습니다."));
