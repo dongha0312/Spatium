@@ -26,10 +26,12 @@ public class Room {
     @Id
     private String room_id;
 
-    private String room_mem;
+    private String proj_code;
 
-    // BLOB 데이터 타입으로 매핑
+    // BLOB 데이터 타입으로 매핑 -> room json 파일 위치 URL
     @Lob
-    private byte[] room_3d;
+    private byte[] room_path;
+
+    private String room_name;
 
 }

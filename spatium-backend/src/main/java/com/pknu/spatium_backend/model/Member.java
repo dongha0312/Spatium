@@ -40,4 +40,6 @@ public class Member {
     @Lob
     private byte[] mem_img;
 
+    private String provider;
+
 }
