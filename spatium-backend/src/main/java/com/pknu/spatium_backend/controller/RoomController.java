@@ -10,14 +10,18 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.pknu.spatium_backend.dto.ResponseDTO;
+import com.pknu.spatium_backend.dto.RoomDTO.ResponseRoomCreateDTO;
 import com.pknu.spatium_backend.service.RoomService;
 
 import lombok.RequiredArgsConstructor;
@@ -115,4 +119,77 @@ public class RoomController {
         }
     }
 
-}
+    // 룸 생성하기
+    @PostMapping(
+            path = "/api/projects/{projectId}/rooms",
+            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
+    )
+    public ResponseEntity<?> createRoom(
+            @PathVariable String projectId,
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam String roomName,
+            @RequestPart("metadata") MultipartFile metadata,
+            @RequestPart("file") MultipartFile file
+    ) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
+            responseDTO.setStatusCode(401);
+            responseDTO.setMessage("로그인이 필요합니다.");
+            responseDTO.setData(null);
+
+            return ResponseEntity.status(401).body(responseDTO);
+        }
+
+        String userId = authorization.substring(7).trim();
+
+        if (userId.isEmpty()) {
+            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
+            responseDTO.setStatusCode(401);
+            responseDTO.setMessage("로그인이 필요합니다.");
+            responseDTO.setData(null);
+
+            return ResponseEntity.status(401).body(responseDTO);
+        }
+
+        try {
+            ResponseRoomCreateDTO data = roomService.createRoom(
+                    userId,
+                    projectId,
+                    roomName,
+                    metadata,
+                    file
+            );
+
+            ResponseDTO<ResponseRoomCreateDTO> responseDTO = new ResponseDTO<>();
+            responseDTO.setStatusCode(201);
+            responseDTO.setMessage("룸이 생성되었습니다.");
+            responseDTO.setData(data);
+
+            return ResponseEntity.status(201).body(responseDTO);
+        } catch (IllegalArgumentException e) {
+            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
+            responseDTO.setStatusCode(400);
+            responseDTO.setMessage(e.getMessage());
+            responseDTO.setData(null);
+
+            return ResponseEntity.badRequest().body(responseDTO);
+        } catch (IOException e) {
+            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
+            responseDTO.setStatusCode(500);
+            responseDTO.setMessage("룸 파일 저장에 실패했습니다.");
+            responseDTO.setData(null);
+
+            return ResponseEntity.internalServerError().body(responseDTO);
+        }
+    }
+        
+
+        // 룸 목록 조회
+        @GetMapping(path="api/project/{projectId}/rooms")
+        public String getMethodName(@RequestParam String projectId) {
+            return new String();
+        }
+        
+
+
+    }

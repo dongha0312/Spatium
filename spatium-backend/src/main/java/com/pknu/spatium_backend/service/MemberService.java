@@ -12,42 +12,51 @@ import com.pknu.spatium_backend.repository.MemberRepository;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class MemberService {
 
     private final MemberRepository memberRepository;
 
+    // 디폴트 이미지 위치.
+    private static final String DEFAULT_PROFILE_IMAGE_URL = "http://localhost:8080/images/default-profile.png";
+
+    // 일반 회원가입 기능
     @Transactional
     public Map<String, Object> postUserSignup(MemberSignupDTO memDTO) {
 
-        if (memberRepository.existsByMemEmail(memDTO.getMemEmail())) {
+        if (memberRepository.existsByMemEmail(memDTO.getEmail())) {
             throw new IllegalArgumentException("이미 가입된 이메일입니다.");
         }
 
+        log.info("service");
+
         Member member = Member.builder()
             .mem_id(UUID.randomUUID().toString())
-            .mem_email(memDTO.getMemEmail())
-            .mem_nick(memDTO.getMemNick())
-            .mem_pass(memDTO.getMemPass())
-            .mem_bir(memDTO.getMemBir())
-            .mem_sex(memDTO.getMemSex())
+            .mem_email(memDTO.getEmail())
+            .mem_nick(memDTO.getNickname())
+            .mem_pass(memDTO.getPassword())
+            .mem_bir(memDTO.getBirthDate())
+            .mem_sex(memDTO.getGender())
             .build();
 
         Member savedMember = memberRepository.save(member);
 
-        return Map.of(
-            "userId", savedMember.getMem_id(),
-            "email", savedMember.getMem_email(),
-            "nickname", savedMember.getMem_nick()
-            
-            // 이건 멤버 컬럼에 없어서 없앰.
-            // ,"createdAt", 
-        );
-    }
+        Map<String, Object> data = new HashMap<>();
+            data.put("userId", savedMember.getMem_id());
+            data.put("email", savedMember.getMem_email());
+            data.put("nickname", savedMember.getMem_nick());
+            data.put("profileImageUrl", DEFAULT_PROFILE_IMAGE_URL);
 
+            return data;
+        }
+
+    // 회원 조회
     public Map<String, Object> getMyInfo(String memId) {
         Member member = memberRepository.findById(memId)
             .orElseThrow(() -> new IllegalArgumentException("회원을 찾을 수 없습니다."));
