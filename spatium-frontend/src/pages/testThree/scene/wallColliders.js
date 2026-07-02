@@ -444,66 +444,60 @@ export function createWallColliders(roomModel) {
     if (!object.geometry.boundingBox || object.geometry.boundingBox.isEmpty())
       return;
 
-    const faceColliders = worldWallFaceCollidersFromGeometry(
-      object,
-      roomCenter,
+    const wallObb = worldObbFromLocalBox(
+      object.geometry.boundingBox,
+      object.matrixWorld,
     );
+    const thinnestAxis =
+      wallObb.halfSize.x <= wallObb.halfSize.y &&
+      wallObb.halfSize.x <= wallObb.halfSize.z
+        ? "x"
+        : wallObb.halfSize.y <= wallObb.halfSize.z
+          ? "y"
+          : "z";
+    const originalHalfThickness = wallObb.halfSize[thinnestAxis];
+    const nextHalfThickness = Math.min(
+      originalHalfThickness,
+      wallConfigNumber("colliderHalfThickness"),
+    );
+    const wallAxes = {
+      x: new THREE.Vector3(),
+      y: new THREE.Vector3(),
+      z: new THREE.Vector3(),
+    };
+    wallObb.rotation.extractBasis(wallAxes.x, wallAxes.y, wallAxes.z);
+    const wallNormal = wallAxes[thinnestAxis].clone().normalize();
+    const spanAxes = Object.entries(wallAxes)
+      .filter(([axisName]) => axisName !== thinnestAxis)
+      .map(([axisName, axis]) => ({
+        axis: axis.clone().normalize(),
+        halfSize: wallObb.halfSize[axisName],
+      }));
+    const renderRange = geometryProjectionRange(object, wallNormal);
+    const wallCenterProjection = renderRange
+      ? (renderRange.min + renderRange.max) / 2
+      : wallObb.center.dot(wallNormal);
+    const roomSide =
+      roomCenter.dot(wallNormal) >= wallCenterProjection ? 1 : -1;
+    const roomFacingProjection = renderRange
+      ? roomSide > 0
+        ? renderRange.max
+        : renderRange.min
+      : wallObb.center.dot(wallNormal) + roomSide * originalHalfThickness;
+    const nextCenterProjection =
+      roomFacingProjection - roomSide * nextHalfThickness;
+    const centerCorrection =
+      nextCenterProjection - wallObb.center.dot(wallNormal);
 
-    if (faceColliders.length) {
-      colliders.push(...faceColliders);
-      return;
-    }
+    wallObb.center.addScaledVector(wallNormal, centerCorrection);
+    wallObb.halfSize[thinnestAxis] = nextHalfThickness;
 
-    const wallObbs = worldWallObbsFromGeometry(object);
-    if (!wallObbs.length) {
-      wallObbs.push(
-        worldObbFromLocalBox(object.geometry.boundingBox, object.matrixWorld),
-      );
-    }
-
-    wallObbs.forEach((wallObb) => {
-      const thinnestAxis =
-        wallObb.halfSize.x <= wallObb.halfSize.y &&
-        wallObb.halfSize.x <= wallObb.halfSize.z
-          ? "x"
-          : wallObb.halfSize.y <= wallObb.halfSize.z
-            ? "y"
-            : "z";
-      const originalHalfThickness = wallObb.halfSize[thinnestAxis];
-      const nextHalfThickness = originalHalfThickness;
-      const wallAxes = {
-        x: new THREE.Vector3(),
-        y: new THREE.Vector3(),
-        z: new THREE.Vector3(),
-      };
-      wallObb.rotation.extractBasis(wallAxes.x, wallAxes.y, wallAxes.z);
-      const wallNormal = wallAxes[thinnestAxis].clone().normalize();
-      const spanAxes = Object.entries(wallAxes)
-        .filter(([axisName]) => axisName !== thinnestAxis)
-        .map(([axisName, axis]) => ({
-          axis: axis.clone().normalize(),
-          halfSize: wallObb.halfSize[axisName],
-        }));
-      const wallCenterProjection = wallObb.center.dot(wallNormal);
-      const roomSide =
-        roomCenter.dot(wallNormal) >= wallCenterProjection ? 1 : -1;
-      const roomFacingProjection =
-        wallObb.center.dot(wallNormal) + roomSide * originalHalfThickness;
-      const nextCenterProjection =
-        roomFacingProjection - roomSide * nextHalfThickness;
-      const centerCorrection =
-        nextCenterProjection - wallObb.center.dot(wallNormal);
-
-      wallObb.center.addScaledVector(wallNormal, centerCorrection);
-      wallObb.halfSize[thinnestAxis] = nextHalfThickness;
-
-      colliders.push({
-        object,
-        obb: wallObb,
-        spanAxes,
-        roomFacingNormal: wallNormal.clone().multiplyScalar(roomSide),
-        roomFacingProjection: roomFacingProjection * roomSide,
-      });
+    colliders.push({
+      object,
+      obb: wallObb,
+      spanAxes,
+      roomFacingNormal: wallNormal.clone().multiplyScalar(roomSide),
+      roomFacingProjection: roomFacingProjection * roomSide,
     });
   });
 
@@ -614,8 +608,25 @@ export function createWallColliderVisuals(wallColliders) {
     const center = wallBoundaryCenter(wall, normal);
     const outlineGeometry = createBoundaryOutlineGeometry(center, spanAxes);
     const baselineGeometry = createBoundaryBaselineGeometry(center, spanAxes);
-
-    if (!outlineGeometry && !baselineGeometry) return;
+    const colliderSize = wall.obb.halfSize.clone().multiplyScalar(2);
+    const colliderGeometry = new THREE.BoxGeometry(
+      colliderSize.x,
+      colliderSize.y,
+      colliderSize.z,
+    );
+    const colliderEdge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(colliderGeometry),
+      new THREE.LineBasicMaterial({
+        color: sceneColor("wallColliderDebug"),
+        transparent: true,
+        opacity: 0.42,
+        depthTest: false,
+        depthWrite: false,
+      }),
+    );
+    const colliderRotation = new THREE.Matrix4().setFromMatrix3(
+      wall.obb.rotation,
+    );
 
     const outline = outlineGeometry
       ? new THREE.LineSegments(
@@ -641,6 +652,12 @@ export function createWallColliderVisuals(wallColliders) {
           }),
         )
       : null;
+    colliderEdge.name = `wall-collider-obb-edge-${index + 1}`;
+    colliderEdge.position.copy(wall.obb.center);
+    colliderEdge.quaternion.setFromRotationMatrix(colliderRotation);
+    colliderEdge.renderOrder = 20;
+    group.add(colliderEdge);
+
     if (outline) {
       outline.name = `wall-collider-boundary-outline-${index + 1}`;
       outline.renderOrder = 21;
