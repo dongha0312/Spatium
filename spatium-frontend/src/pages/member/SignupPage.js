@@ -1,13 +1,22 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import "../../styles/signuppage.css";
 import { saveLoginSession } from "../../utils/authSession";
+import {
+  postUserSignup,
+  postSocialSignup,
+} from "../../springApi/MemberSpringBootApi";
 
 function SignupPage() {
-  // 이메일을 저장할 수 있는 상태변수(객체) 정의
-  const [email, setEmail] = useState("");
+  // 로그인 페이지의 구글 소셜 로그인에서 넘어온 경우, 구글 인증 결과(이메일)가 담겨있음
+  const location = useLocation();
+  const socialState = location.state || {};
+  const isGoogleSignup = socialState.socialProvider === "google";
 
-  // 닉네임을 저장할 수 있는 상태변수(객체) 정의
+  // 이메일을 저장할 수 있는 상태변수(객체) 정의 (구글 가입인 경우 구글 이메일로 미리 채움)
+  const [email, setEmail] = useState(socialState.email || "");
+
+  // 닉네임을 저장할 수 있는 상태변수(객체) 정의 (구글 가입이어도 직접 입력)
   const [nickname, setNickname] = useState("");
 
   // 비밀번호를 저장할 수 있는 상태변수(객체) 정의
@@ -24,7 +33,7 @@ function SignupPage() {
 
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (!agree) {
@@ -32,14 +41,45 @@ function SignupPage() {
       return;
     }
 
-    alert(
-      `회원가입 정보\n이메일 : ${email}\n닉네임 : ${nickname}\n생년월일 : ${birth}\n성별 : ${gender === "male" ? "남성" : "여성"}`,
-    );
+    // 백엔드는 성별을 0(남성) / 1(여성)로 받음
+    const genderCode = gender === "male" ? "0" : "1";
 
-    // TODO: 추후 백엔드(springApi) 회원가입 API 연동
-    // 회원가입 완료 시 바로 로그인 세션 저장 (입력한 닉네임 그대로 사용)
-    saveLoginSession(email, nickname);
-    navigate("/");
+    try {
+      if (isGoogleSignup) {
+        // 소셜 회원가입 : LoginPage에서 넘겨받은 provider/providerUserId(구글 sub)로 가입
+        await postSocialSignup({
+          provider: socialState.provider,
+          providerUserId: socialState.providerUserId,
+          email,
+          nickname,
+          birthDate: birth,
+          gender: genderCode,
+          termsAgreed: agree,
+          privacyAgreed: agree,
+        });
+      } else {
+        // 일반 회원가입
+        await postUserSignup({
+          email,
+          nickname,
+          password: pw,
+          birthDate: birth,
+          gender: genderCode,
+          termsAgreed: agree,
+          privacyAgreed: agree,
+        });
+      }
+
+      // 회원가입 성공 시 로그인 세션 저장 (입력한 닉네임 그대로 사용)
+      //  - 소셜(구글) 가입 회원은 provider를 "GOOGLE"로 저장 -> 계정설정 진입 시 비밀번호 게이트 생략용
+      saveLoginSession(email, nickname, isGoogleSignup ? "GOOGLE" : "LOCAL");
+      navigate("/");
+    } catch (err) {
+      console.error("회원가입 중 오류:", err);
+      alert(
+        err.message || "회원가입 중 문제가 발생했습니다. 다시 시도해주세요.",
+      );
+    }
   };
 
   return (
@@ -66,7 +106,13 @@ function SignupPage() {
           <form className="su-auth-form" onSubmit={handleSubmit}>
             <div className="su-auth-form-title">회원가입</div>
             <div className="su-auth-form-sub">
-              이미 계정이 있으신가요? <Link to="/auth/login">로그인 →</Link>
+              {isGoogleSignup ? (
+                <>구글 계정으로 회원가입을 진행합니다.</>
+              ) : (
+                <>
+                  이미 계정이 있으신가요? <Link to="/auth/login">로그인 →</Link>
+                </>
+              )}
             </div>
 
             <div className="su-fgrp">
@@ -76,6 +122,7 @@ function SignupPage() {
                 type="email"
                 value={email}
                 required
+                readOnly={isGoogleSignup}
                 placeholder="name@example.com"
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -95,27 +142,32 @@ function SignupPage() {
               />
             </div>
 
-            <div className="su-fgrp">
-              <label className="su-flabel">비밀번호</label>
-              <input
-                className="su-finput"
-                type="password"
-                value={pw}
-                required
-                placeholder="8자 이상, 영문+숫자 포함"
-                onChange={(e) => setPw(e.target.value)}
-              />
-            </div>
+            {/* 소셜(구글) 회원가입인 경우, 이미 구글 인증으로 신원이 확인됐으므로 비밀번호 입력 생략 */}
+            {!isGoogleSignup && (
+              <div className="su-fgrp">
+                <label className="su-flabel">비밀번호</label>
+                <input
+                  className="su-finput"
+                  type="password"
+                  value={pw}
+                  required
+                  placeholder="8자 이상, 영문+숫자 포함"
+                  onChange={(e) => setPw(e.target.value)}
+                />
+              </div>
+            )}
 
             <div className="su-form-row2">
               <div className="su-fgrp">
                 <label className="su-flabel">생년월일</label>
+                {/* DB 컬럼(mem_bir)이 VARCHAR2(10)이라 YYYY-MM-DD(10자리) 형식만 허용됨 */}
+                {/* type="date"를 쓰면 브라우저가 항상 YYYY-MM-DD 형식의 값을 만들어줌 */}
                 <input
                   className="su-finput"
-                  type="text"
+                  type="date"
                   value={birth}
                   required
-                  placeholder="YY.MM.DD"
+                  max={new Date().toISOString().slice(0, 10)}
                   onChange={(e) => setBirth(e.target.value)}
                 />
               </div>
