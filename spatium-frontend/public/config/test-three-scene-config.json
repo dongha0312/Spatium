@@ -1,7 +1,7 @@
 {
   "room": {
-    "modelUrl": "/testdata/room-scan.usdz",
-    "metadataUrl": "/testdata/ai-edit-request.json"
+    "modelUrl": "/testdata/domitory_test.usdz",
+    "metadataUrl": "/testdata/domitory_test.json"
   },
   "save": {
     "metadataApiUrl": "/api/test-three/metadata"

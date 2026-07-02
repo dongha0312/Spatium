@@ -3,6 +3,67 @@ import { OBB } from "three/examples/jsm/math/OBB.js";
 import { categoryColor, referenceFallbackThickness, sceneColor } from "./sceneConfig";
 import { decomposeRoomTransform } from "./threeUtils";
 
+function createCenteredLocalObb(size) {
+  return new OBB(
+    new THREE.Vector3(0, 0, 0),
+    size.clone().multiplyScalar(0.5),
+  );
+}
+
+function createLocalObbFromBounds(bounds, fallbackSize) {
+  if (!bounds || bounds.isEmpty()) {
+    return createCenteredLocalObb(fallbackSize);
+  }
+
+  const size = bounds.getSize(new THREE.Vector3());
+  if (size.x <= 0 || size.y <= 0 || size.z <= 0) {
+    return createCenteredLocalObb(fallbackSize);
+  }
+
+  return new OBB(bounds.getCenter(new THREE.Vector3()), size.multiplyScalar(0.5));
+}
+
+function createCollisionBoxLine(localObb, opacity = 0.55) {
+  const size = localObb.halfSize.clone().multiplyScalar(2);
+  const boxGeometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+  const edgeGeometry = new THREE.EdgesGeometry(boxGeometry);
+  const edge = new THREE.LineSegments(
+    edgeGeometry,
+    new THREE.LineBasicMaterial({
+      color: sceneColor("defaultEdge"),
+      transparent: true,
+      opacity,
+    }),
+  );
+  const rotation = new THREE.Matrix4().setFromMatrix3(localObb.rotation);
+
+  boxGeometry.dispose();
+  edge.name = "collision-box-line";
+  edge.position.copy(localObb.center);
+  edge.quaternion.setFromRotationMatrix(rotation);
+  edge.visible = false;
+  return edge;
+}
+
+function createPickOnlyMaterial(color) {
+  return new THREE.MeshBasicMaterial({
+    color,
+    opacity: 0,
+    transparent: true,
+    depthWrite: false,
+    colorWrite: false,
+  });
+}
+
+function createCollisionHitBox(localObb, color) {
+  const size = localObb.halfSize.clone().multiplyScalar(2);
+  const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+  const mesh = new THREE.Mesh(geometry, createPickOnlyMaterial(color));
+
+  mesh.position.copy(localObb.center);
+  return mesh;
+}
+
 export function createEditableFurniture(item, index) {
   const dimensions = item.dimensions || {};
   const category = item.category || "object";
@@ -10,6 +71,9 @@ export function createEditableFurniture(item, index) {
   const width = Math.max(dimensions.x || 0.1, 0.04);
   const height = Math.max(dimensions.y || 0.1, 0.04);
   const depth = Math.max(dimensions.z || 0.1, 0.04);
+  const localObb = createCenteredLocalObb(
+    new THREE.Vector3(width, height, depth),
+  );
   const geometry = new THREE.BoxGeometry(width, height, depth);
   const material = new THREE.MeshStandardMaterial({
     color,
@@ -18,14 +82,7 @@ export function createEditableFurniture(item, index) {
     roughness: 0.72,
   });
   const mesh = new THREE.Mesh(geometry, material);
-  const edge = new THREE.LineSegments(
-    new THREE.EdgesGeometry(geometry),
-    new THREE.LineBasicMaterial({
-      color: sceneColor("defaultEdge"),
-      transparent: true,
-      opacity: 0.5,
-    }),
-  );
+  const edge = createCollisionBoxLine(localObb, 0.5);
   const root = new THREE.Group();
   const transform = decomposeRoomTransform(item);
 
@@ -38,10 +95,7 @@ export function createEditableFurniture(item, index) {
     roomItem: item,
     sourceType: "object",
     sourceIndex: index,
-    localObb: new OBB(
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(width / 2, height / 2, depth / 2),
-    ),
+    localObb,
     visualMesh: mesh,
     edgeLine: edge,
     baseColor: new THREE.Color(color),
@@ -62,7 +116,6 @@ export function createEditableFurniture(item, index) {
   mesh.receiveShadow = true;
   mesh.userData.editableRoot = root;
 
-  edge.visible = false;
   edge.userData.editableRoot = root;
 
   root.add(mesh, edge);
@@ -149,42 +202,35 @@ export function createEditableFurnitureModel(modelTemplate, item, index) {
   const root = new THREE.Group();
   const model = modelTemplate.clone(true);
   const transform = decomposeRoomTransform(item);
-  const hitGeometry = new THREE.BoxGeometry(
-    targetSize.x,
-    targetSize.y,
-    targetSize.z,
-  );
-  const hitBox = new THREE.Mesh(
-    hitGeometry,
-    new THREE.MeshBasicMaterial({
-      color: categoryColor(category),
-      opacity: 0.001,
-      transparent: true,
-      depthWrite: false,
-    }),
-  );
-  const edge = new THREE.LineSegments(
-    new THREE.EdgesGeometry(hitGeometry),
-    new THREE.LineBasicMaterial({
-      color: sceneColor("defaultEdge"),
-      transparent: true,
-      opacity: 0.55,
-    }),
-  );
 
   root.name = `${category}-${index + 1}`;
   root.position.copy(transform.position);
   root.quaternion.copy(transform.quaternion);
   root.scale.copy(transform.scale);
+
+  model.traverse((object) => {
+    if (object.isMesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+      object.userData.editableRoot = root;
+    }
+  });
+
+  fitModelToTargetSize(model, targetSize);
+
+  const localObb = createLocalObbFromBounds(
+    getBaseGeometryBounds(model),
+    targetSize,
+  );
+  const hitBox = createCollisionHitBox(localObb, categoryColor(category));
+  const edge = createCollisionBoxLine(localObb);
+
   root.userData = {
     editable: true,
     roomItem: item,
     sourceType: "object",
     sourceIndex: index,
-    localObb: new OBB(
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(targetSize.x / 2, targetSize.y / 2, targetSize.z / 2),
-    ),
+    localObb,
     edgeLine: edge,
     baseEdgeColor: new THREE.Color(sceneColor("defaultEdge")),
     selectedEdgeColor: new THREE.Color(sceneColor("selectedEdge")),
@@ -198,17 +244,7 @@ export function createEditableFurnitureModel(modelTemplate, item, index) {
     lastValidScale: transform.scale.clone(),
   };
 
-  model.traverse((object) => {
-    if (object.isMesh) {
-      object.castShadow = true;
-      object.receiveShadow = true;
-      object.userData.editableRoot = root;
-    }
-  });
-
-  fitModelToTargetSize(model, targetSize);
   hitBox.userData.editableRoot = root;
-  edge.visible = false;
   edge.userData.editableRoot = root;
 
   root.add(model, hitBox, edge);
@@ -227,43 +263,37 @@ export function createDoorModel(doorTemplate, item, index) {
   const root = new THREE.Group();
   const model = doorTemplate.clone(true);
   const transform = decomposeRoomTransform(item);
-  const hitGeometry = new THREE.BoxGeometry(
-    targetSize.x,
-    targetSize.y,
-    targetSize.z,
-  );
-  const hitBox = new THREE.Mesh(
-    hitGeometry,
-    new THREE.MeshBasicMaterial({
-      color: sceneColor("doorReference"),
-      opacity: 0.001,
-      transparent: true,
-      depthWrite: false,
-    }),
-  );
-  const edge = new THREE.LineSegments(
-    new THREE.EdgesGeometry(hitGeometry),
-    new THREE.LineBasicMaterial({
-      color: sceneColor("defaultEdge"),
-      transparent: true,
-      opacity: 0.55,
-    }),
-  );
 
   root.name = `door-${index + 1}`;
   root.position.copy(transform.position);
   root.quaternion.copy(transform.quaternion);
   root.scale.copy(transform.scale);
+
+  removeReferenceModelArtifacts(model);
+  model.traverse((object) => {
+    if (object.isMesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+      object.userData.editableRoot = root;
+    }
+  });
+
+  fitModelToTargetSize(model, targetSize);
+
+  const localObb = createLocalObbFromBounds(
+    getBaseGeometryBounds(model),
+    targetSize,
+  );
+  const hitBox = createCollisionHitBox(localObb, sceneColor("doorReference"));
+  const edge = createCollisionBoxLine(localObb);
+
   root.userData = {
     editable: false,
     category: "door",
     roomItem: doorItem,
     sourceType: "door",
     sourceIndex: index,
-    localObb: new OBB(
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(targetSize.x / 2, targetSize.y / 2, targetSize.z / 2),
-    ),
+    localObb,
     edgeLine: edge,
     baseEdgeColor: new THREE.Color(sceneColor("defaultEdge")),
     selectedEdgeColor: new THREE.Color(sceneColor("selectedEdge")),
@@ -277,18 +307,7 @@ export function createDoorModel(doorTemplate, item, index) {
     lastValidScale: transform.scale.clone(),
   };
 
-  removeReferenceModelArtifacts(model);
-  model.traverse((object) => {
-    if (object.isMesh) {
-      object.castShadow = true;
-      object.receiveShadow = true;
-      object.userData.editableRoot = root;
-    }
-  });
-
-  fitModelToTargetSize(model, targetSize);
   hitBox.userData.editableRoot = root;
-  edge.visible = false;
   edge.userData.editableRoot = root;
 
   root.add(model, hitBox, edge);
@@ -307,43 +326,37 @@ export function createWindowModel(windowTemplate, item, index) {
   const root = new THREE.Group();
   const model = windowTemplate.clone(true);
   const transform = decomposeRoomTransform(item);
-  const hitGeometry = new THREE.BoxGeometry(
-    targetSize.x,
-    targetSize.y,
-    targetSize.z,
-  );
-  const hitBox = new THREE.Mesh(
-    hitGeometry,
-    new THREE.MeshBasicMaterial({
-      color: sceneColor("windowReference"),
-      opacity: 0.001,
-      transparent: true,
-      depthWrite: false,
-    }),
-  );
-  const edge = new THREE.LineSegments(
-    new THREE.EdgesGeometry(hitGeometry),
-    new THREE.LineBasicMaterial({
-      color: sceneColor("defaultEdge"),
-      transparent: true,
-      opacity: 0.55,
-    }),
-  );
 
   root.name = `window-${index + 1}`;
   root.position.copy(transform.position);
   root.quaternion.copy(transform.quaternion);
   root.scale.copy(transform.scale);
+
+  removeReferenceModelArtifacts(model);
+  model.traverse((object) => {
+    if (object.isMesh) {
+      object.castShadow = true;
+      object.receiveShadow = true;
+      object.userData.editableRoot = root;
+    }
+  });
+
+  fitModelToTargetSize(model, targetSize);
+
+  const localObb = createLocalObbFromBounds(
+    getBaseGeometryBounds(model),
+    targetSize,
+  );
+  const hitBox = createCollisionHitBox(localObb, sceneColor("windowReference"));
+  const edge = createCollisionBoxLine(localObb);
+
   root.userData = {
     editable: false,
     category: "window",
     roomItem: windowItem,
     sourceType: "window",
     sourceIndex: index,
-    localObb: new OBB(
-      new THREE.Vector3(0, 0, 0),
-      new THREE.Vector3(targetSize.x / 2, targetSize.y / 2, targetSize.z / 2),
-    ),
+    localObb,
     edgeLine: edge,
     baseEdgeColor: new THREE.Color(sceneColor("defaultEdge")),
     selectedEdgeColor: new THREE.Color(sceneColor("selectedEdge")),
@@ -357,18 +370,7 @@ export function createWindowModel(windowTemplate, item, index) {
     lastValidScale: transform.scale.clone(),
   };
 
-  removeReferenceModelArtifacts(model);
-  model.traverse((object) => {
-    if (object.isMesh) {
-      object.castShadow = true;
-      object.receiveShadow = true;
-      object.userData.editableRoot = root;
-    }
-  });
-
-  fitModelToTargetSize(model, targetSize);
   hitBox.userData.editableRoot = root;
-  edge.visible = false;
   edge.userData.editableRoot = root;
 
   root.add(model, hitBox, edge);
