@@ -8,7 +8,6 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 
 @Entity
 @Table(name="Room")
@@ -26,12 +25,13 @@ public class Room {
     @Id
     private String room_id;
 
-    private String proj_code;
+    private String room_proj;
 
-    // BLOB 데이터 타입으로 매핑 -> room json 파일 위치 URL
-    @Lob
-    private byte[] room_path;
+    // room json/usdz 파일 저장 위치
+    private String room_path;
 
     private String room_name;
+
+    private String room_area;
 
 }
