@@ -11,6 +11,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.pknu.spatium_backend.dto.MemberDTO.MemberSignupDTO;
+import com.pknu.spatium_backend.exception.ApiException;
 import com.pknu.spatium_backend.service.MemberService;
 
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,19 @@ public class UserController {
 
     private final MemberService memberService;
 
+    // 일반 회원가입 (POST /api/users)
+    @PostMapping
+    public ResponseEntity<?> postSignup(@RequestBody MemberSignupDTO memDTO) {
+        try {
+            return ResponseEntity.status(201).body(Map.of(
+                "statusCode", 201,
+                "message", "회원가입이 완료되었습니다.",
+                "data", memberService.postUserSignup(memDTO)
+            ));
+        } catch (ApiException e) {
+            return buildErrorResponse(e);
+        }
+    }
 
     @PostMapping(path = "/me")
     // 테스트 할 수가 없어서 우선 RequestBody로 해 둠.
@@ -45,13 +60,8 @@ public class UserController {
                 "message", "내 정보 조회에 성공했습니다.",
                 "data", memberService.getMyInfo(memId.trim())
             ));
-        } catch (IllegalArgumentException e) {
-            Map<String, Object> errorBody = new HashMap<>();
-            errorBody.put("statusCode", 404);
-            errorBody.put("message", e.getMessage());
-            errorBody.put("data", null);
-
-            return ResponseEntity.status(404).body(errorBody);
+        } catch (ApiException e) {
+            return buildErrorResponse(e);
         }
     }
 
@@ -107,14 +117,19 @@ public class UserController {
 
             return ResponseEntity.status(204).body(responseBody);
 
-        } catch (IllegalArgumentException e) {
-            Map<String, Object> errorBody = new HashMap<>();
-            errorBody.put("statusCode", 400);
-            errorBody.put("message", e.getMessage());
-            errorBody.put("data", null);
-
-            return ResponseEntity.badRequest().body(errorBody);
+        } catch (ApiException e) {
+            return buildErrorResponse(e);
         }
+    }
+
+    // 명세서의 공통 에러 응답 형식 : {statusCode, code, message, errors}
+    private ResponseEntity<?> buildErrorResponse(ApiException e) {
+        return ResponseEntity.status(e.getStatusCode()).body(Map.of(
+            "statusCode", e.getStatusCode(),
+            "code", e.getCode(),
+            "message", e.getMessage(),
+            "errors", java.util.List.of()
+        ));
     }
 
 }

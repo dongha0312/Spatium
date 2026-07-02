@@ -12,8 +12,9 @@ function deriveNickname(email) {
 
 // 로그인/회원가입 성공 시 세션 저장
 //  - nickname을 직접 넘기면 그대로 사용하고(회원가입), 생략하면 이메일에서 유추함(로그인)
-export function saveLoginSession(email, nickname) {
-    const session = { email, nickname: nickname || deriveNickname(email) };
+//  - provider : "LOCAL"(일반 가입) | "GOOGLE" 등 (소셜 가입은 비밀번호가 없어서 구분이 필요함)
+export function saveLoginSession(email, nickname, provider = "LOCAL") {
+    const session = { email, nickname: nickname || deriveNickname(email), provider };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
     return session;
 }
