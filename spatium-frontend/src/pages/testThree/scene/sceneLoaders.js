@@ -2,7 +2,6 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { USDLoader } from "three/examples/jsm/loaders/USDLoader.js";
 import {
   SCENE_CONFIG_URL,
-  getMetadataSaveApiUrl,
   getModelUrls,
   normalizeModelKey,
 } from "./sceneConfig";
@@ -104,10 +103,11 @@ export function fetchJson(url, label) {
   });
 }
 
-export function saveMetadataJson(metadataUrl, metadata) {
+export function saveMetadataJson(metadata, saveContext = {}) {
   return saveRoomMetadataJson({
-    apiUrl: getMetadataSaveApiUrl(),
-    metadataUrl,
+    projectId: saveContext.projectId,
+    roomId: saveContext.roomId,
     metadata,
+    accessToken: saveContext.accessToken,
   });
 }
