@@ -9,6 +9,7 @@ import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -23,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.pknu.spatium_backend.dto.ResponseDTO;
 import com.pknu.spatium_backend.dto.RoomDTO.ResponseRoomCreateDTO;
 import com.pknu.spatium_backend.service.RoomService;
+import com.pknu.spatium_backend.util.JwtUtil;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -33,6 +35,7 @@ import lombok.extern.slf4j.Slf4j;
 public class RoomController {
 
     private final RoomService roomService;
+    private final JwtUtil jwtUtil;
 
     @PostMapping(path = "/api/scans", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<String> post3dData(
@@ -129,9 +132,10 @@ public class RoomController {
             return ResponseEntity.status(401).body(responseDTO);
         }
 
-        String userId = authorization.substring(7).trim();
+        String accessToken = authorization.substring(7).trim();
+        String userId = jwtUtil.validateAndGetMemId(accessToken);
 
-        if (userId.isEmpty()) {
+        if (userId == null || userId.isBlank()) {
             ResponseDTO<Object> responseDTO = new ResponseDTO<>();
             responseDTO.setStatusCode(401);
             responseDTO.setMessage("로그인이 필요합니다.");
@@ -184,11 +188,62 @@ public class RoomController {
             @RequestParam("roomId") String roomId,
             @RequestPart("metadata") MultipartFile metadata,
             @RequestHeader("Authorization") String authorizationHeader) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(401).body("로그인이 필요합니다.");
+        }
+
+        String accessToken = authorizationHeader.substring(7).trim();
+
         return roomService.saveEditedRoom(
-                authorizationHeader,
+                accessToken,
                 projectId,
                 roomId,
                 metadata);
+    }
+
+    // 룸 삭제
+    @DeleteMapping(path = "/api/rooms")
+    public ResponseEntity<?> deleteRoom(
+            @RequestBody Map<String, String> requestBody,
+            @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
+            responseDTO.setStatusCode(401);
+            responseDTO.setMessage("로그인이 필요합니다.");
+            responseDTO.setData(null);
+
+            return ResponseEntity.status(401).body(responseDTO);
+        }
+
+        String accessToken = authorizationHeader.substring(7).trim();
+        String projectId = requestBody == null ? null : requestBody.get("projectId");
+        String roomId = requestBody == null ? null : requestBody.get("roomId");
+
+        try {
+            roomService.deleteRoom(accessToken, projectId, roomId);
+
+            ResponseDTO<String> responseDTO = new ResponseDTO<>();
+            responseDTO.setStatusCode(200);
+            responseDTO.setMessage("룸 삭제에 성공했습니다.");
+            responseDTO.setData(roomId);
+
+            return ResponseEntity.ok(responseDTO);
+        } catch (IllegalArgumentException e) {
+            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
+            int statusCode = "로그인이 필요합니다.".equals(e.getMessage()) ? 401 : 404;
+            responseDTO.setStatusCode(statusCode);
+            responseDTO.setMessage(e.getMessage());
+            responseDTO.setData(null);
+
+            return ResponseEntity.status(statusCode).body(responseDTO);
+        } catch (IllegalStateException e) {
+            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
+            responseDTO.setStatusCode(500);
+            responseDTO.setMessage(e.getMessage());
+            responseDTO.setData(null);
+
+            return ResponseEntity.status(500).body(responseDTO);
+        }
     }
 
 }
