@@ -1,23 +1,26 @@
 // MemberService.java
 package com.pknu.spatium_backend.service;
 
-import java.util.Map;
 import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 
+import com.pknu.spatium_backend.dto.MemberDTO.LoginRequest;
+import com.pknu.spatium_backend.dto.MemberDTO.LoginResponse;
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSignupDTO;
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSocialLoginDTO;
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSocialSignupDTO;
+import com.pknu.spatium_backend.dto.MemberDTO.UserSummaryResponse;
 import com.pknu.spatium_backend.exception.ApiException;
 import com.pknu.spatium_backend.model.Member;
 import com.pknu.spatium_backend.repository.MemberRepository;
+import com.pknu.spatium_backend.util.JwtUtil;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -26,7 +29,9 @@ public class MemberService {
 
     private final MemberRepository memberRepository;
 
-    
+    private final JwtUtil jwtUtil;
+
+
     // 디폴트 이미지 위치.
     private static final String DEFAULT_PROFILE_IMAGE_URL = "http://localhost:8080/images/default-profile.png";
 
@@ -57,6 +62,34 @@ public class MemberService {
             "email", savedMember.getMem_email(),
             "nickname", savedMember.getMem_nick(),
             "profileImageUrl", ""
+        );
+    }
+
+    // 일반 로그인 (POST /api/auth/sessions)
+    //  - stateless JWT 방식 : DB에 세션을 저장하지 않고 토큰만 발급함
+    public LoginResponse login(LoginRequest dto) {
+        // 이메일 없음 / 비번 불일치 모두 같은 에러 → 어떤 이메일이 가입돼 있는지 노출하지 않기 위함
+        Member member = memberRepository.findByMemEmail(dto.getEmail())
+            .orElseThrow(() -> new ApiException(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 일치하지 않습니다."));
+
+        // 소셜 계정은 mem_pass가 null이므로 일반 로그인 불가
+        if (member.getMem_pass() == null || !member.getMem_pass().equals(dto.getPassword())) {
+            throw new ApiException(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 일치하지 않습니다.");
+        }
+
+        UserSummaryResponse user = new UserSummaryResponse(
+            member.getMem_id(),
+            member.getMem_email(),
+            member.getMem_nick(),
+            null
+        );
+
+        return new LoginResponse(
+            jwtUtil.createAccessToken(member.getMem_id()),
+            jwtUtil.createRefreshToken(member.getMem_id()),
+            "Bearer",
+            JwtUtil.ACCESS_TOKEN_EXPIRES_IN,
+            user
         );
     }
 

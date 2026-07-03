@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../../styles/mypage.css";
-import { clearLoginSession } from "../../utils/authSession";
+import { clearLoginSession, getAccessToken } from "../../utils/authSession";
+import { deleteLogout } from "../../springApi/MemberSpringBootApi";
 
 // 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
 const USER = {
@@ -96,7 +97,19 @@ function MyPage() {
     navigate("/member/account");
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // 백엔드 로그아웃 API 호출 (DELETE /api/auth/sessions/current)
+    //  - 토큰이 만료됐거나 없어도(401) 클라이언트 세션은 지워야 하므로,
+    //    실패해도 무시하고 항상 세션 삭제 + 메인 이동을 진행함
+    try {
+      const accessToken = getAccessToken();
+      if (accessToken) {
+        await deleteLogout(accessToken);
+      }
+    } catch (err) {
+      console.warn("로그아웃 API 호출 실패(세션은 삭제됨):", err);
+    }
+
     alert("로그아웃 되었습니다.");
     clearLoginSession();
     navigate("/");

@@ -26,6 +26,26 @@ export const postUserSignup = (memDTO) =>
     .then((response) => response.data)
     .catch(throwApiError);
 
+// 일반 로그인 (POST /api/auth/sessions)
+//  - 성공 시 data에 accessToken, refreshToken, tokenType, expiresIn, user가 담김
+//  - 실패(이메일/비번 불일치) 시 401 에러 발생 (err.status === 401, err.code === "INVALID_CREDENTIALS")
+export const postLogin = ({ email, password }) =>
+  springApi
+    .post("/api/auth/sessions", { email, password })
+    .then((response) => response.data)
+    .catch(throwApiError);
+
+// 로그아웃 (DELETE /api/auth/sessions/current)
+//  - Authorization 헤더에 accessToken 필요, 성공 시 204 (body 없음)
+//  - 토큰이 유효하지 않으면 401 에러 발생
+export const deleteLogout = (accessToken) =>
+  springApi
+    .delete("/api/auth/sessions/current", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    })
+    .then((response) => response.data)
+    .catch(throwApiError);
+
 // 소셜 로그인 (POST /api/auth/social-sessions)
 //  - 성공 시 기존 회원 정보 반환, 미가입 회원이면 404 에러 발생 (err.status === 404로 구분)
 export const postSocialLogin = ({ provider, providerUserId, email }) =>
