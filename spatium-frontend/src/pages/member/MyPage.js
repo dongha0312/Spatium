@@ -5,15 +5,16 @@ import { clearLoginSession, getAccessToken } from "../../utils/authSession";
 import { deleteLogout, getMyInfo } from "../../springApi/MemberSpringBootApi";
 import { getProjectList, postProject } from "../../springApi/ProjectSpringBootAPi";
 import { getRoomList, postRoom } from "../../springApi/RoomSpringBootApi";
+import { deleteRoom } from "../../springApi/RoomSpringBootApi";
 
 const DEFAULT_USER = {
   initial: "S",
+
   name: "SPATIUM",
   fullName: "SPATIUM",
   handle: "",
   email: "",
-import { deleteLogout } from "../../springApi/MemberSpringBootApi";
-import { deleteRoom } from "../../springApi/RoomSpringBootApi";
+}
 
 // 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
 const USER = {
