@@ -34,7 +34,7 @@ public class RoomController {
 
     private final RoomService roomService;
 
-    @PostMapping(path = "/api/models", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping(path = "/api/scans", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<String> post3dData(
             @RequestPart("metadata") String jsonDataFile,
             @RequestPart("file") MultipartFile usdzDataFile)
