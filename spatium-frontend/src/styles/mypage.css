@@ -862,3 +862,22 @@
   border: 1px solid var(--g);
   color: #fff;
 }
+
+.mp-room-delete-btn {
+  flex-shrink: 0;
+  border: 1px solid #E8B4A8;
+  background: #FFF6F4;
+  color: #B0442E;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .12s;
+}
+
+.mp-room-delete-btn:hover {
+  border-color: #D77A63;
+  background: #FFE9E4;
+}

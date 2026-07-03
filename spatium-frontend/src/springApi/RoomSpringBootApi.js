@@ -60,3 +60,27 @@ export const postRoom = (projectId) => {
 export const getRoomList = (projectId) => {
   return springApi.get(`/api/projects/${projectId}/rooms`);
 };
+
+// 내 방 삭제
+export const deleteRoom = ({ projectId, roomId, accessToken }) => {
+  return springApi
+    .delete("/api/rooms", {
+      data: {
+        projectId,
+        roomId,
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+    .then((response) => response.data)
+    .catch((error) => {
+      const responseData = error.response?.data;
+      const message =
+        typeof responseData === "string"
+          ? responseData
+          : responseData?.message || error.message;
+
+      throw new Error(message);
+    });
+};
