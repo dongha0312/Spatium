@@ -14,13 +14,14 @@ const USER = {
 function AccountSettings() {
   const navigate = useNavigate();
 
-  // 소셜(구글) 가입 회원 여부 : 회원가입 때 비밀번호를 입력한 적이 없으므로 재확인 게이트를 건너뜀
+  // 소셜(구글) 가입 회원 여부 : 회원가입 때 비밀번호를 입력한 적이 없음 -> 바로 계정설정 페이지로
   const session = getLoginSession();
   const isSocialMember = session?.provider && session.provider !== "LOCAL";
 
   // 계정설정 화면 진입 전 비밀번호 재확인 게이트
   //  - true가 되기 전까지는 아래 실제 설정 화면 대신 비밀번호 입력 화면을 보여줌
   //  - 소셜 가입 회원은 비밀번호가 없으므로 처음부터 통과 상태로 시작함
+  
   //  - TODO: 일반 회원 쪽도 지금은 프론트 UI만 먼저 만든 상태라 실제 검증 없이 통과시킴.
   //          추후 백엔드 비밀번호 검증 API 연동 예정.
   const [verified, setVerified] = useState(isSocialMember);
