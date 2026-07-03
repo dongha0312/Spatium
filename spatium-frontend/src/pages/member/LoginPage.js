@@ -38,8 +38,7 @@ function LoginPage({ onLoginSuccess }) {
 
     try {
       // 백엔드 로그인 API 호출 (POST /api/auth/sessions)
-      const result = await postLogin({ email, password: pw });
-      const data = result.data || {};
+      const data = await postLogin({ email, password: pw });
 
       // 로그인 세션 저장 (백엔드가 내려준 닉네임 + JWT 토큰)
       saveLoginSession(email, data.user?.nickname, "LOCAL", {
@@ -85,14 +84,13 @@ function LoginPage({ onLoginSuccess }) {
       const profile = await res.json();
 
       try {
-        const result = await postSocialLogin({
+        const data = await postSocialLogin({
           provider: "GOOGLE",
           providerUserId: profile.sub,
           email: profile.email,
         });
 
         // 기존 가입된 구글 계정 : 로그인 처리 (백엔드가 발급한 JWT 토큰도 함께 저장)
-        const data = result.data || {};
         saveLoginSession(profile.email, data.user?.nickname, "GOOGLE", {
           accessToken: data.accessToken,
           refreshToken: data.refreshToken,

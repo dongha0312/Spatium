@@ -1,16 +1,17 @@
 import { springApi } from "../config/axiosInstance";
+import { throwApiError, unwrapApiData } from "../utils/apiResponse";
 
-// 프로젝트 목록 조회
-export const getProjectList = () => {
-    return springApi.get("/api/projects")
-}
+export const getProjectList = (params = {}) =>
+  springApi.get("/api/projects", { params }).then(unwrapApiData).catch(throwApiError);
 
-// 새 프로젝트 생성
-export const postProject = () => {
-    return springApi.post("/api/projects")
-}
+export const postProject = (projectName) =>
+  springApi
+    .post("/api/projects", { projectName })
+    .then(unwrapApiData)
+    .catch(throwApiError);
 
-// 프로젝트 상세 조회
-export const  getProjectInfo= (project) => {
-    return springApi.get(`/api/projects/${project}`)
-}
+export const getProjectInfo = (projectId) =>
+  springApi
+    .get(`/api/projects/${projectId}`)
+    .then(unwrapApiData)
+    .catch(throwApiError);

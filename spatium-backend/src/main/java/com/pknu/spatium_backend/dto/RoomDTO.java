@@ -25,4 +25,19 @@ public class RoomDTO {
 
         private String roomName;
     }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ResponseRoomSummaryDTO {
+        private String roomId;
+
+        private String roomName;
+
+        private String area;
+
+        private String thumbnailUrl;
+
+        private String updatedAt;
+    }
 }

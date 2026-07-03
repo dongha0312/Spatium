@@ -1,4 +1,5 @@
 package com.pknu.spatium_backend.repository;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -22,4 +23,9 @@ public interface RoomRepository extends JpaRepository<Room, String>{
             @Param("roomId") String roomId,
             @Param("projectId") String projectId);
 
+    @Query("SELECT r FROM Room r WHERE r.room_proj = :projectId")
+    List<Room> findByRoomProj(String projectId);
+
+    @Query("SELECT COUNT(r) FROM Room r WHERE r.room_proj = :projectId")
+    int countByRoomProj(String projectId);
 }

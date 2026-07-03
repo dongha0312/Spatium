@@ -136,7 +136,6 @@ function ThreeDEditor() {
     const saved = await editorRef.current?.saveEditedSceneJson({
       projectId,
       roomId,
-      accessToken,
     });
 
     if (saved) {

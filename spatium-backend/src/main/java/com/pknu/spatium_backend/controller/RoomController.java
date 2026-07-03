@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.HttpStatus;
@@ -15,16 +16,17 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.pknu.spatium_backend.dto.ResponseDTO;
+import com.pknu.spatium_backend.auth.AuthenticatedMemId;
+import com.pknu.spatium_backend.dto.PageResponseDTO;
 import com.pknu.spatium_backend.dto.RoomDTO.ResponseRoomCreateDTO;
+import com.pknu.spatium_backend.dto.RoomDTO.ResponseRoomSummaryDTO;
+import com.pknu.spatium_backend.exception.ApiException;
 import com.pknu.spatium_backend.service.RoomService;
-import com.pknu.spatium_backend.util.JwtUtil;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,66 +37,61 @@ import lombok.extern.slf4j.Slf4j;
 public class RoomController {
 
     private final RoomService roomService;
-    private final JwtUtil jwtUtil;
 
     @PostMapping(path = "/api/scans", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<String> post3dData(
             @RequestPart("metadata") String jsonDataFile,
             @RequestPart("file") MultipartFile usdzDataFile)
-            // 이게 왜 있는거지?
             throws IOException {
 
-        log.info(
-                "===========================================================================================================");
-        // log.info("metadata file name = {}", jsonDataFile.getOriginalFilename());
-        // log.info("metadata content type = {}", jsonDataFile.getContentType());
-        // JSON 데이터는 SpringBoot에서 들어올 때 String 타입으로 변환해버리는 것 같음.
-        log.info(jsonDataFile);
+        log.info("metadata={}", jsonDataFile);
         log.info("usdz file name = {}", usdzDataFile.getOriginalFilename());
         log.info("usdz file size = {}", usdzDataFile.getSize());
-        log.info(
-                "===========================================================================================================");
 
-        this.roomService.post3dData(jsonDataFile, usdzDataFile);
+        roomService.post3dData(jsonDataFile, usdzDataFile);
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body("3D 파일 업로드 성공");
     }
 
-    @PutMapping(path = "/api/test-three/metadata", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @PutMapping(
+            path = "/api/test-three/metadata",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
     public ResponseEntity<?> putEditedMetadata(
             @RequestParam(required = false) String metadataUrl,
             @RequestBody String metadataJson) {
 
         if (metadataJson == null || metadataJson.isBlank()) {
-            return ResponseEntity
-                    .badRequest()
-                    .body(Map.of("message", "metadata JSON data is empty."));
+            return ResponseEntity.badRequest().body(Map.of(
+                    "message", "metadata JSON data is empty."
+            ));
         }
 
         try {
-            Path savedPath = roomService.saveEditedMetadata(
-                    metadataUrl,
-                    metadataJson);
+            Path savedPath = roomService.saveEditedMetadata(metadataUrl, metadataJson);
 
             return ResponseEntity.ok(Map.of(
                     "message", "metadata JSON saved.",
                     "fileName", savedPath.getFileName().toString(),
-                    "savedPath", savedPath.toString()));
+                    "savedPath", savedPath.toString()
+            ));
         } catch (IOException e) {
             log.error("Failed to save edited metadata JSON.", e);
-            return ResponseEntity
-                    .internalServerError()
-                    .body(Map.of("message", e.getMessage()));
+
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "message", e.getMessage()
+            ));
         }
     }
 
     @GetMapping(path = "/test/read", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> testTransData() {
-
         Path jsonPath = Path.of(
-                "C:\\pknu_2026_01\\22_final_project\\Spatium\\spatium-backend\\uploads\\models\\4550c4e3-a2e9-49cb-867b-5e5d5ca38732_metadata.json");
+                "C:\\pknu_2026_01\\22_final_project\\Spatium\\spatium-backend\\uploads\\models\\4550c4e3-a2e9-49cb-867b-5e5d5ca38732_metadata.json"
+        );
 
         try {
             if (!Files.exists(jsonPath)) {
@@ -115,135 +112,134 @@ public class RoomController {
         }
     }
 
-    // 룸 생성하기
+    @GetMapping(path = "/api/projects/{projectId}/rooms")
+    public ResponseEntity<?> getRooms(
+            @AuthenticatedMemId String memId,
+            @PathVariable String projectId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+
+        List<ResponseRoomSummaryDTO> items = roomService.getRoomList(memId, projectId);
+
+        PageResponseDTO<ResponseRoomSummaryDTO> data = new PageResponseDTO<>(
+                items,
+                page,
+                size,
+                items.size(),
+                items.isEmpty() ? 0 : 1,
+                false
+        );
+
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "룸 목록 조회에 성공했습니다.",
+                "data", data
+        ));
+    }
+
     @PostMapping(path = "/api/projects/{projectId}/rooms", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> createRoom(
+            @AuthenticatedMemId String memId,
             @PathVariable String projectId,
-            @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestParam String roomName,
             @RequestPart("metadata") MultipartFile metadata,
             @RequestPart("file") MultipartFile file) {
-        if (authorization == null || !authorization.startsWith("Bearer ")) {
-            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
-            responseDTO.setStatusCode(401);
-            responseDTO.setMessage("로그인이 필요합니다.");
-            responseDTO.setData(null);
-
-            return ResponseEntity.status(401).body(responseDTO);
-        }
-
-        String accessToken = authorization.substring(7).trim();
-        String userId = jwtUtil.validateAndGetMemId(accessToken);
-
-        if (userId == null || userId.isBlank()) {
-            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
-            responseDTO.setStatusCode(401);
-            responseDTO.setMessage("로그인이 필요합니다.");
-            responseDTO.setData(null);
-
-            return ResponseEntity.status(401).body(responseDTO);
-        }
 
         try {
             ResponseRoomCreateDTO data = roomService.createRoom(
-                    userId,
+                    memId,
                     projectId,
                     roomName,
                     metadata,
-                    file);
+                    file
+            );
 
-            ResponseDTO<ResponseRoomCreateDTO> responseDTO = new ResponseDTO<>();
-            responseDTO.setStatusCode(201);
-            responseDTO.setMessage("룸이 생성되었습니다.");
-            responseDTO.setData(data);
-
-            return ResponseEntity.status(201).body(responseDTO);
-        } catch (IllegalArgumentException e) {
-            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
-            responseDTO.setStatusCode(400);
-            responseDTO.setMessage(e.getMessage());
-            responseDTO.setData(null);
-
-            return ResponseEntity.badRequest().body(responseDTO);
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                    "statusCode", 201,
+                    "message", "룸이 생성되었습니다.",
+                    "data", data
+            ));
         } catch (IOException e) {
-            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
-            responseDTO.setStatusCode(500);
-            responseDTO.setMessage("룸 파일 저장에 실패했습니다.");
-            responseDTO.setData(null);
-
-            return ResponseEntity.internalServerError().body(responseDTO);
+            throw new ApiException(
+                    500,
+                    "ROOM_SAVE_FAILED",
+                    "룸 파일 저장에 실패했습니다."
+            );
         }
     }
 
-    // 룸 목록 조회
-    @GetMapping(path = "api/project/{projectId}/rooms")
-    public String getMethodName(@RequestParam String projectId) {
-        return new String();
+    @GetMapping(path = "/api/rooms/{roomId}")
+    public ResponseEntity<?> getRoom(
+            @AuthenticatedMemId String memId,
+            @PathVariable String roomId) {
+
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "룸 상세 조회에 성공했습니다.",
+                "data", roomService.getRoom(memId, roomId)
+        ));
     }
 
-    // 수정된 룸 저장
     @PostMapping(path = "/api/rooms/save", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<String> saveEditedRoom(
+    public ResponseEntity<?> saveEditedRoom(
+            @AuthenticatedMemId String memId,
             @RequestParam("projectId") String projectId,
             @RequestParam("roomId") String roomId,
-            @RequestPart("metadata") MultipartFile metadata,
-            @RequestHeader("Authorization") String authorizationHeader) {
-        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
-            return ResponseEntity.status(401).body("로그인이 필요합니다.");
-        }
+            @RequestPart("metadata") MultipartFile metadata) {
 
-        String accessToken = authorizationHeader.substring(7).trim();
+        roomService.saveEditedRoom(memId, projectId, roomId, metadata);
 
-        return roomService.saveEditedRoom(
-                accessToken,
-                projectId,
-                roomId,
-                metadata);
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "수정된 룸 저장 완료",
+                "data", Map.of()
+        ));
     }
 
-    // 룸 삭제
     @DeleteMapping(path = "/api/rooms")
     public ResponseEntity<?> deleteRoom(
-            @RequestBody Map<String, String> requestBody,
-            @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
-        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
-            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
-            responseDTO.setStatusCode(401);
-            responseDTO.setMessage("로그인이 필요합니다.");
-            responseDTO.setData(null);
+            @AuthenticatedMemId String memId,
+            @RequestBody Map<String, String> requestBody) {
 
-            return ResponseEntity.status(401).body(responseDTO);
-        }
-
-        String accessToken = authorizationHeader.substring(7).trim();
         String projectId = requestBody == null ? null : requestBody.get("projectId");
         String roomId = requestBody == null ? null : requestBody.get("roomId");
 
+        if (projectId == null || projectId.isBlank()) {
+            throw new ApiException(
+                    400,
+                    "INVALID_PROJECT_ID",
+                    "projectId가 필요합니다."
+            );
+        }
+
+        if (roomId == null || roomId.isBlank()) {
+            throw new ApiException(
+                    400,
+                    "INVALID_ROOM_ID",
+                    "roomId가 필요합니다."
+            );
+        }
+
         try {
-            roomService.deleteRoom(accessToken, projectId, roomId);
+            roomService.deleteRoom(memId, projectId, roomId);
 
-            ResponseDTO<String> responseDTO = new ResponseDTO<>();
-            responseDTO.setStatusCode(200);
-            responseDTO.setMessage("룸 삭제에 성공했습니다.");
-            responseDTO.setData(roomId);
-
-            return ResponseEntity.ok(responseDTO);
+            return ResponseEntity.ok(Map.of(
+                    "statusCode", 200,
+                    "message", "룸 삭제에 성공했습니다.",
+                    "data", roomId
+            ));
         } catch (IllegalArgumentException e) {
-            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
-            int statusCode = "로그인이 필요합니다.".equals(e.getMessage()) ? 401 : 404;
-            responseDTO.setStatusCode(statusCode);
-            responseDTO.setMessage(e.getMessage());
-            responseDTO.setData(null);
-
-            return ResponseEntity.status(statusCode).body(responseDTO);
+            throw new ApiException(
+                    404,
+                    "ROOM_NOT_FOUND",
+                    e.getMessage()
+            );
         } catch (IllegalStateException e) {
-            ResponseDTO<Object> responseDTO = new ResponseDTO<>();
-            responseDTO.setStatusCode(500);
-            responseDTO.setMessage(e.getMessage());
-            responseDTO.setData(null);
-
-            return ResponseEntity.status(500).body(responseDTO);
+            throw new ApiException(
+                    500,
+                    "ROOM_DELETE_FAILED",
+                    e.getMessage()
+            );
         }
     }
-
 }
