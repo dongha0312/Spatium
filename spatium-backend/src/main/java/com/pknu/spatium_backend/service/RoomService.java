@@ -7,17 +7,21 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
 
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.pknu.spatium_backend.dto.RoomDTO.ResponseRoomCreateDTO;
+import com.pknu.spatium_backend.dto.RoomDTO.ResponseRoomSummaryDTO;
+import com.pknu.spatium_backend.exception.ApiException;
+import com.pknu.spatium_backend.model.Project;
 import com.pknu.spatium_backend.model.Room;
+import com.pknu.spatium_backend.repository.ProjectRepository;
 import com.pknu.spatium_backend.repository.RoomRepository;
-import com.pknu.spatium_backend.util.JwtUtil;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 public class RoomService {
 
     private final RoomRepository roomRepository;
-    private final JwtUtil jwtUtil;
+    private final ProjectRepository projectRepository;
 
     public void post3dData(
             String jsonDataFile,
@@ -43,8 +47,6 @@ public class RoomService {
             throw new IOException("USDZ 파일이 비어 있습니다.");
         }
 
-        // Path에 저장하는 경로.
-        // userID, projId, roomId를 이용해서 특정 위치에 데이터를 저장하면 됨.
         Path uploadDir = Paths
                 .get(System.getProperty("user.dir"), "uploads", "models")
                 .toAbsolutePath()
@@ -52,9 +54,7 @@ public class RoomService {
 
         Files.createDirectories(uploadDir);
 
-        // 파일 명 앞에 UUID를 적어놓아서 중복 방지.
         String uploadId = UUID.randomUUID().toString();
-
         String jsonFileName = uploadId + "_metadata.json";
 
         String usdzOriginalName = usdzDataFile.getOriginalFilename();
@@ -66,23 +66,14 @@ public class RoomService {
                 .getFileName()
                 .toString();
 
-        // 무슨 코드?
         Path jsonPath = uploadDir.resolve(jsonFileName).normalize();
         Path usdzPath = uploadDir.resolve(usdzFileName).normalize();
 
-        log.info("업로드 폴더 = {}", uploadDir);
-        log.info("JSON 저장 경로 = {}", jsonPath);
-        log.info("USDZ 저장 경로 = {}", usdzPath);
+        ensureInside(uploadDir, jsonPath);
+        ensureInside(uploadDir, usdzPath);
 
-        Files.writeString(
-                jsonPath,
-                jsonDataFile,
-                StandardCharsets.UTF_8);
-
-        Files.copy(
-                usdzDataFile.getInputStream(),
-                usdzPath,
-                StandardCopyOption.REPLACE_EXISTING);
+        Files.writeString(jsonPath, jsonDataFile, StandardCharsets.UTF_8);
+        Files.copy(usdzDataFile.getInputStream(), usdzPath, StandardCopyOption.REPLACE_EXISTING);
     }
 
     public Path saveEditedMetadata(
@@ -102,81 +93,66 @@ public class RoomService {
 
         String sourceFileName = sanitizedJsonFileName(metadataUrl);
         String baseName = sourceFileName.replaceFirst("(?i)\\.json$", "");
-        // 수정된 ROOM JSON 파일 저장 이름
         String jsonFileName = baseName + "_edited_" + UUID.randomUUID() + ".json";
+
         Path jsonPath = uploadDir.resolve(jsonFileName).normalize();
 
-        if (!jsonPath.startsWith(uploadDir)) {
-            throw new IOException("Invalid metadata save path.");
-        }
+        ensureInside(uploadDir, jsonPath);
 
-        Files.writeString(
-                jsonPath,
-                metadataJson,
-                StandardCharsets.UTF_8);
+        Files.writeString(jsonPath, metadataJson, StandardCharsets.UTF_8);
 
         log.info("Edited room metadata saved = {}", jsonPath);
 
         return jsonPath;
     }
 
-    private String sanitizedJsonFileName(String metadataUrl) {
-        String value = metadataUrl == null ? "" : metadataUrl.trim();
-        int queryIndex = value.indexOf('?');
-        if (queryIndex >= 0) {
-            value = value.substring(0, queryIndex);
-        }
-
-        value = value.replace("\\", "/");
-        int slashIndex = value.lastIndexOf('/');
-        String fileName = slashIndex >= 0 ? value.substring(slashIndex + 1) : value;
-
-        fileName = fileName.replaceAll("[^a-zA-Z0-9._-]", "_");
-        if (fileName.isBlank()) {
-            fileName = "room-metadata.json";
-        }
-        if (!fileName.toLowerCase().endsWith(".json")) {
-            fileName = fileName + ".json";
-        }
-        return fileName;
-    }
-
     @Transactional
     public ResponseRoomCreateDTO createRoom(
-            String userId,
+            String memId,
             String projectId,
             String roomName,
             MultipartFile metadata,
             MultipartFile file) throws IOException {
+
+        Project project = getOwnedProject(memId, projectId);
+
         if (roomName == null || roomName.isBlank()) {
-            throw new IllegalArgumentException("룸 이름이 필요합니다.");
+            throw new ApiException(
+                    400,
+                    "INVALID_ROOM_REQUEST",
+                    "룸 생성 요청 값이 올바르지 않습니다."
+            );
         }
 
-        if (metadata == null || metadata.isEmpty()) {
-            throw new IllegalArgumentException("metadata 파일이 필요합니다.");
-        }
-
-        if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("usdz 파일이 필요합니다.");
+        if (metadata == null || metadata.isEmpty() || file == null || file.isEmpty()) {
+            throw new ApiException(
+                    400,
+                    "INVALID_ROOM_REQUEST",
+                    "metadata와 file이 필요합니다."
+            );
         }
 
         String roomId = UUID.randomUUID().toString();
 
-        Path saveDir = Paths
-                .get(System.getProperty("user.dir"), "data")
-                .resolve(userId)
-                .resolve(projectId)
+        Path saveDir = dataRoot()
+                .resolve(project.getProj_mem())
+                .resolve(project.getProj_code())
                 .resolve(roomId)
                 .toAbsolutePath()
                 .normalize();
 
         Files.createDirectories(saveDir);
 
-        String metadataFileName = safeFileName(metadata.getOriginalFilename(), "metadata.json");
-        String usdzFileName = safeFileName(file.getOriginalFilename(), "room.usdz");
+        Path metadataPath = saveDir
+                .resolve(safeFileName(metadata.getOriginalFilename(), "metadata.json"))
+                .normalize();
 
-        Path metadataPath = saveDir.resolve(metadataFileName).normalize();
-        Path filePath = saveDir.resolve(usdzFileName).normalize();
+        Path filePath = saveDir
+                .resolve(safeFileName(file.getOriginalFilename(), "room.usdz"))
+                .normalize();
+
+        ensureInside(saveDir, metadataPath);
+        ensureInside(saveDir, filePath);
 
         Files.copy(metadata.getInputStream(), metadataPath, StandardCopyOption.REPLACE_EXISTING);
         Files.copy(file.getInputStream(), filePath, StandardCopyOption.REPLACE_EXISTING);
@@ -192,68 +168,89 @@ public class RoomService {
 
         return new ResponseRoomCreateDTO(
                 savedRoom.getRoom_id(),
-                savedRoom.getRoom_name());
+                savedRoom.getRoom_name()
+        );
     }
 
-    private String safeFileName(String originalFilename, String defaultFilename) {
-        if (originalFilename == null || originalFilename.isBlank()) {
-            return defaultFilename;
-        }
+    public List<ResponseRoomSummaryDTO> getRoomList(
+            String memId,
+            String projectId) {
 
-        String fileName = Path.of(originalFilename).getFileName().toString();
-        fileName = fileName.replaceAll("[^a-zA-Z0-9._-]", "_");
+        getOwnedProject(memId, projectId);
 
-        return fileName.isBlank() ? defaultFilename : fileName;
+        return roomRepository.findByRoomProj(projectId).stream()
+                .map(room -> new ResponseRoomSummaryDTO(
+                        room.getRoom_id(),
+                        room.getRoom_name(),
+                        room.getRoom_area(),
+                        null,
+                        null
+                ))
+                .toList();
     }
 
-    // 수정된 룸 저장
-    public ResponseEntity<String> saveEditedRoom(
-            String accessToken,
+    public Map<String, Object> getRoom(
+            String memId,
+            String roomId) {
+
+        Room room = getOwnedRoom(memId, roomId);
+
+        return Map.of(
+                "roomPath", room.getRoom_path()
+        );
+    }
+
+    @Transactional
+    public void saveEditedRoom(
+            String memId,
             String projectId,
             String roomId,
             MultipartFile metadata) {
-        if (accessToken == null || accessToken.isBlank()) {
-            return ResponseEntity.status(401).body("로그인이 필요합니다.");
-        }
 
-        String memId = jwtUtil.validateAndGetMemId(accessToken);
+        validateRequired(memId, "AUTH_REQUIRED", "로그인이 필요합니다.");
+        validateRequired(projectId, "INVALID_PROJECT_ID", "projectId가 필요합니다.");
+        validateRequired(roomId, "INVALID_ROOM_ID", "roomId가 필요합니다.");
 
-        if (memId == null || memId.isBlank()) {
-            return ResponseEntity.status(401).body("로그인이 필요합니다.");
-        }
+        getOwnedProject(memId, projectId);
 
-        if (projectId == null || projectId.isBlank()) {
-            return ResponseEntity.badRequest().body("projectId가 필요합니다.");
-        }
+        Room room = getOwnedRoom(memId, roomId);
 
-        if (roomId == null || roomId.isBlank()) {
-            return ResponseEntity.badRequest().body("roomId가 필요합니다.");
+        if (!projectId.equals(room.getRoom_proj())) {
+            throw new ApiException(
+                    404,
+                    "ROOM_NOT_FOUND",
+                    "룸을 찾을 수 없습니다."
+            );
         }
 
         if (metadata == null || metadata.isEmpty()) {
-            return ResponseEntity.badRequest().body("metadata 파일이 필요합니다.");
+            throw new ApiException(
+                    400,
+                    "INVALID_ROOM_REQUEST",
+                    "metadata 파일이 필요합니다."
+            );
+        }
+
+        if (room.getRoom_path() == null || room.getRoom_path().isBlank()) {
+            throw new ApiException(
+                    500,
+                    "ROOM_PATH_NOT_FOUND",
+                    "룸 저장 경로가 없습니다."
+            );
         }
 
         try {
-            Path dataDir = Paths
-                    .get(System.getProperty("user.dir"), "data")
+            Path saveDir = Paths
+                    .get(room.getRoom_path())
                     .toAbsolutePath()
                     .normalize();
-
-            Path saveDir = dataDir
-                    .resolve(memId)
-                    .resolve(projectId)
-                    .resolve(roomId)
-                    .toAbsolutePath()
-                    .normalize();
-
-            if (!saveDir.startsWith(dataDir)) {
-                return ResponseEntity.badRequest().body("잘못된 저장 경로입니다.");
-            }
 
             Files.createDirectories(saveDir);
 
-            String metadataFileName = safeFileName(metadata.getOriginalFilename(), "metadata.json");
+            String metadataFileName = safeFileName(
+                    metadata.getOriginalFilename(),
+                    "metadata.json"
+            );
 
             if (!metadataFileName.toLowerCase().endsWith(".json")) {
                 metadataFileName = "metadata.json";
@@ -264,55 +261,55 @@ public class RoomService {
                     .toAbsolutePath()
                     .normalize();
 
-            if (!metadataPath.startsWith(saveDir)) {
-                return ResponseEntity.badRequest().body("잘못된 파일명입니다.");
-            }
+            ensureInside(saveDir, metadataPath);
 
             Files.copy(
                     metadata.getInputStream(),
                     metadataPath,
-                    StandardCopyOption.REPLACE_EXISTING);
-
-            return ResponseEntity.ok("수정된 룸이 저장되었습니다.");
+                    StandardCopyOption.REPLACE_EXISTING
+            );
 
         } catch (IOException e) {
-            return ResponseEntity
-                    .internalServerError()
-                    .body("수정된 룸 저장에 실패했습니다.");
+            throw new ApiException(
+                    500,
+                    "ROOM_SAVE_FAILED",
+                    "수정된 룸 저장에 실패했습니다."
+            );
         }
     }
 
     @Transactional
     public void deleteRoom(
-            String accessToken,
+            String memId,
             String projectId,
             String roomId) {
-        if (accessToken == null || accessToken.isBlank()) {
-            throw new IllegalArgumentException("로그인이 필요합니다.");
+
+        validateRequired(memId, "AUTH_REQUIRED", "로그인이 필요합니다.");
+        validateRequired(projectId, "INVALID_PROJECT_ID", "projectId가 필요합니다.");
+        validateRequired(roomId, "INVALID_ROOM_ID", "roomId가 필요합니다.");
+
+        getOwnedProject(memId, projectId);
+
+        Room room = getOwnedRoom(memId, roomId);
+
+        if (!projectId.equals(room.getRoom_proj())) {
+            throw new ApiException(
+                    404,
+                    "ROOM_NOT_FOUND",
+                    "삭제할 룸을 찾을 수 없습니다."
+            );
         }
 
-        String memId = jwtUtil.validateAndGetMemId(accessToken);
-
-        if (memId == null || memId.isBlank()) {
-            throw new IllegalArgumentException("로그인이 필요합니다.");
+        if (room.getRoom_path() == null || room.getRoom_path().isBlank()) {
+            throw new ApiException(
+                    500,
+                    "ROOM_PATH_NOT_FOUND",
+                    "룸 저장 경로가 없습니다."
+            );
         }
-
-        if (projectId == null || projectId.isBlank()) {
-            throw new IllegalArgumentException("projectId가 필요합니다.");
-        }
-
-        if (roomId == null || roomId.isBlank()) {
-            throw new IllegalArgumentException("roomId가 필요합니다.");
-        }
-
-        Room room = roomRepository.findByRoomIdAndProjectId(roomId, projectId)
-                .orElseThrow(() -> new IllegalArgumentException("삭제할 룸을 찾을 수 없습니다."));
 
         Path roomDir = Paths
-                .get(System.getProperty("user.dir"), "data")
-                .resolve(memId)
-                .resolve(projectId)
-                .resolve(roomId)
+                .get(room.getRoom_path())
                 .toAbsolutePath()
                 .normalize();
 
@@ -322,16 +319,131 @@ public class RoomService {
         deleteDirectory(roomDir);
     }
 
-    private void deleteDirectory(Path targetDir) {
-        Path dataRoot = Paths
+    private Project getOwnedProject(
+            String memId,
+            String projectId) {
+
+        validateRequired(memId, "AUTH_REQUIRED", "로그인이 필요합니다.");
+        validateRequired(projectId, "INVALID_PROJECT_ID", "projectId가 필요합니다.");
+
+        Project project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new ApiException(
+                        404,
+                        "PROJECT_NOT_FOUND",
+                        "프로젝트를 찾을 수 없습니다."
+                ));
+
+        if (!memId.equals(project.getProj_mem())) {
+            throw new ApiException(
+                    403,
+                    "FORBIDDEN",
+                    "해당 프로젝트에 접근할 권한이 없습니다."
+            );
+        }
+
+        return project;
+    }
+
+    private Room getOwnedRoom(
+            String memId,
+            String roomId) {
+
+        validateRequired(memId, "AUTH_REQUIRED", "로그인이 필요합니다.");
+        validateRequired(roomId, "INVALID_ROOM_ID", "roomId가 필요합니다.");
+
+        Room room = roomRepository.findById(roomId)
+                .orElseThrow(() -> new ApiException(
+                        404,
+                        "ROOM_NOT_FOUND",
+                        "룸을 찾을 수 없습니다."
+                ));
+
+        getOwnedProject(memId, room.getRoom_proj());
+
+        return room;
+    }
+
+    private Path dataRoot() {
+        return Paths
                 .get(System.getProperty("user.dir"), "data")
                 .toAbsolutePath()
                 .normalize();
+    }
 
-        Path normalizedTargetDir = targetDir.toAbsolutePath().normalize();
+    private String sanitizedJsonFileName(String metadataUrl) {
+        String value = metadataUrl == null ? "" : metadataUrl.trim();
+
+        int queryIndex = value.indexOf('?');
+        if (queryIndex >= 0) {
+            value = value.substring(0, queryIndex);
+        }
+
+        value = value.replace("\\", "/");
+
+        int slashIndex = value.lastIndexOf('/');
+        String fileName = slashIndex >= 0
+                ? value.substring(slashIndex + 1)
+                : value;
+
+        fileName = fileName.replaceAll("[^a-zA-Z0-9._-]", "_");
+
+        if (fileName.isBlank()) {
+            fileName = "room-metadata.json";
+        }
+
+        if (!fileName.toLowerCase().endsWith(".json")) {
+            fileName = fileName + ".json";
+        }
+
+        return fileName;
+    }
+
+    private String safeFileName(
+            String originalFilename,
+            String defaultFilename) {
+
+        if (originalFilename == null || originalFilename.isBlank()) {
+            return defaultFilename;
+        }
+
+        String fileName = Path.of(originalFilename)
+                .getFileName()
+                .toString();
+
+        fileName = fileName.replaceAll("[^a-zA-Z0-9._-]", "_");
+
+        return fileName.isBlank() ? defaultFilename : fileName;
+    }
+
+    private void ensureInside(
+            Path parent,
+            Path child) {
+
+        if (!child.toAbsolutePath()
+                .normalize()
+                .startsWith(parent.toAbsolutePath().normalize())) {
+
+            throw new ApiException(
+                    400,
+                    "INVALID_REQUEST",
+                    "저장 경로가 올바르지 않습니다."
+            );
+        }
+    }
+
+    private void deleteDirectory(Path targetDir) {
+        Path dataRoot = dataRoot();
+
+        Path normalizedTargetDir = targetDir
+                .toAbsolutePath()
+                .normalize();
 
         if (!normalizedTargetDir.startsWith(dataRoot)) {
-            throw new IllegalArgumentException("삭제할 수 없는 경로입니다.");
+            throw new ApiException(
+                    400,
+                    "INVALID_REQUEST",
+                    "삭제할 수 없는 경로입니다."
+            );
         }
 
         if (!Files.exists(normalizedTargetDir)) {
@@ -345,11 +457,31 @@ public class RoomService {
                         try {
                             Files.deleteIfExists(path);
                         } catch (IOException e) {
-                            throw new IllegalStateException("룸 폴더 삭제 중 오류가 발생했습니다.", e);
+                            throw new IllegalStateException(
+                                    "룸 폴더 삭제 중 오류가 발생했습니다.",
+                                    e
+                            );
                         }
                     });
         } catch (IOException e) {
-            throw new IllegalStateException("룸 폴더 삭제 중 오류가 발생했습니다.", e);
+            throw new IllegalStateException(
+                    "룸 폴더 삭제 중 오류가 발생했습니다.",
+                    e
+            );
+        }
+    }
+
+    private void validateRequired(
+            String value,
+            String errorCode,
+            String message) {
+
+        if (value == null || value.isBlank()) {
+            throw new ApiException(
+                    400,
+                    errorCode,
+                    message
+            );
         }
     }
 }

@@ -1,25 +1,26 @@
 package com.pknu.spatium_backend.controller;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.pknu.spatium_backend.dto.ErrorResponseDTO;
-import com.pknu.spatium_backend.dto.ErrorResponseDTO.FieldErrorDTO;
+import com.pknu.spatium_backend.auth.AuthenticatedMemId;
+import com.pknu.spatium_backend.dto.PageResponseDTO;
 import com.pknu.spatium_backend.dto.ProjectDTO.ResponseProjectCreateDTO;
 import com.pknu.spatium_backend.dto.ProjectDTO.ResponseProjectListDTO;
-import com.pknu.spatium_backend.dto.ResponseDTO;
+import com.pknu.spatium_backend.exception.ApiException;
 import com.pknu.spatium_backend.service.ProjectService;
 
 import lombok.RequiredArgsConstructor;
-
 
 @RestController
 @RequiredArgsConstructor
@@ -28,116 +29,65 @@ public class ProjectController {
 
     private final ProjectService projectService;
 
-    // 프로젝트 전체 목록 조회 -> 지금은 편의상 post 매핑으로 사용함.
-    @PostMapping(path = "/list")
-    public ResponseEntity<?> getProjectList(@RequestBody Map<String, String> requestBody) {
-        String memId = requestBody.get("memId");
+    @GetMapping
+    public ResponseEntity<?> getProjectList(
+            @AuthenticatedMemId String memId,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        List<ResponseProjectListDTO> items = projectService.getProjectList(memId);
+        PageResponseDTO<ResponseProjectListDTO> data = new PageResponseDTO<>(
+                items,
+                page,
+                size,
+                items.size(),
+                items.isEmpty() ? 0 : 1,
+                false);
 
-        if (memId == null || memId.trim().isEmpty()) {
-            Map<String, Object> errorBody = new HashMap<>();
-            errorBody.put("statusCode", 400);
-            errorBody.put("message", "회원 ID가 필요합니다.");
-            errorBody.put("data", null);
-
-            return ResponseEntity.badRequest().body(errorBody);
-        }
-
-        try {
-            List<ResponseProjectListDTO> resProjectList = this.projectService.getProjectList(memId.trim());
-
-            ResponseDTO<List<ResponseProjectListDTO>> responseDTO = new ResponseDTO<>();
-            responseDTO.setStatusCode(200);
-            responseDTO.setMessage("프로젝트 목록 조회에 성공했습니다.");
-            responseDTO.setData(resProjectList);
-
-            return ResponseEntity.ok(responseDTO);
-        } catch (IllegalArgumentException e) {
-            ResponseDTO<Object> errorResponseDTO = new ResponseDTO<>();
-            errorResponseDTO.setStatusCode(404);
-            errorResponseDTO.setMessage(e.getMessage());
-            errorResponseDTO.setData(null);
-
-            return ResponseEntity.status(404).body(errorResponseDTO);
-        }
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "프로젝트 목록 조회에 성공했습니다.",
+                "data", data));
     }
 
-    // 프로젝트 생성
-    @PostMapping(path = "")
-    public ResponseEntity<?> createProject(@RequestBody Map<String, String> requestBody) {
+    @PostMapping
+    public ResponseEntity<?> createProject(
+            @AuthenticatedMemId String memId,
+            @RequestBody Map<String, String> requestBody) {
         String projectName = requestBody.get("projectName");
-        String projectMem = requestBody.get("projectMem");
-
         if (projectName == null || projectName.trim().isEmpty()) {
-            ResponseDTO<Object> errorResponseDTO = new ResponseDTO<>();
-            errorResponseDTO.setStatusCode(400);
-            errorResponseDTO.setMessage("프로젝트 이름이 필요합니다.");
-            errorResponseDTO.setData(null);
-
-            return ResponseEntity.badRequest().body(errorResponseDTO);
+            throw new ApiException(400, "INVALID_PROJECT_NAME", "프로젝트 이름이 올바르지 않습니다.");
         }
 
-        if (projectMem == null || projectMem.trim().isEmpty()) {
-            ResponseDTO<Object> errorResponseDTO = new ResponseDTO<>();
-            errorResponseDTO.setStatusCode(400);
-            errorResponseDTO.setMessage("회원 ID가 필요합니다.");
-            errorResponseDTO.setData(null);
-
-            return ResponseEntity.badRequest().body(errorResponseDTO);
-        }
-
-        ResponseProjectCreateDTO resProject = this.projectService.createProject(projectName.trim(), projectMem.trim());
-
-        ResponseDTO<ResponseProjectCreateDTO> responseDTO = new ResponseDTO<>();
-        responseDTO.setStatusCode(201);
-        responseDTO.setMessage("프로젝트 생성에 성공했습니다.");
-        responseDTO.setData(resProject);
-
-        return ResponseEntity.status(201).body(responseDTO);
+        ResponseProjectCreateDTO data = projectService.createProject(projectName.trim(), memId);
+        return ResponseEntity.status(201).body(Map.of(
+                "statusCode", 201,
+                "message", "프로젝트가 생성되었습니다.",
+                "data", data));
     }
 
-    @DeleteMapping(path = "")
-    public ResponseEntity<?> deleteProject(@RequestBody Map<String, String> requestBody) {
+    @GetMapping(path = "/{projectId}")
+    public ResponseEntity<?> getProject(
+            @AuthenticatedMemId String memId,
+            @PathVariable String projectId) {
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "프로젝트 상세 조회에 성공했습니다.",
+                "data", projectService.getProject(memId, projectId)));
+    }
+
+    @DeleteMapping
+    public ResponseEntity<?> deleteProject(
+            @AuthenticatedMemId String memId,
+            @RequestBody Map<String, String> requestBody) {
         String projectId = requestBody.get("projectId");
-
         if (projectId == null || projectId.trim().isEmpty()) {
-            ErrorResponseDTO errorResponseDTO = new ErrorResponseDTO(
-                    400,
-                    "INVALID_REQUEST",
-                    "요청 값이 올바르지 않습니다.",
-                    List.of(new FieldErrorDTO("projectId", "프로젝트 ID가 필요합니다."))
-            );
-
-            return ResponseEntity.badRequest().body(errorResponseDTO);
+            throw new ApiException(400, "INVALID_REQUEST", "요청 값이 올바르지 않습니다.");
         }
 
-        try {
-            projectService.deleteProject(projectId.trim());
-
-            ResponseDTO<String> responseDTO = new ResponseDTO<>();
-            responseDTO.setStatusCode(200);
-            responseDTO.setMessage("프로젝트 삭제에 성공했습니다.");
-            responseDTO.setData(projectId.trim());
-
-            return ResponseEntity.ok(responseDTO);
-        } catch (IllegalArgumentException e) {
-            ErrorResponseDTO errorResponseDTO = new ErrorResponseDTO(
-                    404,
-                    "PROJECT_NOT_FOUND",
-                    e.getMessage(),
-                    List.of(new FieldErrorDTO("projectId", "존재하지 않는 프로젝트 ID입니다."))
-            );
-
-            return ResponseEntity.status(404).body(errorResponseDTO);
-        } catch (IllegalStateException e) {
-            ErrorResponseDTO errorResponseDTO = new ErrorResponseDTO(
-                    500,
-                    "PROJECT_DELETE_FAILED",
-                    e.getMessage(),
-                    List.of(new FieldErrorDTO("projectId", "프로젝트 폴더 삭제 중 오류가 발생했습니다."))
-            );
-
-            return ResponseEntity.status(500).body(errorResponseDTO);
-        }
+        projectService.deleteProject(memId, projectId.trim());
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "프로젝트 삭제에 성공했습니다.",
+                "data", projectId.trim()));
     }
-    
 }

@@ -1,9 +1,11 @@
 package com.pknu.spatium_backend.util;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 import javax.crypto.SecretKey;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import io.jsonwebtoken.Claims;
@@ -19,15 +21,20 @@ public class JwtUtil {
 
     // 서명용 비밀키 (HS256 기준 32바이트 이상 필요)
     //  - 실서비스라면 application.properties나 환경변수로 분리해야 함
-    private static final String SECRET = "spatium-secret-key-for-jwt-signing-please-change-me";
-
-    private final SecretKey key = Keys.hmacShaKeyFor(SECRET.getBytes());
+    private final SecretKey key;
 
     // accessToken 만료 시간 : 3600초 (명세 기준)
     public static final long ACCESS_TOKEN_EXPIRES_IN = 3600;
 
     // refreshToken 만료 시간 : 14일
     private static final long REFRESH_TOKEN_EXPIRES_IN = 60L * 60 * 24 * 14;
+
+    public JwtUtil(@Value("${spatium.jwt.secret}") String secret) {
+        if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {
+            throw new IllegalStateException("spatium.jwt.secret must be at least 32 bytes for HS256.");
+        }
+        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+    }
 
     // accessToken 생성 (subject에 mem_id 저장)
     public String createAccessToken(String memId) {

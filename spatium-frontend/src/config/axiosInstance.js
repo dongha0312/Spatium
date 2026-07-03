@@ -11,6 +11,7 @@
  */
 // axios 라이브러리 불러들이기
 import axios from "axios";
+import { clearLoginSession, getAccessToken } from "../utils/authSession";
 
 /** SpringBoot 백엔드 서버 통신 설정 */
 export const springApi = axios.create({
@@ -18,7 +19,7 @@ export const springApi = axios.create({
     //  - 해당 이름은 프록시서버 설정 파일에서 구분자로 사용되는 이름임
     //  - 최초 사용자가 요청한 URL : http://localhost:3000/react/springboot_test
     //  - baseURL로 변경됨 : http://localhost:3000/spring/react/springboot_test
-    baseURL: "/spring", 
+    baseURL: "",
 
     // HTTP 통신을 위한 헤더 전송정보 정의
     headers: {
@@ -27,4 +28,35 @@ export const springApi = axios.create({
         "Content-Type" : "application/json"
     },
 });
+
+springApi.interceptors.request.use((config) => {
+    const accessToken = getAccessToken();
+
+    if (accessToken) {
+        config.headers = config.headers || {};
+        config.headers.Authorization = `Bearer ${accessToken}`;
+    }
+
+    return config;
+});
+
+springApi.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        const status = error.response?.data?.statusCode || error.response?.status;
+        const requestUrl = error.config?.url || "";
+        const isLoginRequest =
+            requestUrl.includes("/api/auth/sessions") ||
+            requestUrl.includes("/api/auth/social-sessions");
+
+        if (status === 401 && !isLoginRequest) {
+            clearLoginSession();
+            if (window.location.pathname !== "/auth/login") {
+                window.location.assign("/auth/login");
+            }
+        }
+
+        return Promise.reject(error);
+    },
+);
 
