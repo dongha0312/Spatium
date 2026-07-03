@@ -115,6 +115,8 @@ public class RoomService {
         }
 
         String roomId = UUID.randomUUID().toString();
+        // 실제 룸 파일 저장 구조: data/{memId}/{projectId}/{roomId}
+        // memId와 projectId는 요청값이 아니라 소유권 검증이 끝난 Project 엔티티 값을 사용한다.
         Path saveDir = dataRoot()
                 .resolve(project.getProj_mem())
                 .resolve(project.getProj_code())
@@ -167,6 +169,7 @@ public class RoomService {
             String projectId,
             String roomId,
             MultipartFile metadata) {
+        // projectId와 roomId가 모두 현재 사용자 소유인지 확인한 뒤 기존 room_path에 덮어쓴다.
         getOwnedProject(memId, projectId);
         Room room = getOwnedRoom(memId, roomId);
 
@@ -179,6 +182,7 @@ public class RoomService {
         }
 
         try {
+            // 룸 생성 시 DB에 저장해 둔 폴더 경로를 재사용한다.
             Path saveDir = Paths.get(room.getRoom_path()).toAbsolutePath().normalize();
             Files.createDirectories(saveDir);
 
@@ -200,6 +204,7 @@ public class RoomService {
         Project project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new ApiException(404, "PROJECT_NOT_FOUND", "프로젝트를 찾을 수 없습니다."));
 
+        // JWT에서 검증된 memId와 프로젝트 소유자(proj_mem)가 다르면 접근을 막는다.
         if (!memId.equals(project.getProj_mem())) {
             throw new ApiException(403, "FORBIDDEN", "해당 프로젝트에 접근할 권한이 없습니다.");
         }
@@ -211,11 +216,13 @@ public class RoomService {
         Room room = roomRepository.findById(roomId)
                 .orElseThrow(() -> new ApiException(404, "ROOM_NOT_FOUND", "룸을 찾을 수 없습니다."));
 
+        // Room은 프로젝트에 속하므로 room_proj를 통해 프로젝트 소유권까지 함께 검증한다.
         getOwnedProject(memId, room.getRoom_proj());
         return room;
     }
 
     private Path dataRoot() {
+        // 현재는 서버 실행 위치 기준의 data 폴더를 루트로 사용한다.
         return Paths.get(System.getProperty("user.dir"), "data")
                 .toAbsolutePath()
                 .normalize();
@@ -253,6 +260,7 @@ public class RoomService {
     }
 
     private void ensureInside(Path parent, Path child) {
+        // 업로드 파일명이 ../ 등을 포함해도 지정된 룸 폴더 밖으로 저장되지 않게 방어한다.
         if (!child.toAbsolutePath().normalize().startsWith(parent.toAbsolutePath().normalize())) {
             throw new ApiException(400, "INVALID_REQUEST", "저장 경로가 올바르지 않습니다.");
         }

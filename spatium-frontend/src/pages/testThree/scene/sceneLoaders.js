@@ -108,6 +108,5 @@ export function saveMetadataJson(metadata, saveContext = {}) {
     projectId: saveContext.projectId,
     roomId: saveContext.roomId,
     metadata,
-    accessToken: saveContext.accessToken,
   });
 }

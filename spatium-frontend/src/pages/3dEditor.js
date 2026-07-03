@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import "../styles/3deditor.css";
 import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
-import { getLoginSession } from "../utils/authSession";
+import { getAccessToken } from "../utils/authSession";
 
 const ROOM_NAME = "우리집 거실 리모델링";
 const TEAM_LABEL = "1조";
@@ -119,8 +119,7 @@ function ThreeDEditor() {
   };
 
   const handleSaveRoom = async () => {
-    const session = getLoginSession();
-    const accessToken = session?.providerUserId || session?.email;
+    const accessToken = getAccessToken();
     const projectId = searchParams.get("projectId");
     const roomId = searchParams.get("roomId");
 
@@ -137,7 +136,6 @@ function ThreeDEditor() {
     const saved = await editorRef.current?.saveEditedSceneJson({
       projectId,
       roomId,
-      accessToken,
     });
 
     if (saved) {
