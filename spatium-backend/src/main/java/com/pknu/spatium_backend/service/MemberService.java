@@ -68,11 +68,11 @@ public class MemberService {
     // 일반 로그인 (POST /api/auth/sessions)
     //  - stateless JWT 방식 : DB에 세션을 저장하지 않고 토큰만 발급함
     public LoginResponse login(LoginRequest dto) {
-        // 이메일 없음 / 비번 불일치 모두 같은 에러 → 어떤 이메일이 가입돼 있는지 노출하지 않기 위함
+        // 입력한 이메일로 DB에서 회원 조회
         Member member = memberRepository.findByMemEmail(dto.getEmail())
             .orElseThrow(() -> new ApiException(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 일치하지 않습니다."));
 
-        // 소셜 계정은 mem_pass가 null이므로 일반 로그인 불가
+        // 소셜 계정은 mem_pass가 null이므로 일반 로그인 불가/ DB에 저장된 비밀번호(mem_pass)와 입력한 비밀번호 비교
         if (member.getMem_pass() == null || !member.getMem_pass().equals(dto.getPassword())) {
             throw new ApiException(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 일치하지 않습니다.");
         }
@@ -95,15 +95,25 @@ public class MemberService {
 
     // 소셜 로그인 (POST /api/auth/social-sessions)
     //  - ERD에 provider쪽 고유ID를 저장할 컬럼이 없어서, 이메일로 기존 가입 여부를 확인함
-    public Map<String, Object> socialLogin(MemberSocialLoginDTO memDTO) {
+    //  - 일반 로그인과 동일하게 JWT 토큰을 발급해서 LoginResponse 형태로 반환
+    public LoginResponse socialLogin(MemberSocialLoginDTO memDTO) {
         Member member = memberRepository
             .findByMemEmail(memDTO.getEmail())
             .orElseThrow(() -> new ApiException(404, "SOCIAL_USER_NOT_FOUND", "가입되지 않은 소셜 계정입니다. 회원가입이 필요합니다."));
 
-        return Map.of(
-            "userId", member.getMem_id(),
-            "email", member.getMem_email(),
-            "nickname", member.getMem_nick()
+        UserSummaryResponse user = new UserSummaryResponse(
+            member.getMem_id(),
+            member.getMem_email(),
+            member.getMem_nick(),
+            null
+        );
+
+        return new LoginResponse(
+            jwtUtil.createAccessToken(member.getMem_id()),
+            jwtUtil.createRefreshToken(member.getMem_id()),
+            "Bearer",
+            JwtUtil.ACCESS_TOKEN_EXPIRES_IN,
+            user
         );
     }
 
