@@ -394,7 +394,7 @@ export function useTestThreeEditor({ isSkyview = false } = {}) {
     return true;
   }
 
-  async function saveEditedSceneJson() {
+  async function saveEditedSceneJson(saveContext = {}) {
     if (!sourceMetadataRef.current || !roomModelRef.current) {
       setStatus("");
       setError("저장할 3D 편집 데이터가 아직 준비되지 않았습니다.");
@@ -411,7 +411,10 @@ export function useTestThreeEditor({ isSkyview = false } = {}) {
     setStatus("Saving JSON...");
 
     try {
-      await saveMetadataJson(getRoomMetadataUrl(), replayableMetadata);
+      await saveMetadataJson(
+        replayableMetadata,
+        saveContext,
+      );
       sourceMetadataRef.current = replayableMetadata;
       setStatus("JSON saved.");
       window.setTimeout(() => setStatus(""), 1200);

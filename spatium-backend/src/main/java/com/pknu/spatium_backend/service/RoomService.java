@@ -8,6 +8,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -142,8 +143,7 @@ public class RoomService {
             String projectId,
             String roomName,
             MultipartFile metadata,
-            MultipartFile file
-    ) throws IOException {
+            MultipartFile file) throws IOException {
         if (roomName == null || roomName.isBlank()) {
             throw new IllegalArgumentException("룸 이름이 필요합니다.");
         }
@@ -188,8 +188,7 @@ public class RoomService {
 
         return new ResponseRoomCreateDTO(
                 savedRoom.getRoom_id(),
-                savedRoom.getRoom_name()
-        );
+                savedRoom.getRoom_name());
     }
 
     private String safeFileName(String originalFilename, String defaultFilename) {
@@ -201,5 +200,81 @@ public class RoomService {
         fileName = fileName.replaceAll("[^a-zA-Z0-9._-]", "_");
 
         return fileName.isBlank() ? defaultFilename : fileName;
+    }
+
+    // 수정된 룸 저장
+    public ResponseEntity<String> saveEditedRoom(
+            String authorizationHeader,
+            String projectId,
+            String roomId,
+            MultipartFile metadata) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            return ResponseEntity.status(401).body("로그인이 필요합니다.");
+        }
+
+        String userId = authorizationHeader.substring(7).trim();
+
+        if (userId.isEmpty()) {
+            return ResponseEntity.status(401).body("로그인이 필요합니다.");
+        }
+
+        if (projectId == null || projectId.isBlank()) {
+            return ResponseEntity.badRequest().body("projectId가 필요합니다.");
+        }
+
+        if (roomId == null || roomId.isBlank()) {
+            return ResponseEntity.badRequest().body("roomId가 필요합니다.");
+        }
+
+        if (metadata == null || metadata.isEmpty()) {
+            return ResponseEntity.badRequest().body("metadata 파일이 필요합니다.");
+        }
+
+        try {
+            Path dataDir = Paths
+                    .get(System.getProperty("user.dir"), "data")
+                    .toAbsolutePath()
+                    .normalize();
+
+            Path saveDir = dataDir
+                    .resolve(userId)
+                    .resolve(projectId)
+                    .resolve(roomId)
+                    .toAbsolutePath()
+                    .normalize();
+
+            if (!saveDir.startsWith(dataDir)) {
+                return ResponseEntity.badRequest().body("잘못된 저장 경로입니다.");
+            }
+
+            Files.createDirectories(saveDir);
+
+            String metadataFileName = safeFileName(metadata.getOriginalFilename(), "metadata.json");
+
+            if (!metadataFileName.toLowerCase().endsWith(".json")) {
+                metadataFileName = "metadata.json";
+            }
+
+            Path metadataPath = saveDir
+                    .resolve(metadataFileName)
+                    .toAbsolutePath()
+                    .normalize();
+
+            if (!metadataPath.startsWith(saveDir)) {
+                return ResponseEntity.badRequest().body("잘못된 파일명입니다.");
+            }
+
+            Files.copy(
+                    metadata.getInputStream(),
+                    metadataPath,
+                    StandardCopyOption.REPLACE_EXISTING);
+
+            return ResponseEntity.ok("수정된 룸이 저장되었습니다.");
+
+        } catch (IOException e) {
+            return ResponseEntity
+                    .internalServerError()
+                    .body("수정된 룸 저장에 실패했습니다.");
+        }
     }
 }
