@@ -181,4 +181,12 @@ public class MemberService {
 
         memberRepository.delete(member);
     }
+
+    @Transactional
+    public void deleteUser(String memId) {
+        Member member = memberRepository.findById(memId)
+            .orElseThrow(() -> new ApiException(404, "USER_NOT_FOUND", "회원을 찾을 수 없습니다."));
+
+        memberRepository.delete(member);
+    }
 }
