@@ -5,11 +5,14 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.pknu.spatium_backend.dto.ErrorResponseDTO;
+import com.pknu.spatium_backend.dto.ErrorResponseDTO.FieldErrorDTO;
 import com.pknu.spatium_backend.dto.ProjectDTO.ResponseProjectCreateDTO;
 import com.pknu.spatium_backend.dto.ProjectDTO.ResponseProjectListDTO;
 import com.pknu.spatium_backend.dto.ResponseDTO;
@@ -59,7 +62,7 @@ public class ProjectController {
     }
 
     // 프로젝트 생성
-    @PostMapping(path = "/")
+    @PostMapping(path = "")
     public ResponseEntity<?> createProject(@RequestBody Map<String, String> requestBody) {
         String projectName = requestBody.get("projectName");
         String projectMem = requestBody.get("projectMem");
@@ -90,6 +93,51 @@ public class ProjectController {
         responseDTO.setData(resProject);
 
         return ResponseEntity.status(201).body(responseDTO);
+    }
+
+    @DeleteMapping(path = "")
+    public ResponseEntity<?> deleteProject(@RequestBody Map<String, String> requestBody) {
+        String projectId = requestBody.get("projectId");
+
+        if (projectId == null || projectId.trim().isEmpty()) {
+            ErrorResponseDTO errorResponseDTO = new ErrorResponseDTO(
+                    400,
+                    "INVALID_REQUEST",
+                    "요청 값이 올바르지 않습니다.",
+                    List.of(new FieldErrorDTO("projectId", "프로젝트 ID가 필요합니다."))
+            );
+
+            return ResponseEntity.badRequest().body(errorResponseDTO);
+        }
+
+        try {
+            projectService.deleteProject(projectId.trim());
+
+            ResponseDTO<String> responseDTO = new ResponseDTO<>();
+            responseDTO.setStatusCode(200);
+            responseDTO.setMessage("프로젝트 삭제에 성공했습니다.");
+            responseDTO.setData(projectId.trim());
+
+            return ResponseEntity.ok(responseDTO);
+        } catch (IllegalArgumentException e) {
+            ErrorResponseDTO errorResponseDTO = new ErrorResponseDTO(
+                    404,
+                    "PROJECT_NOT_FOUND",
+                    e.getMessage(),
+                    List.of(new FieldErrorDTO("projectId", "존재하지 않는 프로젝트 ID입니다."))
+            );
+
+            return ResponseEntity.status(404).body(errorResponseDTO);
+        } catch (IllegalStateException e) {
+            ErrorResponseDTO errorResponseDTO = new ErrorResponseDTO(
+                    500,
+                    "PROJECT_DELETE_FAILED",
+                    e.getMessage(),
+                    List.of(new FieldErrorDTO("projectId", "프로젝트 폴더 삭제 중 오류가 발생했습니다."))
+            );
+
+            return ResponseEntity.status(500).body(errorResponseDTO);
+        }
     }
     
 }
