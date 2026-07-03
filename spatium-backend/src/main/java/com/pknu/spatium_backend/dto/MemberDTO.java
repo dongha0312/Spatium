@@ -118,4 +118,58 @@ public class MemberDTO{
         @AssertTrue(message = "개인정보처리방침에 동의해야 합니다")
         private boolean privacyAgreed;
     }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Data
+    // 로그인 요청 DTO (POST /api/auth/sessions)
+    public static class LoginRequest {
+
+        @NotBlank(message = "이메일을 입력해주세요")
+        private String email;
+
+        @NotBlank(message = "비밀번호를 입력해주세요")
+        private String password;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Data
+    // 로그인 응답 DTO (POST /api/auth/sessions)
+    public static class LoginResponse {
+
+        private String accessToken;
+
+        private String refreshToken;
+
+        // 고정값 "Bearer"
+        private String tokenType;
+
+        // accessToken 만료 시간(초) : 3600
+        private long expiresIn;
+
+        private UserSummaryResponse user;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Data
+    // 로그인 응답의 user 요약 정보
+    //  - 명세엔 userId가 숫자(1)지만, ERD상 mem_id가 VARCHAR2(36) UUID라 String으로 처리
+    public static class UserSummaryResponse {
+
+        private String userId;
+
+        private String email;
+
+        private String nickname;
+
+        private String profileImageUrl;
+    }
 }

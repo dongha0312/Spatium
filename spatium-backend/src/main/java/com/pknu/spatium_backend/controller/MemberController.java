@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import com.pknu.spatium_backend.dto.MemberDTO;
 @RestController
 @RequiredArgsConstructor
-@RequestMapping(path="/api")
+@RequestMapping(path="/api/auth")
 @Slf4j
 
 public class MemberController {

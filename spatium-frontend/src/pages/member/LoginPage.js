@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import "../../styles/loginpage.css";
 import { saveLoginSession } from "../../utils/authSession";
 import { useGoogleLogin } from "@react-oauth/google";
-import { postSocialLogin } from "../../springApi/MemberSpringBootApi";
+import { postLogin, postSocialLogin } from "../../springApi/MemberSpringBootApi";
 
 // 이메일 형식 검증용 정규식
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -23,7 +23,7 @@ function LoginPage({ onLoginSuccess }) {
 
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
 
     // 이메일 형식이 아니면 로그인을 진행하지 않음
@@ -33,16 +33,31 @@ function LoginPage({ onLoginSuccess }) {
     }
     setEmailError("");
 
-    // 로그인 세션 저장 (닉네임은 이메일 앞부분으로 유추 : 추후 백엔드 연동 시 교체)
-    saveLoginSession(email);
+    try {
+      // 백엔드 로그인 API 호출 (POST /api/auth/sessions)
+      const result = await postLogin({ email, password: pw });
+      const data = result.data || {};
 
-    alert(`이메일 : ${email} / 비밀번호 : ${pw}`);
+      // 로그인 세션 저장 (백엔드가 내려준 닉네임 + JWT 토큰)
+      saveLoginSession(email, data.user?.nickname, "LOCAL", {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+      });
 
-    if (onLoginSuccess) {
-      onLoginSuccess();
-    } else {
-      // 로그인 성공 시 메인 페이지로 이동 (메인 페이지 우측 상단에 닉네임 표시)
-      navigate("/");
+      if (onLoginSuccess) {
+        onLoginSuccess();
+      } else {
+        // 로그인 성공 시 메인 페이지로 이동 (메인 페이지 우측 상단에 닉네임 표시)
+        navigate("/");
+      }
+    } catch (err) {
+      // 401(INVALID_CREDENTIALS) : 이메일 또는 비밀번호 불일치
+      if (err.status === 401) {
+        setEmailError(err.message || "이메일 또는 비밀번호가 일치하지 않습니다.");
+      } else {
+        console.error("로그인 처리 중 오류:", err);
+        alert("로그인 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.");
+      }
     }
   };
 
