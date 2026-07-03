@@ -179,7 +179,7 @@ public class RoomService {
 
         Room room = Room.builder()
                 .room_id(roomId)
-                .proj_code(projectId)
+                .room_proj(projectId)
                 .room_name(roomName)
                 .room_path(saveDir.toString())
                 .build();
