@@ -6,7 +6,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Comparator;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -15,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 import com.pknu.spatium_backend.dto.RoomDTO.ResponseRoomCreateDTO;
 import com.pknu.spatium_backend.model.Room;
 import com.pknu.spatium_backend.repository.RoomRepository;
+import com.pknu.spatium_backend.util.JwtUtil;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 public class RoomService {
 
     private final RoomRepository roomRepository;
+    private final JwtUtil jwtUtil;
 
     public void post3dData(
             String jsonDataFile,
@@ -204,17 +208,17 @@ public class RoomService {
 
     // 수정된 룸 저장
     public ResponseEntity<String> saveEditedRoom(
-            String authorizationHeader,
+            String accessToken,
             String projectId,
             String roomId,
             MultipartFile metadata) {
-        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+        if (accessToken == null || accessToken.isBlank()) {
             return ResponseEntity.status(401).body("로그인이 필요합니다.");
         }
 
-        String userId = authorizationHeader.substring(7).trim();
+        String memId = jwtUtil.validateAndGetMemId(accessToken);
 
-        if (userId.isEmpty()) {
+        if (memId == null || memId.isBlank()) {
             return ResponseEntity.status(401).body("로그인이 필요합니다.");
         }
 
@@ -237,7 +241,7 @@ public class RoomService {
                     .normalize();
 
             Path saveDir = dataDir
-                    .resolve(userId)
+                    .resolve(memId)
                     .resolve(projectId)
                     .resolve(roomId)
                     .toAbsolutePath()
@@ -275,6 +279,77 @@ public class RoomService {
             return ResponseEntity
                     .internalServerError()
                     .body("수정된 룸 저장에 실패했습니다.");
+        }
+    }
+
+    @Transactional
+    public void deleteRoom(
+            String accessToken,
+            String projectId,
+            String roomId) {
+        if (accessToken == null || accessToken.isBlank()) {
+            throw new IllegalArgumentException("로그인이 필요합니다.");
+        }
+
+        String memId = jwtUtil.validateAndGetMemId(accessToken);
+
+        if (memId == null || memId.isBlank()) {
+            throw new IllegalArgumentException("로그인이 필요합니다.");
+        }
+
+        if (projectId == null || projectId.isBlank()) {
+            throw new IllegalArgumentException("projectId가 필요합니다.");
+        }
+
+        if (roomId == null || roomId.isBlank()) {
+            throw new IllegalArgumentException("roomId가 필요합니다.");
+        }
+
+        Room room = roomRepository.findByRoomIdAndProjectId(roomId, projectId)
+                .orElseThrow(() -> new IllegalArgumentException("삭제할 룸을 찾을 수 없습니다."));
+
+        Path roomDir = Paths
+                .get(System.getProperty("user.dir"), "data")
+                .resolve(memId)
+                .resolve(projectId)
+                .resolve(roomId)
+                .toAbsolutePath()
+                .normalize();
+
+        roomRepository.delete(room);
+        roomRepository.flush();
+
+        deleteDirectory(roomDir);
+    }
+
+    private void deleteDirectory(Path targetDir) {
+        Path dataRoot = Paths
+                .get(System.getProperty("user.dir"), "data")
+                .toAbsolutePath()
+                .normalize();
+
+        Path normalizedTargetDir = targetDir.toAbsolutePath().normalize();
+
+        if (!normalizedTargetDir.startsWith(dataRoot)) {
+            throw new IllegalArgumentException("삭제할 수 없는 경로입니다.");
+        }
+
+        if (!Files.exists(normalizedTargetDir)) {
+            log.info("삭제할 룸 폴더가 없습니다. path={}", normalizedTargetDir);
+            return;
+        }
+
+        try (Stream<Path> paths = Files.walk(normalizedTargetDir)) {
+            paths.sorted(Comparator.reverseOrder())
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException e) {
+                            throw new IllegalStateException("룸 폴더 삭제 중 오류가 발생했습니다.", e);
+                        }
+                    });
+        } catch (IOException e) {
+            throw new IllegalStateException("룸 폴더 삭제 중 오류가 발생했습니다.", e);
         }
     }
 }

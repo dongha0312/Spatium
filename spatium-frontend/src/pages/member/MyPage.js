@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import "../../styles/mypage.css";
 import { clearLoginSession, getAccessToken } from "../../utils/authSession";
 import { deleteLogout } from "../../springApi/MemberSpringBootApi";
+import { deleteRoom } from "../../springApi/RoomSpringBootApi";
 
 // 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
 const USER = {
@@ -176,6 +177,42 @@ function MyPage() {
     }
     setEditingRoomKey(null);
     setEditingRoomName("");
+  };
+
+  const handleDeleteRoom = async (event, project, room) => {
+    event.stopPropagation();
+
+    const confirmed = window.confirm(`"${room.name}" 룸을 삭제하시겠습니까?`);
+    if (!confirmed) return;
+
+    const accessToken = getAccessToken();
+    if (!accessToken) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
+
+    try {
+      await deleteRoom({
+        projectId: project.id,
+        roomId: room.id,
+        accessToken,
+      });
+
+      setProjects((prev) =>
+        prev.map((p) =>
+          p.id !== project.id
+            ? p
+            : {
+                ...p,
+                rooms: p.rooms.filter((r) => r.id !== room.id),
+              },
+        ),
+      );
+
+      alert("룸이 삭제되었습니다.");
+    } catch (err) {
+      alert(err.message || "룸 삭제에 실패했습니다.");
+    }
   };
 
   // 모달 열기 : mode='project'면 새 프로젝트(새 칸), mode='room'이면 해당 프로젝트에 룸 추가
@@ -378,6 +415,15 @@ function MyPage() {
                             {room.furnitureCount}개
                           </div>
                         </div>
+                        <button
+                          type="button"
+                          className="mp-room-delete-btn"
+                          onClick={(event) =>
+                            handleDeleteRoom(event, project, room)
+                          }
+                        >
+                          삭제
+                        </button>
                         <div className="mp-room-arrow">›</div>
                       </div>
                     );
