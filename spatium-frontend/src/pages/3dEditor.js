@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import "../styles/3deditor.css";
 import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
+import { getLoginSession } from "../utils/authSession";
 
 const ROOM_NAME = "우리집 거실 리모델링";
 const TEAM_LABEL = "1조";
@@ -25,6 +26,7 @@ function normalizeCatalogItem(item) {
 
 function ThreeDEditor() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const editorRef = useRef(null);
   const [activeLayerId, setActiveLayerId] = useState(INITIAL_LAYERS[0].id);
   const [roomDropdownOpen, setRoomDropdownOpen] = useState(false);
@@ -117,7 +119,30 @@ function ThreeDEditor() {
   };
 
   const handleSaveRoom = async () => {
-    await editorRef.current?.saveEditedSceneJson();
+    const session = getLoginSession();
+    const accessToken = session?.providerUserId || session?.email;
+    const projectId = searchParams.get("projectId");
+    const roomId = searchParams.get("roomId");
+
+    if (!projectId || !roomId) {
+      alert("저장할 프로젝트/룸 정보를 찾을 수 없습니다.");
+      return;
+    }
+
+    if (!accessToken) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
+
+    const saved = await editorRef.current?.saveEditedSceneJson({
+      projectId,
+      roomId,
+      accessToken,
+    });
+
+    if (saved) {
+      alert("저장되었습니다.");
+    }
   };
 
   return (
