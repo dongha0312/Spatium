@@ -39,7 +39,6 @@ public class MemberDTO{
         @AssertTrue(message = "개인정보처리방침에 동의해야 합니다")
         private boolean privacyAgreed;
 
-        private boolean privacyAgreed;
     }
 
     @Getter

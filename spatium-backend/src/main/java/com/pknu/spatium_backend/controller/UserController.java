@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSignupDTO;
+import com.pknu.spatium_backend.dto.ResponseDTO;
 import com.pknu.spatium_backend.exception.ApiException;
 import com.pknu.spatium_backend.service.MemberService;
 
@@ -25,7 +26,7 @@ public class UserController {
     private final MemberService memberService;
 
     // 일반 회원가입 (POST /api/users)
-    @PostMapping
+    @PostMapping(path="/")
     public ResponseEntity<?> postSignup(@RequestBody MemberSignupDTO memDTO) {
         try {
             return ResponseEntity.status(201).body(Map.of(
@@ -42,7 +43,7 @@ public class UserController {
     // 테스트 할 수가 없어서 우선 RequestBody로 해 둠.
     // @RequestHeader(value = "Authorization", required = false) String authorization,
     // @RequestBody Map<String, Object> requestBody
-    // 내정보 조회
+    // 내 정보 조회
     public ResponseEntity<?> getMyInfo(@RequestBody Map<String, String> requestBody) {
         String memId = requestBody.get("memId");
 
@@ -64,12 +65,7 @@ public class UserController {
             ));
         } catch (ApiException e) {
             return buildErrorResponse(e);
-            ResponseDTO<Map<String, Object>> responseDTO = new ResponseDTO<>();
-            responseDTO.setStatusCode(200);
-            responseDTO.setMessage("내 정보 조회에 성공했습니다.");
-            responseDTO.setData(memberService.getMyInfo(memId.trim()));
 
-            return ResponseEntity.ok(responseDTO);
         } catch (IllegalArgumentException e) {
             ResponseDTO<Object> errResponseDTO = new ResponseDTO<>();
             errResponseDTO.setStatusCode(404);
