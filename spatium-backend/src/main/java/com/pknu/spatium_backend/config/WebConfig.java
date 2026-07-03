@@ -18,6 +18,7 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+        // @AuthenticatedMemId 파라미터가 JWT 검증 결과를 받을 수 있도록 Spring MVC에 등록한다.
         resolvers.add(authenticatedMemIdArgumentResolver);
     }
 }
