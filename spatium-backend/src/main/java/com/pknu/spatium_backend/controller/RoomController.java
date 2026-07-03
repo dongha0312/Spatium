@@ -59,15 +59,10 @@ public class RoomController {
                 .body("3D 파일 업로드 성공");
     }
 
-    @PutMapping(
-            path = "/api/test-three/metadata",
-            consumes = MediaType.APPLICATION_JSON_VALUE,
-            produces = MediaType.APPLICATION_JSON_VALUE
-    )
+    @PutMapping(path = "/api/test-three/metadata", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> putEditedMetadata(
             @RequestParam(required = false) String metadataUrl,
-            @RequestBody String metadataJson
-    ) {
+            @RequestBody String metadataJson) {
 
         if (metadataJson == null || metadataJson.isBlank()) {
             return ResponseEntity
@@ -78,14 +73,12 @@ public class RoomController {
         try {
             Path savedPath = roomService.saveEditedMetadata(
                     metadataUrl,
-                    metadataJson
-            );
+                    metadataJson);
 
             return ResponseEntity.ok(Map.of(
                     "message", "metadata JSON saved.",
                     "fileName", savedPath.getFileName().toString(),
-                    "savedPath", savedPath.toString()
-            ));
+                    "savedPath", savedPath.toString()));
         } catch (IOException e) {
             log.error("Failed to save edited metadata JSON.", e);
             return ResponseEntity
@@ -120,17 +113,13 @@ public class RoomController {
     }
 
     // 룸 생성하기
-    @PostMapping(
-            path = "/api/projects/{projectId}/rooms",
-            consumes = MediaType.MULTIPART_FORM_DATA_VALUE
-    )
+    @PostMapping(path = "/api/projects/{projectId}/rooms", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> createRoom(
             @PathVariable String projectId,
             @RequestHeader(value = "Authorization", required = false) String authorization,
             @RequestParam String roomName,
             @RequestPart("metadata") MultipartFile metadata,
-            @RequestPart("file") MultipartFile file
-    ) {
+            @RequestPart("file") MultipartFile file) {
         if (authorization == null || !authorization.startsWith("Bearer ")) {
             ResponseDTO<Object> responseDTO = new ResponseDTO<>();
             responseDTO.setStatusCode(401);
@@ -157,8 +146,7 @@ public class RoomController {
                     projectId,
                     roomName,
                     metadata,
-                    file
-            );
+                    file);
 
             ResponseDTO<ResponseRoomCreateDTO> responseDTO = new ResponseDTO<>();
             responseDTO.setStatusCode(201);
@@ -182,14 +170,25 @@ public class RoomController {
             return ResponseEntity.internalServerError().body(responseDTO);
         }
     }
-        
 
-        // 룸 목록 조회
-        @GetMapping(path="api/project/{projectId}/rooms")
-        public String getMethodName(@RequestParam String projectId) {
-            return new String();
-        }
-        
-
-
+    // 룸 목록 조회
+    @GetMapping(path = "api/project/{projectId}/rooms")
+    public String getMethodName(@RequestParam String projectId) {
+        return new String();
     }
+
+    // 수정된 룸 저장
+    @PostMapping(path = "/api/rooms/save", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<String> saveEditedRoom(
+            @RequestParam("projectId") String projectId,
+            @RequestParam("roomId") String roomId,
+            @RequestPart("metadata") MultipartFile metadata,
+            @RequestHeader("Authorization") String authorizationHeader) {
+        return roomService.saveEditedRoom(
+                authorizationHeader,
+                projectId,
+                roomId,
+                metadata);
+    }
+
+}

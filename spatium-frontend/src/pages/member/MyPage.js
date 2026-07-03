@@ -116,8 +116,13 @@ function MyPage() {
   };
 
   // 프로젝트(룸) 클릭 → 3D 에디터로 이동
-  const handleOpenRoom = () => {
-    navigate("/member/editor");
+  const handleOpenRoom = (project, room) => {
+    const params = new URLSearchParams({
+      projectId: String(project.id),
+      roomId: String(room.id),
+    });
+
+    navigate(`/member/editor?${params.toString()}`);
   };
 
   // 프로젝트 이름 더블클릭 → 인라인 수정 시작
@@ -336,7 +341,7 @@ function MyPage() {
                         key={room.id}
                         className="mp-room-row"
                         onClick={() => {
-                          if (!isEditingRoom) handleOpenRoom(room);
+                          if (!isEditingRoom) handleOpenRoom(project, room);
                         }}
                       >
                         <div className="mp-room-thumb">{room.thumb}</div>
