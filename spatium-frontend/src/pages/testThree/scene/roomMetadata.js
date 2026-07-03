@@ -6,8 +6,16 @@ import {
   getRoomModelUrl,
   sceneColor,
 } from "./sceneConfig";
-import { cloneJsonValue, columnsFromMatrix, matrixFromColumns } from "./threeUtils";
-import { isUsdFloorMesh, isUsdReplacedMesh, isUsdWallMesh } from "./wallColliders";
+import {
+  cloneJsonValue,
+  columnsFromMatrix,
+  matrixFromColumns,
+} from "./threeUtils";
+import {
+  isUsdFloorMesh,
+  isUsdReplacedMesh,
+  isUsdWallMesh,
+} from "./wallColliders";
 
 export function objectToEditableJson(object) {
   object.updateMatrix();
@@ -262,14 +270,19 @@ export function createRoomModelFromJson(roomJson) {
   return group.children.length ? group : null;
 }
 
+// usdz, json 합쳐서 json으로만 그릴 수 있는 파일로 만들기
 export function createReplayableMetadataJson(metadata, editedItems, roomModel) {
   const nextMetadata = cloneJsonValue(metadata) || {};
   const originalObjects = nextMetadata.objects || [];
   const originalDoors = nextMetadata.doors || [];
   const originalWindows = nextMetadata.windows || [];
-  const objectEdits = editedItems.filter((item) => item.sourceType === "object");
+  const objectEdits = editedItems.filter(
+    (item) => item.sourceType === "object",
+  );
   const doorEdits = editedItems.filter((item) => item.sourceType === "door");
-  const windowEdits = editedItems.filter((item) => item.sourceType === "window");
+  const windowEdits = editedItems.filter(
+    (item) => item.sourceType === "window",
+  );
 
   const applyReferenceEdit = (edit, originalItems) => {
     const original = originalItems[edit.index] || {};

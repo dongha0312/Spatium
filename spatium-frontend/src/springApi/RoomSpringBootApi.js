@@ -28,31 +28,22 @@ export const saveRoomMetadataJson = ({
   accessToken,
 }) => {
   const formData = new FormData();
+
+  formData.append("projectId", projectId);
+  formData.append("roomId", roomId);
+
   const metadataFile = new Blob([JSON.stringify(metadata)], {
     type: "application/json",
   });
 
-  formData.append("projectId", projectId);
-  formData.append("roomId", roomId);
   formData.append("metadata", metadataFile, "metadata.json");
 
-  return springApi
-    .post("/api/rooms/save", formData, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "multipart/form-data",
-      },
-    })
-    .then((response) => response.data)
-    .catch((error) => {
-      const responseData = error.response?.data;
-      const message =
-        typeof responseData === "string"
-          ? responseData
-          : responseData?.message || error.message;
-
-      throw new Error(message);
-    });
+  return springApi.post("/api/rooms/save", formData, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "multipart/form-data",
+    },
+  });
 };
 
 // 룸 상세 조회
