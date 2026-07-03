@@ -3,7 +3,10 @@ import { Link, useNavigate } from "react-router-dom";
 import "../../styles/loginpage.css";
 import { saveLoginSession } from "../../utils/authSession";
 import { useGoogleLogin } from "@react-oauth/google";
-import { postLogin, postSocialLogin } from "../../springApi/MemberSpringBootApi";
+import {
+  postLogin,
+  postSocialLogin,
+} from "../../springApi/MemberSpringBootApi";
 
 // 이메일 형식 검증용 정규식
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -53,7 +56,9 @@ function LoginPage({ onLoginSuccess }) {
     } catch (err) {
       // 401(INVALID_CREDENTIALS) : 이메일 또는 비밀번호 불일치
       if (err.status === 401) {
-        setEmailError(err.message || "이메일 또는 비밀번호가 일치하지 않습니다.");
+        setEmailError(
+          err.message || "이메일 또는 비밀번호가 일치하지 않습니다.",
+        );
       } else {
         console.error("로그인 처리 중 오류:", err);
         alert("로그인 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.");
@@ -86,8 +91,12 @@ function LoginPage({ onLoginSuccess }) {
           email: profile.email,
         });
 
-        // 기존 가입된 구글 계정 : 로그인 처리
-        saveLoginSession(profile.email, result.data?.nickname, "GOOGLE");
+        // 기존 가입된 구글 계정 : 로그인 처리 (백엔드가 발급한 JWT 토큰도 함께 저장)
+        const data = result.data || {};
+        saveLoginSession(profile.email, data.user?.nickname, "GOOGLE", {
+          accessToken: data.accessToken,
+          refreshToken: data.refreshToken,
+        });
 
         if (onLoginSuccess) {
           onLoginSuccess();
