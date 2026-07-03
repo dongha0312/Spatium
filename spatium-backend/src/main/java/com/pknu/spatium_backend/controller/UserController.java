@@ -26,7 +26,7 @@ public class UserController {
     private final MemberService memberService;
 
     // 일반 회원가입 (POST /api/users)
-    @PostMapping(path="/")
+    @PostMapping
     public ResponseEntity<?> postSignup(@RequestBody MemberSignupDTO memDTO) {
         try {
             return ResponseEntity.status(201).body(Map.of(
