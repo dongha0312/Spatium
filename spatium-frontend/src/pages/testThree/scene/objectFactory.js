@@ -64,6 +64,16 @@ function createCollisionHitBox(localObb, color) {
   return mesh;
 }
 
+function cloneRenderableMaterials(object) {
+  object.traverse((child) => {
+    if (!child.material) return;
+
+    child.material = Array.isArray(child.material)
+      ? child.material.map((material) => material.clone())
+      : child.material.clone();
+  });
+}
+
 export function createEditableFurniture(item, index) {
   const dimensions = item.dimensions || {};
   const category = item.category || "object";
@@ -270,6 +280,7 @@ export function createDoorModel(doorTemplate, item, index) {
   root.scale.copy(transform.scale);
 
   removeReferenceModelArtifacts(model);
+  cloneRenderableMaterials(model);
   model.traverse((object) => {
     if (object.isMesh) {
       object.castShadow = true;
@@ -333,6 +344,7 @@ export function createWindowModel(windowTemplate, item, index) {
   root.scale.copy(transform.scale);
 
   removeReferenceModelArtifacts(model);
+  cloneRenderableMaterials(model);
   model.traverse((object) => {
     if (object.isMesh) {
       object.castShadow = true;

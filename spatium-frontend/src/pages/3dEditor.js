@@ -1,17 +1,17 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import "../styles/3deditor.css";
 import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
 import { getAccessToken } from "../utils/authSession";
+import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
+import { getRoomJsonData } from "../springApi/RoomSpringBootApi";
 
-const ROOM_NAME = "우리집 거실 리모델링";
-const TEAM_LABEL = "1조";
 const FURNITURE_CATALOG_URL = "/data/furniture_catalog.json";
 
 const INITIAL_LAYERS = [
-  { id: "living", name: "거실", color: "#C4956A" },
-  { id: "kitchen", name: "주방", color: "#D4A96A" },
-  { id: "bedroom", name: "침실", color: "#7B9EC2" },
+  { id: "room", name: "Room", color: "#C4956A" },
+  { id: "furniture", name: "Furniture", color: "#7B9EC2" },
+  { id: "openings", name: "Doors & windows", color: "#D4A96A" },
 ];
 
 const WALL_COLORS = ["#F5F0EA", "#E8DCC8", "#C4956A", "#3A3A3A"];
@@ -21,32 +21,63 @@ function normalizeCatalogItem(item) {
     ...item,
     path: item.path || item.modelUrl || null,
     modelUrl: item.modelUrl || item.path || null,
+    thumbnailUrl: item.thumbnailUrl || item.imageUrl || null,
   };
+}
+
+function shortId(value, fallback) {
+  if (!value) return fallback;
+  return String(value).slice(0, 8);
 }
 
 function ThreeDEditor() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const editorRef = useRef(null);
+  const editorUrlRef = useRef(window.location.href);
+  const projectId = searchParams.get("projectId");
+  const roomId = searchParams.get("roomId");
+
   const [activeLayerId, setActiveLayerId] = useState(INITIAL_LAYERS[0].id);
   const [roomDropdownOpen, setRoomDropdownOpen] = useState(false);
   const [furnitureCatalog, setFurnitureCatalog] = useState([]);
+  const [catalogSearch, setCatalogSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState(null);
-  const [priceBannerVisible, setPriceBannerVisible] = useState(true);
+  const [catalogError, setCatalogError] = useState("");
   const [isSkyview, setIsSkyview] = useState(false);
   const [wallColor, setWallColor] = useState(null);
   const [wallColorPickerOpen, setWallColorPickerOpen] = useState(false);
   const [showMeasurements, setShowMeasurements] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [saveError, setSaveError] = useState("");
+  const [projectLabel, setProjectLabel] = useState(shortId(projectId, "Project"));
+  const [roomLabel, setRoomLabel] = useState(shortId(roomId, "Room editor"));
 
   const activeLayer =
     INITIAL_LAYERS.find((layer) => layer.id === activeLayerId) ??
     INITIAL_LAYERS[0];
-  const categoryFilters = Array.from(
-    new Set(furnitureCatalog.map((item) => item.group).filter(Boolean)),
+
+  const categoryFilters = useMemo(
+    () => Array.from(new Set(furnitureCatalog.map((item) => item.group).filter(Boolean))),
+    [furnitureCatalog],
   );
-  const visibleCatalogItems = activeCategory
-    ? furnitureCatalog.filter((item) => item.group === activeCategory)
-    : furnitureCatalog;
+
+  const visibleCatalogItems = useMemo(() => {
+    const query = catalogSearch.trim().toLowerCase();
+
+    return furnitureCatalog.filter((item) => {
+      const matchesCategory = activeCategory ? item.group === activeCategory : true;
+      const haystack = [item.name, item.group, item.category]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      const matchesSearch = query ? haystack.includes(query) : true;
+
+      return matchesCategory && matchesSearch;
+    });
+  }, [activeCategory, catalogSearch, furnitureCatalog]);
 
   useEffect(() => {
     let isMounted = true;
@@ -61,15 +92,87 @@ function ThreeDEditor() {
       .then((data) => {
         if (isMounted) {
           setFurnitureCatalog((Array.isArray(data) ? data : []).map(normalizeCatalogItem));
+          setCatalogError("");
         }
       })
       .catch((error) => {
-        console.error("Failed to load furniture catalog", error);
+        if (isMounted) {
+          setCatalogError(error.message || "Failed to load catalog.");
+        }
       });
 
     return () => {
       isMounted = false;
     };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    if (projectId) {
+      getProjectInfo(projectId)
+        .then((data) => {
+          if (isMounted && data?.projectName) {
+            setProjectLabel(data.projectName);
+          }
+        })
+        .catch(() => {
+          if (isMounted) setProjectLabel(shortId(projectId, "Project"));
+        });
+    }
+
+    if (roomId) {
+      getRoomJsonData(roomId)
+        .then((data) => {
+          if (isMounted && data?.roomName) {
+            setRoomLabel(data.roomName);
+          }
+        })
+        .catch(() => {
+          if (isMounted) setRoomLabel(shortId(roomId, "Room editor"));
+        });
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [projectId, roomId]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return undefined;
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    const handlePopState = () => {
+      const confirmed = window.confirm(
+        "You have unsaved changes. Leave the editor anyway?",
+      );
+
+      if (confirmed) {
+        setHasUnsavedChanges(false);
+        return;
+      }
+
+      window.history.pushState(null, "", editorUrlRef.current);
+    };
+
+    window.history.pushState(null, "", editorUrlRef.current);
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [hasUnsavedChanges]);
+
+  const handleSceneChanged = useCallback(() => {
+    setHasUnsavedChanges(true);
+    setSaveMessage("");
+    setSaveError("");
   }, []);
 
   const toggleRoomDropdown = () => setRoomDropdownOpen((prev) => !prev);
@@ -111,35 +214,52 @@ function ThreeDEditor() {
   };
 
   const handleCancel = () => {
-    navigate("/member/mypage");
-  };
+    if (hasUnsavedChanges) {
+      const confirmed = window.confirm(
+        "You have unsaved changes. Leave the editor anyway?",
+      );
+      if (!confirmed) return;
+    }
 
-  const handlePreview = () => {
-    alert("미리보기 기능은 준비 중입니다.");
+    navigate("/member/mypage");
   };
 
   const handleSaveRoom = async () => {
     const accessToken = getAccessToken();
-    const projectId = searchParams.get("projectId");
-    const roomId = searchParams.get("roomId");
+
+    setSaveMessage("");
+    setSaveError("");
 
     if (!projectId || !roomId) {
-      alert("저장할 프로젝트/룸 정보를 찾을 수 없습니다.");
+      setSaveError("Missing project or room information.");
       return;
     }
 
     if (!accessToken) {
-      alert("로그인이 필요합니다.");
+      setSaveError("Please log in before saving.");
       return;
     }
 
-    const saved = await editorRef.current?.saveEditedSceneJson({
-      projectId,
-      roomId,
-    });
+    setIsSaving(true);
 
-    if (saved) {
-      alert("저장되었습니다.");
+    try {
+      const saved = await editorRef.current?.saveEditedSceneJson({
+        projectId,
+        roomId,
+      });
+
+      if (!saved) {
+        setSaveError("Save failed. Check the editor message and try again.");
+        return;
+      }
+
+      setHasUnsavedChanges(false);
+      setSaveMessage("Saved.");
+      window.setTimeout(() => setSaveMessage(""), 1800);
+    } catch (error) {
+      setSaveError(error.message || "Save failed.");
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -152,13 +272,21 @@ function ThreeDEditor() {
           </div>
           SPATIUM
         </Link>
-        <div className="ed-nav-center">{ROOM_NAME}</div>
+        <div className="ed-nav-center">{roomLabel}</div>
+        <div className="ed-nav-status">
+          {isSaving && <span className="ed-save-state">Saving...</span>}
+          {!isSaving && saveMessage && <span className="ed-save-state ed-save-ok">{saveMessage}</span>}
+          {!isSaving && saveError && <span className="ed-save-state ed-save-error">{saveError}</span>}
+          {!isSaving && hasUnsavedChanges && !saveMessage && !saveError && (
+            <span className="ed-save-state">Unsaved changes</span>
+          )}
+        </div>
       </div>
 
       <div className="ed-wrap">
         <div className="ed-toolbar">
           <button className="ed-toolbar-btn ed-proj" type="button">
-            {TEAM_LABEL}
+            {projectLabel}
           </button>
         </div>
 
@@ -203,6 +331,16 @@ function ThreeDEditor() {
               )}
             </div>
 
+            <div className="ed-cat-search-wrap">
+              <input
+                className="ed-cat-search"
+                type="search"
+                placeholder="Search furniture"
+                value={catalogSearch}
+                onChange={(event) => setCatalogSearch(event.target.value)}
+              />
+            </div>
+
             <div className="ed-cat-filters">
               {categoryFilters.map((category) => (
                 <button
@@ -221,23 +359,15 @@ function ThreeDEditor() {
                 }`}
                 onClick={showAllCategories}
               >
-                모든 카테고리
-                <svg
-                  viewBox="0 0 24 24"
-                  width="13"
-                  height="13"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M6 9l6 6 6-6" />
-                </svg>
+                All
               </button>
             </div>
 
             <div className="ed-cat-products">
+              {catalogError && <div className="ed-cat-empty">{catalogError}</div>}
+              {!catalogError && visibleCatalogItems.length === 0 && (
+                <div className="ed-cat-empty">No furniture found.</div>
+              )}
               {visibleCatalogItems.map((item) => (
                 <button
                   key={item.id}
@@ -245,31 +375,22 @@ function ThreeDEditor() {
                   className="ed-cat-product"
                   onClick={() => handleAddFurniture(item)}
                 >
-                  <span className="ed-cat-product-thumb" />
+                  <span className="ed-cat-product-thumb">
+                    {item.thumbnailUrl ? (
+                      <img src={item.thumbnailUrl} alt="" />
+                    ) : (
+                      <span>{String(item.category || item.name || "?").slice(0, 2)}</span>
+                    )}
+                  </span>
                   <span className="ed-cat-product-body">
                     <span className="ed-cat-product-name">{item.name}</span>
-                    <span className="ed-cat-product-meta">{item.group}</span>
+                    <span className="ed-cat-product-meta">
+                      {item.group || item.category}
+                    </span>
                   </span>
                 </button>
               ))}
             </div>
-
-            {priceBannerVisible && (
-              <div className="ed-cat-banner">
-                <span className="ed-cat-banner-icon">ⓘ</span>
-                <div className="ed-cat-banner-text">
-                  <div>최종 가격은 다를 수 있습니다.</div>
-                  <div>결제 시 가격 세부 정보를 확인하세요.</div>
-                </div>
-                <button
-                  type="button"
-                  className="ed-cat-banner-close"
-                  onClick={() => setPriceBannerVisible(false)}
-                >
-                  ✕
-                </button>
-              </div>
-            )}
           </div>
 
           <div
@@ -278,18 +399,24 @@ function ThreeDEditor() {
             style={wallColor ? { background: wallColor } : undefined}
           >
             <div className="ed-canvas-placeholder">
-              <TestThreeStagingPage ref={editorRef} isSkyview={isSkyview} />
+              <TestThreeStagingPage
+                ref={editorRef}
+                isSkyview={isSkyview}
+                showMeasurements={showMeasurements}
+                wallColor={wallColor}
+                onSceneChanged={handleSceneChanged}
+              />
             </div>
 
             {isSkyview && (
               <div className="ed-canvas-badge ed-canvas-badge-sky">
-                Skyview 모드
+                Skyview
               </div>
             )}
 
             {showMeasurements && (
               <div className="ed-canvas-badge ed-canvas-badge-measure">
-                측정 모드
+                Measurements on
               </div>
             )}
 
@@ -323,8 +450,8 @@ function ThreeDEditor() {
                     wallColorPickerOpen ? " ed-viewbar-active" : ""
                   }`}
                   onClick={toggleWallColorPicker}
-                  aria-label="벽 색깔 바꾸기"
-                  title="벽 색깔 바꾸기"
+                  aria-label="Change wall color"
+                  title="Change wall color"
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -355,7 +482,7 @@ function ThreeDEditor() {
                         }`}
                         style={{ background: color }}
                         onClick={() => handleSelectWallColor(color)}
-                        aria-label={`벽 색상 ${color}`}
+                        aria-label={`Wall color ${color}`}
                       />
                     ))}
                   </div>
@@ -366,8 +493,8 @@ function ThreeDEditor() {
                 type="button"
                 className={`ed-viewbar-icon-btn${showMeasurements ? " ed-viewbar-active" : ""}`}
                 onClick={toggleMeasurements}
-                aria-label="측정 옵션 표시"
-                title="측정 옵션 표시"
+                aria-label="Toggle measurements"
+                title="Toggle measurements"
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -402,22 +529,17 @@ function ThreeDEditor() {
             type="button"
             className="ed-footer-btn ed-footer-cancel"
             onClick={handleCancel}
+            disabled={isSaving}
           >
-            취소하기
-          </button>
-          <button
-            type="button"
-            className="ed-footer-btn ed-footer-preview"
-            onClick={handlePreview}
-          >
-            미리보기
+            Cancel
           </button>
           <button
             type="button"
             className="ed-footer-btn ed-footer-save"
             onClick={handleSaveRoom}
+            disabled={isSaving}
           >
-            저장하기
+            {isSaving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>

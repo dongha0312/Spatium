@@ -20,18 +20,21 @@ import {
 export function objectToEditableJson(object) {
   object.updateMatrix();
   object.updateWorldMatrix(true, true);
-  const item = object.userData.roomItem;
+  const item = object.userData.roomItem || {};
   const sourceType = object.userData.sourceType || "object";
   const sourceIndex = object.userData.sourceIndex;
   const collisions = object.userData.collisions || [];
-  const bounds = new THREE.Box3().setFromObject(object);
-  const fallbackSize = bounds.isEmpty()
+  const localObbSize = object.userData.localObb?.halfSize
+    ?.clone()
+    .multiplyScalar(2);
+  const bounds = localObbSize ? null : new THREE.Box3().setFromObject(object);
+  const fallbackSize = localObbSize || (bounds.isEmpty()
     ? new THREE.Vector3(
         item.dimensions?.x || 0,
         item.dimensions?.y || 0,
         item.dimensions?.z || 0,
       )
-    : bounds.getSize(new THREE.Vector3());
+    : bounds.getSize(new THREE.Vector3()));
   const stableSize = new THREE.Vector3(
     Number(item.dimensions?.x) || fallbackSize.x,
     Number(item.dimensions?.y) || fallbackSize.y,
