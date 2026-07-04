@@ -415,10 +415,7 @@ function referenceVisibilityState(reference, camera) {
     };
   }
 
-  const toCamera = camera.position
-    .clone()
-    .sub(reference.position)
-    .setY(0);
+  const toCamera = camera.position.clone().sub(reference.position).setY(0);
   if (toCamera.lengthSq() < 1e-8) {
     return {
       hidden: false,
@@ -451,7 +448,8 @@ function updateReferenceDebugLabel(reference, state) {
   const type = reference.userData.sourceType || "ref";
   const index = Number(reference.userData.sourceIndex) + 1;
   const labelIndex = Number.isFinite(index) ? index : "";
-  const normalYaw = state.normalYaw == null ? null : Math.round(state.normalYaw);
+  const normalYaw =
+    state.normalYaw == null ? null : Math.round(state.normalYaw);
   const toCameraYaw =
     state.toCameraYaw == null ? null : Math.round(state.toCameraYaw);
   const dot = state.dot == null ? null : state.dot.toFixed(2);
@@ -1717,8 +1715,7 @@ export function useTestThreeEditor({
         [...doorItems, ...windowItems].forEach((item) => {
           initializeReferenceFacingNormal(item.root, roomCenter);
           const debugLabel = createReferenceDebugLabel();
-          const labelHeight =
-            item.root.userData.localObb?.halfSize?.y ?? 1;
+          const labelHeight = item.root.userData.localObb?.halfSize?.y ?? 1;
           debugLabel.position.set(0, labelHeight + 0.2, 0);
           item.root.userData.debugLabel = debugLabel;
           item.root.add(debugLabel);
