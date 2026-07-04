@@ -1,0 +1,1099 @@
+{
+  "doors" : [
+    {
+      "dimensions" : {
+        "x" : 1.1393412,
+        "y" : 2.080186,
+        "z" : 0
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.076296926,
+            0,
+            -0.99708515,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0.99708515,
+            0,
+            -0.07629693,
+            0
+          ],
+          [
+            -4.2479076,
+            0.16230933,
+            -0.41442657,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "dimensions" : {
+        "x" : 0.66227794,
+        "y" : 2.349,
+        "z" : 0
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.07629745,
+            0,
+            -0.99708515,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0.9970851,
+            0,
+            -0.07629746,
+            0
+          ],
+          [
+            -1.2094538,
+            0.29671642,
+            0.9429896,
+            1
+          ]
+        ]
+      }
+    }
+  ],
+  "editedObjects" : [
+    {
+      "depth" : 0.5874025225639343,
+      "detectedCategory" : "storage",
+      "detectedRotationY" : 1.647167444229126,
+      "displayName" : "storage 1",
+      "editNote" : "",
+      "height" : 0.5259590148925781,
+      "id" : "1831D3D8-33E9-4B41-971D-6E21B06C8B93",
+      "isReplacementTarget" : true,
+      "positionX" : -3.847155809402466,
+      "positionY" : 1.2087185382843018,
+      "positionZ" : 0.5403299331665039,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 0.6386030316352844
+    },
+    {
+      "depth" : 0.6517768502235413,
+      "detectedCategory" : "storage",
+      "detectedRotationY" : 0.07637135684490204,
+      "displayName" : "storage 2",
+      "editNote" : "",
+      "height" : 2.376039981842041,
+      "id" : "5F8344EC-29E0-40AE-B6A6-8EA636E5DDB6",
+      "isReplacementTarget" : true,
+      "positionX" : 0.650208055973053,
+      "positionY" : 0.3102364242076874,
+      "positionZ" : -1.1342806816101074,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 0.6582697033882141
+    },
+    {
+      "depth" : 0.6306090950965881,
+      "detectedCategory" : "washerDryer",
+      "detectedRotationY" : 1.6471679210662842,
+      "displayName" : "washerDryer 3",
+      "editNote" : "",
+      "height" : 0.9069991111755371,
+      "id" : "1416B1D6-390C-4BDD-8D1B-989B8B3A22DC",
+      "isReplacementTarget" : true,
+      "positionX" : -3.7622857093811035,
+      "positionY" : -0.42428407073020935,
+      "positionZ" : 1.7993149757385254,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 0.6311435699462891
+    },
+    {
+      "depth" : 0.031812671571969986,
+      "detectedCategory" : "storage",
+      "detectedRotationY" : 0.07571826130151749,
+      "displayName" : "storage 4",
+      "editNote" : "",
+      "height" : 2.376039981842041,
+      "id" : "2FAAFE1F-9848-462A-9BBC-F6E8858C78A0",
+      "isReplacementTarget" : true,
+      "positionX" : -1.5701984167099,
+      "positionY" : 0.3102364242076874,
+      "positionZ" : -0.6558232307434082,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 1.780497670173645
+    },
+    {
+      "depth" : 0.5845484733581543,
+      "detectedCategory" : "table",
+      "detectedRotationY" : 1.6471679210662842,
+      "displayName" : "table 5",
+      "editNote" : "",
+      "height" : 0.79145747423172,
+      "id" : "4B0B2A96-E569-4ECA-B163-349CBA54E47C",
+      "isReplacementTarget" : true,
+      "positionX" : -3.4689767360687256,
+      "positionY" : -0.4820549190044403,
+      "positionZ" : 0.5016986131668091,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 0.663753867149353
+    },
+    {
+      "depth" : 0.3546711206436157,
+      "detectedCategory" : "storage",
+      "detectedRotationY" : 0.07637133449316025,
+      "displayName" : "storage 6",
+      "editNote" : "",
+      "height" : 0.5092487335205078,
+      "id" : "83DAAE1C-0D18-4A27-B2D8-8EB715960BB2",
+      "isReplacementTarget" : true,
+      "positionX" : -0.18494659662246704,
+      "positionY" : 1.2200809717178345,
+      "positionZ" : -1.2193619012832642,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 1.0544308423995972
+    },
+    {
+      "depth" : 0.5900130867958069,
+      "detectedCategory" : "table",
+      "detectedRotationY" : 0.07637132704257965,
+      "displayName" : "table 7",
+      "editNote" : "",
+      "height" : 0.8008503317832947,
+      "id" : "32B9C6FD-7FE5-462A-BDDC-3214E34A70BD",
+      "isReplacementTarget" : true,
+      "positionX" : -0.1689871996641159,
+      "positionY" : -0.4773584306240082,
+      "positionZ" : -1.1025680303573608,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 1.1161960363388062
+    },
+    {
+      "depth" : 0.640295684337616,
+      "detectedCategory" : "table",
+      "detectedRotationY" : 0.07637175172567368,
+      "displayName" : "table 8",
+      "editNote" : "",
+      "height" : 0.7494354844093323,
+      "id" : "25C0786F-F7B3-4426-9514-9D37F8746403",
+      "isReplacementTarget" : true,
+      "positionX" : -0.2832677960395813,
+      "positionY" : -0.5030658841133118,
+      "positionZ" : 0.08160308003425598,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 1.3258190155029297
+    },
+    {
+      "depth" : 2.0615968704223633,
+      "detectedCategory" : "bed",
+      "detectedRotationY" : -1.4944250583648682,
+      "displayName" : "bed 9",
+      "editNote" : "",
+      "height" : 0.4453142583370209,
+      "id" : "399A526F-FB47-4EC9-A4A2-8BD095BD5DB1",
+      "isReplacementTarget" : true,
+      "positionX" : 0.11531621217727661,
+      "positionY" : -0.6551264524459839,
+      "positionZ" : 1.071975588798523,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 1.489883303642273
+    },
+    {
+      "depth" : 0.4984130263328552,
+      "detectedCategory" : "chair",
+      "detectedRotationY" : -3.0652217864990234,
+      "displayName" : "chair 10",
+      "editNote" : "",
+      "height" : 0.8468065857887268,
+      "id" : "66C47E1D-DAA4-4910-A658-65502FF7EE9F",
+      "isReplacementTarget" : true,
+      "positionX" : -0.1521831452846527,
+      "positionY" : -0.4543803632259369,
+      "positionZ" : -0.8829653859138489,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 0.48010265827178955
+    },
+    {
+      "depth" : 0.6401894688606262,
+      "detectedCategory" : "refrigerator",
+      "detectedRotationY" : 0.07637139409780502,
+      "displayName" : "refrigerator 11",
+      "editNote" : "",
+      "height" : 1.6869462728500366,
+      "id" : "D59455D0-3E5A-4A3A-923B-6E988A05372B",
+      "isReplacementTarget" : true,
+      "positionX" : -2.7216882705688477,
+      "positionY" : -0.0343104712665081,
+      "positionZ" : -0.8827677965164185,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 0.5891420245170593
+    },
+    {
+      "depth" : 0.5980534553527832,
+      "detectedCategory" : "storage",
+      "detectedRotationY" : 1.6471675634384155,
+      "displayName" : "storage 12",
+      "editNote" : "",
+      "height" : 0.8905412554740906,
+      "id" : "848A2231-8AA2-4605-8749-EEB9AA9C074F",
+      "isReplacementTarget" : true,
+      "positionX" : -3.8264222145080566,
+      "positionY" : -0.43251296877861023,
+      "positionZ" : 1.174500823020935,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 0.59228515625
+    },
+    {
+      "depth" : 0.35403674840927124,
+      "detectedCategory" : "storage",
+      "detectedRotationY" : 1.647167682647705,
+      "displayName" : "storage 13",
+      "editNote" : "",
+      "height" : 0.9061807990074158,
+      "id" : "18556417-437B-4ACD-AC1F-9912FE24BC3F",
+      "isReplacementTarget" : true,
+      "positionX" : -3.9224154949188232,
+      "positionY" : 1.0451661348342896,
+      "positionZ" : 1.519127368927002,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 1.2143203020095825
+    },
+    {
+      "depth" : 0.703125,
+      "detectedCategory" : "chair",
+      "detectedRotationY" : -3.0593905448913574,
+      "displayName" : "chair 14",
+      "editNote" : "",
+      "height" : 1.1037909984588623,
+      "id" : "09BF2738-0183-4431-8117-8625EB6E678C",
+      "isReplacementTarget" : true,
+      "positionX" : -1.621229648590088,
+      "positionY" : -0.32588812708854675,
+      "positionZ" : 0.9486927390098572,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 0.631591796875
+    },
+    {
+      "depth" : 0.6081545352935791,
+      "detectedCategory" : "storage",
+      "detectedRotationY" : 1.647167682647705,
+      "displayName" : "storage 15",
+      "editNote" : "",
+      "height" : 1.04052734375,
+      "id" : "464CFDEE-6C77-47F2-B59D-BB74FA9595EC",
+      "isReplacementTarget" : true,
+      "positionX" : -3.867387533187866,
+      "positionY" : 0.4254753887653351,
+      "positionZ" : 0.5729501247406006,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 0.7390750646591187
+    },
+    {
+      "depth" : 0.09999991208314896,
+      "detectedCategory" : "television",
+      "detectedRotationY" : 0.07637123018503189,
+      "displayName" : "television 16",
+      "editNote" : "",
+      "height" : 0.544189453125,
+      "id" : "AB0365BC-FB46-4916-95C4-6FD7E302FD3C",
+      "isReplacementTarget" : true,
+      "positionX" : -0.2133490890264511,
+      "positionY" : 0.2008390724658966,
+      "positionZ" : -1.2856206893920898,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 0.8723145127296448
+    },
+    {
+      "depth" : 0,
+      "detectedCategory" : "문",
+      "detectedRotationY" : 1.647167444229126,
+      "displayName" : "문 1",
+      "editNote" : "",
+      "height" : 2.080185890197754,
+      "id" : "0D724115-7868-4072-9691-86EDC40A84D8",
+      "isReplacementTarget" : false,
+      "positionX" : -4.247907638549805,
+      "positionY" : 0.16230933368206024,
+      "positionZ" : -0.4144265651702881,
+      "rotationY" : 0,
+      "sourceType" : "문",
+      "width" : 1.1393412351608276
+    },
+    {
+      "depth" : 0,
+      "detectedCategory" : "문",
+      "detectedRotationY" : 1.6471680402755737,
+      "displayName" : "문 2",
+      "editNote" : "",
+      "height" : 2.3489999771118164,
+      "id" : "8DFB2952-8CCF-4772-96FB-EF420F506D12",
+      "isReplacementTarget" : false,
+      "positionX" : -1.209453821182251,
+      "positionY" : 0.2967164218425751,
+      "positionZ" : 0.9429895877838135,
+      "rotationY" : 0,
+      "sourceType" : "문",
+      "width" : 0.6622779369354248
+    },
+    {
+      "depth" : 0,
+      "detectedCategory" : "창문",
+      "detectedRotationY" : -3.0652213096618652,
+      "displayName" : "창문 1",
+      "editNote" : "",
+      "height" : 1.361636757850647,
+      "id" : "8FDB0DEC-59B6-4350-B008-D9C4706195BA",
+      "isReplacementTarget" : false,
+      "positionX" : -2.6361732482910156,
+      "positionY" : 0.7812023162841797,
+      "positionZ" : 2.02963924407959,
+      "rotationY" : 0,
+      "sourceType" : "창문",
+      "width" : 1.3258577585220337
+    },
+    {
+      "depth" : 0,
+      "detectedCategory" : "창문",
+      "detectedRotationY" : -3.0652213096618652,
+      "displayName" : "창문 2",
+      "editNote" : "",
+      "height" : 1.3775416612625122,
+      "id" : "607311C7-6277-490B-8F28-39A4ACFCA270",
+      "isReplacementTarget" : false,
+      "positionX" : -0.18849627673625946,
+      "positionY" : 0.7598061561584473,
+      "positionZ" : 1.842342734336853,
+      "rotationY" : 0,
+      "sourceType" : "창문",
+      "width" : 1.5996235609054565
+    },
+    {
+      "depth" : 0,
+      "detectedCategory" : "개구부",
+      "detectedRotationY" : 1.6471680402755737,
+      "displayName" : "개구부 1",
+      "editNote" : "",
+      "height" : 2.059999942779541,
+      "id" : "8899FB9B-51DE-4575-9C85-2F3F0434FC11",
+      "isReplacementTarget" : false,
+      "positionX" : -1.2850857973098755,
+      "positionY" : 0.1522163450717926,
+      "positionZ" : -0.04540032893419266,
+      "rotationY" : 0,
+      "sourceType" : "개구부",
+      "width" : 1.2937685251235962
+    }
+  ],
+  "objects" : [
+    {
+      "category" : "storage",
+      "dimensions" : {
+        "x" : 0.63860303,
+        "y" : 0.525959,
+        "z" : 0.5874025
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.07629691,
+            0,
+            -0.9970851,
+            0
+          ],
+          [
+            0,
+            1.0000001,
+            0,
+            0
+          ],
+          [
+            0.9970852,
+            0,
+            -0.07629693,
+            0
+          ],
+          [
+            -3.8471558,
+            1.2087185,
+            0.54032993,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "storage",
+      "dimensions" : {
+        "x" : 0.6582697,
+        "y" : 2.37604,
+        "z" : 0.65177685
+      },
+      "transform" : {
+        "columns" : [
+          [
+            0.99708515,
+            0,
+            -0.07629714,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0.076297134,
+            0,
+            0.99708515,
+            0
+          ],
+          [
+            0.65020806,
+            0.31023642,
+            -1.1342807,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "washerDryer",
+      "dimensions" : {
+        "x" : 0.63114357,
+        "y" : 0.9069991,
+        "z" : 0.6306091
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.0762974,
+            0,
+            -0.99708515,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0.9970851,
+            0,
+            -0.07629742,
+            0
+          ],
+          [
+            -3.7622857,
+            -0.42428407,
+            1.799315,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "storage",
+      "dimensions" : {
+        "x" : 1.7804977,
+        "y" : 2.37604,
+        "z" : 0.03181267
+      },
+      "transform" : {
+        "columns" : [
+          [
+            0.99713475,
+            0,
+            -0.07564593,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0.07564592,
+            0,
+            0.99713475,
+            0
+          ],
+          [
+            -1.5701984,
+            0.31023642,
+            -0.65582323,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "table",
+      "dimensions" : {
+        "x" : 0.66375387,
+        "y" : 0.7914575,
+        "z" : 0.5845485
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.07629743,
+            0,
+            -0.9970851,
+            0
+          ],
+          [
+            0,
+            1.0000001,
+            0,
+            0
+          ],
+          [
+            0.99708515,
+            0,
+            -0.076297455,
+            0
+          ],
+          [
+            -3.4689767,
+            -0.48205492,
+            0.5016986,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "storage",
+      "dimensions" : {
+        "x" : 1.0544308,
+        "y" : 0.50924873,
+        "z" : 0.35467112
+      },
+      "transform" : {
+        "columns" : [
+          [
+            0.99708515,
+            0,
+            -0.07629712,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0.07629711,
+            0,
+            0.99708515,
+            0
+          ],
+          [
+            -0.1849466,
+            1.220081,
+            -1.2193619,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "table",
+      "dimensions" : {
+        "x" : 1.116196,
+        "y" : 0.80085033,
+        "z" : 0.5900131
+      },
+      "transform" : {
+        "columns" : [
+          [
+            0.9970851,
+            0,
+            -0.076297104,
+            0
+          ],
+          [
+            0,
+            0.99999994,
+            0,
+            0
+          ],
+          [
+            0.07629708,
+            0,
+            0.99708503,
+            0
+          ],
+          [
+            -0.1689872,
+            -0.47735843,
+            -1.102568,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "table",
+      "dimensions" : {
+        "x" : 1.325819,
+        "y" : 0.7494355,
+        "z" : 0.6402957
+      },
+      "transform" : {
+        "columns" : [
+          [
+            0.99708503,
+            0,
+            -0.07629753,
+            0
+          ],
+          [
+            0,
+            0.99999994,
+            0,
+            0
+          ],
+          [
+            0.07629751,
+            0,
+            0.99708503,
+            0
+          ],
+          [
+            -0.2832678,
+            -0.5030659,
+            0.08160308,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "bed",
+      "dimensions" : {
+        "x" : 1.4898833,
+        "y" : 0.44531426,
+        "z" : 2.0615969
+      },
+      "transform" : {
+        "columns" : [
+          [
+            0.076297045,
+            0,
+            0.9970851,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            -0.9970851,
+            0,
+            0.07629706,
+            0
+          ],
+          [
+            0.11531621,
+            -0.65512645,
+            1.0719756,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "chair",
+      "dimensions" : {
+        "x" : 0.48010266,
+        "y" : 0.8468066,
+        "z" : 0.49841303
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.99708515,
+            0,
+            0.07629657,
+            0
+          ],
+          [
+            0,
+            0.99999994,
+            0,
+            0
+          ],
+          [
+            -0.07629655,
+            0,
+            -0.9970851,
+            0
+          ],
+          [
+            -0.15218315,
+            -0.45438036,
+            -0.8829654,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "refrigerator",
+      "dimensions" : {
+        "x" : 0.589142,
+        "y" : 1.6869463,
+        "z" : 0.64018947
+      },
+      "transform" : {
+        "columns" : [
+          [
+            0.9970851,
+            0,
+            -0.07629717,
+            0
+          ],
+          [
+            0,
+            1.0000001,
+            0,
+            0
+          ],
+          [
+            0.076297164,
+            0,
+            0.9970852,
+            0
+          ],
+          [
+            -2.7216883,
+            -0.03431047,
+            -0.8827678,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "storage",
+      "dimensions" : {
+        "x" : 0.59228516,
+        "y" : 0.89054126,
+        "z" : 0.59805346
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.076297075,
+            0,
+            -0.99708515,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0.99708515,
+            0,
+            -0.07629708,
+            0
+          ],
+          [
+            -3.8264222,
+            -0.43251297,
+            1.1745008,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "storage",
+      "dimensions" : {
+        "x" : 1.2143203,
+        "y" : 0.9061808,
+        "z" : 0.35403675
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.076297194,
+            0,
+            -0.9970851,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0.9970851,
+            0,
+            -0.07629721,
+            0
+          ],
+          [
+            -3.9224155,
+            1.0451661,
+            1.5191274,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "chair",
+      "dimensions" : {
+        "x" : 0.6315918,
+        "y" : 1.103791,
+        "z" : 0.703125
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.9966233,
+            0,
+            0.082109444,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            -0.08210944,
+            0,
+            -0.9966233,
+            0
+          ],
+          [
+            -1.6212296,
+            -0.32588813,
+            0.94869274,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "storage",
+      "dimensions" : {
+        "x" : 0.73907506,
+        "y" : 1.0405273,
+        "z" : 0.60815454
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.07629718,
+            0,
+            -0.99708503,
+            0
+          ],
+          [
+            0,
+            0.99999994,
+            0,
+            0
+          ],
+          [
+            0.997085,
+            0,
+            -0.07629719,
+            0
+          ],
+          [
+            -3.8673875,
+            0.4254754,
+            0.5729501,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "television",
+      "dimensions" : {
+        "x" : 0.8723145,
+        "y" : 0.54418945,
+        "z" : 0.09999991
+      },
+      "transform" : {
+        "columns" : [
+          [
+            0.9970851,
+            0,
+            -0.07629701,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            0.07629699,
+            0,
+            0.9970851,
+            0
+          ],
+          [
+            -0.21334909,
+            0.20083907,
+            -1.2856207,
+            1
+          ]
+        ]
+      }
+    }
+  ],
+  "openings" : [
+    {
+      "dimensions" : {
+        "x" : 1.2937685,
+        "y" : 2.06,
+        "z" : 0
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.07629747,
+            0,
+            -0.9970851,
+            0
+          ],
+          [
+            0,
+            0.99999994,
+            0,
+            0
+          ],
+          [
+            0.997085,
+            0,
+            -0.07629748,
+            0
+          ],
+          [
+            -1.2850858,
+            0.15221635,
+            -0.04540033,
+            1
+          ]
+        ]
+      }
+    }
+  ],
+  "windows" : [
+    {
+      "dimensions" : {
+        "x" : 1.3258578,
+        "y" : 1.3616368,
+        "z" : 0
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.99708503,
+            0,
+            0.07629707,
+            0
+          ],
+          [
+            0,
+            0.99999994,
+            0,
+            0
+          ],
+          [
+            -0.07629706,
+            0,
+            -0.9970851,
+            0
+          ],
+          [
+            -2.6361732,
+            0.7812023,
+            2.0296392,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "dimensions" : {
+        "x" : 1.5996236,
+        "y" : 1.3775417,
+        "z" : 0
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.99708503,
+            0,
+            0.07629702,
+            0
+          ],
+          [
+            0,
+            0.99999994,
+            0,
+            0
+          ],
+          [
+            -0.076297015,
+            0,
+            -0.9970851,
+            0
+          ],
+          [
+            -0.18849628,
+            0.75980616,
+            1.8423427,
+            1
+          ]
+        ]
+      }
+    }
+  ]
+}

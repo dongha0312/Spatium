@@ -17,7 +17,7 @@ function snapRotation(value) {
 }
 
 const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
-  { isSkyview = false },
+  { isSkyview = false, showMeasurements = false, wallColor = null, onSceneChanged },
   ref,
 ) {
   const {
@@ -27,13 +27,19 @@ const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
     selectedItem,
     selectedRotationDegrees,
     isReplacingSelected,
+    collisionSummary,
     canSaveJson,
     addFurniture,
     deleteSelectedObject,
     setSelectedRotationDegrees,
     saveEditedSceneJson,
     startReplaceSelectedObject,
-  } = useTestThreeEditor({ isSkyview });
+  } = useTestThreeEditor({
+    isSkyview,
+    showMeasurements,
+    wallColor,
+    onSceneChanged,
+  });
 
   const canShowSelectionControls = REPLACEABLE_TYPES.has(
     selectedItem?.sourceType,
@@ -58,30 +64,39 @@ const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
   return (
     <div className="test-three-page">
       <div ref={containerRef} className="test-three-viewport" />
+
       {canShowSelectionControls && (
         <aside className="test-three-info-drawer">
           <div className="test-three-info-title">
-            {selectedItem.name || selectedItem.category || "선택 항목"}
+            {selectedItem.name || selectedItem.category || "Selected item"}
           </div>
           <div className="test-three-info-subtitle">
             {selectedItem.category || selectedItem.sourceType}
           </div>
           <dl className="test-three-info-list">
             <div>
-              <dt>가로</dt>
+              <dt>Width</dt>
               <dd>{selectedItem.dimensionsCm?.width ?? "-"} cm</dd>
             </div>
             <div>
-              <dt>세로</dt>
+              <dt>Depth</dt>
               <dd>{selectedItem.dimensionsCm?.depth ?? "-"} cm</dd>
             </div>
             <div>
-              <dt>높이</dt>
+              <dt>Height</dt>
               <dd>{selectedItem.dimensionsCm?.height ?? "-"} cm</dd>
             </div>
+            <div>
+              <dt>Rotation</dt>
+              <dd>{selectedRotationDegrees} deg</dd>
+            </div>
           </dl>
+          {selectedItem.collision?.hasCollision && (
+            <div className="test-three-info-warning">Overlap detected</div>
+          )}
         </aside>
       )}
+
       {canShowSelectionControls && (
         <div className="test-three-selection-controls">
           <div className="test-three-rotation-panel">
@@ -97,7 +112,7 @@ const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
                 step="1"
                 value={selectedRotationDegrees}
                 onChange={handleRotationChange}
-                aria-label="회전 각도"
+                aria-label="Rotation degrees"
               />
               <div className="test-three-rotation-ticks" aria-hidden="true">
                 {ROTATION_STOPS.map((stop) => (
@@ -114,8 +129,8 @@ const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
               }`}
               onClick={startReplaceSelectedObject}
             >
-              <span className="test-three-selection-tool-icon">⇄</span>
-              교체
+              <span className="test-three-selection-tool-icon">Swap</span>
+              Replace
             </button>
             {canDeleteSelected && (
               <button
@@ -123,13 +138,20 @@ const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
                 className="test-three-selection-tool test-three-selection-tool--danger"
                 onClick={deleteSelectedObject}
               >
-                <span className="test-three-selection-tool-icon">⌫</span>
-                제거
+                <span className="test-three-selection-tool-icon">Del</span>
+                Delete
               </button>
             )}
           </div>
         </div>
       )}
+
+      {collisionSummary.hasCollision && (
+        <div className="test-three-collision-warning">
+          Some items overlap with walls or room boundaries.
+        </div>
+      )}
+
       {status && <div className="test-three-status">{status}</div>}
       {error && <pre className="test-three-error">{error}</pre>}
     </div>

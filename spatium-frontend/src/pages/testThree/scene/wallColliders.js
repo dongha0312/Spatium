@@ -6,8 +6,7 @@ const WALL_FACE_NORMAL_Y_LIMIT = 0.25;
 const WALL_FACE_MIN_AREA = 0.000001;
 const WALL_FACE_MIN_HEIGHT = 0.05;
 const WALL_FACE_MIN_LENGTH = 0.05;
-const WALL_FACE_ANGLE_BIN = 180 / Math.PI;
-const WALL_FACE_PROJECTION_BIN = 100;
+const FLOOR_SIDE_SAMPLE_DISTANCE = 0.12;
 
 export function isUsdReplacedMesh(object) {
   let cursor = object;
@@ -258,15 +257,6 @@ function canonicalHorizontalNormal(normal) {
   return horizontalNormal;
 }
 
-function wallFaceGroupKey(normal, projection) {
-  const angleKey = Math.round(
-    Math.atan2(normal.z, normal.x) * WALL_FACE_ANGLE_BIN,
-  );
-  const projectionKey = Math.round(projection * WALL_FACE_PROJECTION_BIN);
-
-  return `${angleKey}:${projectionKey}`;
-}
-
 function addPointRange(ranges, point, axes) {
   Object.entries(axes).forEach(([axisName, axis]) => {
     const projected = point.dot(axis);
@@ -275,20 +265,144 @@ function addPointRange(ranges, point, axes) {
   });
 }
 
-function createWallColliderFromFaceGroup(object, group, roomCenter) {
+function pointInTriangleXZ(point, a, b, c) {
+  const area =
+    (b.x - a.x) * (c.z - a.z) -
+    (b.z - a.z) * (c.x - a.x);
+  if (Math.abs(area) < 1e-10) return false;
+
+  const sideA =
+    (b.x - a.x) * (point.z - a.z) -
+    (b.z - a.z) * (point.x - a.x);
+  const sideB =
+    (c.x - b.x) * (point.z - b.z) -
+    (c.z - b.z) * (point.x - b.x);
+  const sideC =
+    (a.x - c.x) * (point.z - c.z) -
+    (a.z - c.z) * (point.x - c.x);
+  const hasNegative = sideA < -1e-8 || sideB < -1e-8 || sideC < -1e-8;
+  const hasPositive = sideA > 1e-8 || sideB > 1e-8 || sideC > 1e-8;
+
+  return !(hasNegative && hasPositive);
+}
+
+function pointIsOverFloor(point, floorTriangles) {
+  return floorTriangles.some((triangle) =>
+    pointInTriangleXZ(point, triangle.a, triangle.b, triangle.c),
+  );
+}
+
+function collectFloorTriangles(roomModel) {
+  const floorTriangles = [];
+  const vertexA = new THREE.Vector3();
+  const vertexB = new THREE.Vector3();
+  const vertexC = new THREE.Vector3();
+  const edgeA = new THREE.Vector3();
+  const edgeB = new THREE.Vector3();
+  const normal = new THREE.Vector3();
+
+  roomModel.traverse((object) => {
+    if (!isUsdFloorMesh(object) || !object.geometry) return;
+
+    const position = object.geometry.attributes?.position;
+    if (!position) return;
+
+    object.updateWorldMatrix(true, false);
+    const indices = object.geometry.index?.array;
+    const triangleCount = indices ? indices.length / 3 : position.count / 3;
+
+    for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+      const ai = indices ? indices[triangle * 3] : triangle * 3;
+      const bi = indices ? indices[triangle * 3 + 1] : triangle * 3 + 1;
+      const ci = indices ? indices[triangle * 3 + 2] : triangle * 3 + 2;
+
+      vertexA.fromBufferAttribute(position, ai).applyMatrix4(object.matrixWorld);
+      vertexB.fromBufferAttribute(position, bi).applyMatrix4(object.matrixWorld);
+      vertexC.fromBufferAttribute(position, ci).applyMatrix4(object.matrixWorld);
+
+      edgeA.subVectors(vertexB, vertexA);
+      edgeB.subVectors(vertexC, vertexA);
+      normal.crossVectors(edgeA, edgeB);
+      if (normal.lengthSq() < WALL_FACE_MIN_AREA) continue;
+
+      normal.normalize();
+      if (Math.abs(normal.y) < 0.5) continue;
+
+      floorTriangles.push({
+        a: { x: vertexA.x, z: vertexA.z },
+        b: { x: vertexB.x, z: vertexB.z },
+        c: { x: vertexC.x, z: vertexC.z },
+      });
+    }
+  });
+
+  return floorTriangles;
+}
+
+function roomSideFromFloorSamples(points, normal, floorTriangles) {
+  if (!floorTriangles.length) return null;
+
+  const center = points
+    .reduce((sum, point) => sum.add(point), new THREE.Vector3())
+    .multiplyScalar(1 / points.length);
+  const offset = Math.max(
+    FLOOR_SIDE_SAMPLE_DISTANCE,
+    wallConfigNumber("colliderHalfThickness") * 6,
+  );
+  const plusPoint = {
+    x: center.x + normal.x * offset,
+    z: center.z + normal.z * offset,
+  };
+  const minusPoint = {
+    x: center.x - normal.x * offset,
+    z: center.z - normal.z * offset,
+  };
+  const plusInside = pointIsOverFloor(plusPoint, floorTriangles);
+  const minusInside = pointIsOverFloor(minusPoint, floorTriangles);
+
+  if (plusInside && !minusInside) return 1;
+  if (!plusInside && minusInside) return -1;
+  if (plusInside && minusInside) return 0;
+
+  return null;
+}
+
+function createWallColliderFromFaceGroup(
+  object,
+  group,
+  roomCenter,
+  floorTriangles = [],
+) {
   const normal = group.normal.clone().normalize();
   const projection =
     group.projectionSum / Math.max(group.projectionCount, 1);
-  const roomSide = roomCenter.dot(normal) >= projection ? 1 : -1;
-  const roomFacingNormal = normal.clone().multiplyScalar(roomSide);
-  const roomFacingProjection = projection * roomSide;
+  const sampledRoomSide = roomSideFromFloorSamples(
+    group.points,
+    normal,
+    floorTriangles,
+  );
+  const roomSide =
+    sampledRoomSide == null
+      ? roomCenter.dot(normal) >= projection
+        ? 1
+        : -1
+      : sampledRoomSide;
+  const boundaryRoomSide = roomSide === 0 ? null : roomSide;
+  const roomFacingNormal =
+    boundaryRoomSide == null
+      ? null
+      : normal.clone().multiplyScalar(boundaryRoomSide);
+  const roomFacingProjection =
+    boundaryRoomSide == null ? null : projection * boundaryRoomSide;
+  const thicknessAxis = roomFacingNormal || normal.clone();
+  const planeProjection =
+    boundaryRoomSide == null ? projection : roomFacingProjection;
   const lengthAxis = new THREE.Vector3(
-    -roomFacingNormal.z,
+    -thicknessAxis.z,
     0,
-    roomFacingNormal.x,
+    thicknessAxis.x,
   ).normalize();
   const heightAxis = new THREE.Vector3(0, 1, 0);
-  const thicknessAxis = roomFacingNormal.clone();
   const ranges = {
     length: { min: Infinity, max: -Infinity },
     height: { min: Infinity, max: -Infinity },
@@ -317,7 +431,7 @@ function createWallColliderFromFaceGroup(object, group, roomCenter) {
 
   const center = thicknessAxis
     .clone()
-    .multiplyScalar(roomFacingProjection)
+    .multiplyScalar(planeProjection)
     .addScaledVector(lengthAxis, (ranges.length.min + ranges.length.max) / 2)
     .addScaledVector(heightAxis, (ranges.height.min + ranges.height.max) / 2);
   const halfSize = new THREE.Vector3(
@@ -330,20 +444,31 @@ function createWallColliderFromFaceGroup(object, group, roomCenter) {
     halfSize,
     matrix3FromBasis(thicknessAxis, heightAxis, lengthAxis),
   );
+  const spanPolygon = group.points.map((point) => ({
+    height: point.dot(heightAxis),
+    length: point.dot(lengthAxis),
+  }));
 
   return {
     object,
     obb,
     spanAxes: [
-      { axis: heightAxis, halfSize: halfSize.y },
-      { axis: lengthAxis, halfSize: halfSize.z },
+      { name: "height", axis: heightAxis, halfSize: halfSize.y },
+      { name: "length", axis: lengthAxis, halfSize: halfSize.z },
     ],
+    spanPolygon,
     roomFacingNormal,
     roomFacingProjection,
+    triangleStart: group.triangleStart,
+    triangleCount: group.triangleCount,
   };
 }
 
-export function worldWallFaceCollidersFromGeometry(object, roomCenter) {
+export function worldWallFaceCollidersFromGeometry(
+  object,
+  roomCenter,
+  floorTriangles = [],
+) {
   const geometry = object.geometry;
   const position = geometry?.attributes?.position;
   if (!position) return [];
@@ -358,7 +483,7 @@ export function worldWallFaceCollidersFromGeometry(object, roomCenter) {
   const edgeA = new THREE.Vector3();
   const edgeB = new THREE.Vector3();
   const normal = new THREE.Vector3();
-  const groups = new Map();
+  const colliders = [];
 
   for (let triangle = 0; triangle < triangleCount; triangle += 1) {
     const ai = indices ? indices[triangle * 3] : triangle * 3;
@@ -381,35 +506,27 @@ export function worldWallFaceCollidersFromGeometry(object, roomCenter) {
     const horizontalNormal = canonicalHorizontalNormal(normal);
     if (!horizontalNormal) continue;
 
-    const projection =
-      (a.dot(horizontalNormal) +
-        b.dot(horizontalNormal) +
-        c.dot(horizontalNormal)) /
-      3;
-    const key = wallFaceGroupKey(horizontalNormal, projection);
-    let group = groups.get(key);
-
-    if (!group) {
-      group = {
+    const collider = createWallColliderFromFaceGroup(
+      object,
+      {
         normal: horizontalNormal.clone(),
-        points: [],
-        projectionCount: 0,
-        projectionSum: 0,
-      };
-      groups.set(key, group);
-    }
+        points: [a.clone(), b.clone(), c.clone()],
+        projectionCount: 3,
+        projectionSum:
+          a.dot(horizontalNormal) +
+          b.dot(horizontalNormal) +
+          c.dot(horizontalNormal),
+        triangleStart: triangle * 3,
+        triangleCount: 3,
+      },
+      roomCenter,
+      floorTriangles,
+    );
 
-    group.points.push(a.clone(), b.clone(), c.clone());
-    group.projectionCount += 3;
-    group.projectionSum +=
-      a.dot(horizontalNormal) +
-      b.dot(horizontalNormal) +
-      c.dot(horizontalNormal);
+    if (collider) colliders.push(collider);
   }
 
-  return Array.from(groups.values())
-    .map((group) => createWallColliderFromFaceGroup(object, group, roomCenter))
-    .filter(Boolean);
+  return colliders;
 }
 
 export function geometryProjectionRange(object, direction) {
@@ -436,9 +553,21 @@ export function createWallColliders(roomModel) {
   const roomCenter = new THREE.Box3()
     .setFromObject(roomModel)
     .getCenter(new THREE.Vector3());
+  const floorTriangles = collectFloorTriangles(roomModel);
 
   roomModel.traverse((object) => {
     if (!isUsdWallMesh(object) || !object.geometry) return;
+
+    const faceColliders = worldWallFaceCollidersFromGeometry(
+      object,
+      roomCenter,
+      floorTriangles,
+    );
+
+    if (faceColliders.length) {
+      colliders.push(...faceColliders);
+      return;
+    }
 
     object.geometry.computeBoundingBox();
     if (!object.geometry.boundingBox || object.geometry.boundingBox.isEmpty())
