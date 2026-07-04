@@ -1,15 +1,14 @@
 import * as THREE from "three";
 import { wallConfigNumber, wallSweepRotationStep } from "./sceneConfig";
 
-const WALL_PARALLEL_RELAXATION = 0.012;
+const WALL_PARALLEL_RELAXATION = 0;
 const WALL_ALIGNMENT_RELAXATION_ANGLE = Math.PI / 4;
-const WALL_SLIDE_CONTACT_DISTANCE = 0.018;
+const WALL_SLIDE_CONTACT_DISTANCE = 0.08;
 
 export function editableObjectLabel(object) {
   const item = object.userData.roomItem;
-  return `${item.category || object.userData.category || "object"} ${
-    object.userData.sourceIndex + 1
-  }`;
+  return `${item.category || object.userData.category || "object"} ${object.userData.sourceIndex + 1
+    }`;
 }
 
 export function canTransformObject(object) {
@@ -116,8 +115,146 @@ export function wallBoundaryEpsilonForObjectAngle(objectObb, wall) {
   return baseEpsilon + parallelWeight * WALL_PARALLEL_RELAXATION;
 }
 
+function spanAxisByName(wall, name, fallbackIndex) {
+  return (
+    wall.spanAxes?.find((spanAxis) => spanAxis.name === name) ||
+    wall.spanAxes?.[fallbackIndex]
+  );
+}
+
+function cross2D(a, b, c) {
+  return (
+    (b.length - a.length) * (c.height - a.height) -
+    (b.height - a.height) * (c.length - a.length)
+  );
+}
+
+function convexHull2D(points) {
+  const sortedPoints = [...points].sort((a, b) =>
+    a.length === b.length ? a.height - b.height : a.length - b.length,
+  );
+  const uniquePoints = sortedPoints.filter(
+    (point, index) =>
+      index === 0 ||
+      Math.abs(point.length - sortedPoints[index - 1].length) > 1e-8 ||
+      Math.abs(point.height - sortedPoints[index - 1].height) > 1e-8,
+  );
+
+  if (uniquePoints.length <= 2) return uniquePoints;
+
+  const lower = [];
+  uniquePoints.forEach((point) => {
+    while (
+      lower.length >= 2 &&
+      cross2D(lower[lower.length - 2], lower[lower.length - 1], point) <= 1e-10
+    ) {
+      lower.pop();
+    }
+    lower.push(point);
+  });
+
+  const upper = [];
+  [...uniquePoints].reverse().forEach((point) => {
+    while (
+      upper.length >= 2 &&
+      cross2D(upper[upper.length - 2], upper[upper.length - 1], point) <= 1e-10
+    ) {
+      upper.pop();
+    }
+    upper.push(point);
+  });
+
+  lower.pop();
+  upper.pop();
+
+  return [...lower, ...upper];
+}
+
+function projectedObbPolygon2D(objectObb, heightAxis, lengthAxis) {
+  const xAxis = new THREE.Vector3();
+  const yAxis = new THREE.Vector3();
+  const zAxis = new THREE.Vector3();
+  objectObb.rotation.extractBasis(xAxis, yAxis, zAxis);
+
+  const projectedCorners = [];
+  [-1, 1].forEach((xSign) => {
+    [-1, 1].forEach((ySign) => {
+      [-1, 1].forEach((zSign) => {
+        const corner = objectObb.center
+          .clone()
+          .addScaledVector(xAxis, objectObb.halfSize.x * xSign)
+          .addScaledVector(yAxis, objectObb.halfSize.y * ySign)
+          .addScaledVector(zAxis, objectObb.halfSize.z * zSign);
+
+        projectedCorners.push({
+          height: corner.dot(heightAxis),
+          length: corner.dot(lengthAxis),
+        });
+      });
+    });
+  });
+
+  return convexHull2D(projectedCorners);
+}
+
+function polygonProjectionRange2D(polygon, axis) {
+  let min = Infinity;
+  let max = -Infinity;
+
+  polygon.forEach((point) => {
+    const projected = point.length * axis.length + point.height * axis.height;
+    min = Math.min(min, projected);
+    max = Math.max(max, projected);
+  });
+
+  return { min, max };
+}
+
+function polygonsOverlap2D(firstPolygon, secondPolygon) {
+  if (firstPolygon.length < 3 || secondPolygon.length < 3) {
+    return false;
+  }
+
+  const polygons = [firstPolygon, secondPolygon];
+  for (const polygon of polygons) {
+    for (let index = 0; index < polygon.length; index += 1) {
+      const nextIndex = (index + 1) % polygon.length;
+      const dx = polygon[nextIndex].length - polygon[index].length;
+      const dy = polygon[nextIndex].height - polygon[index].height;
+      const axis = { length: -dy, height: dx };
+      const firstRange = polygonProjectionRange2D(firstPolygon, axis);
+      const secondRange = polygonProjectionRange2D(secondPolygon, axis);
+
+      if (firstRange.max < secondRange.min || secondRange.max < firstRange.min) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function objectOverlapsWallSpanPolygon(objectObb, wall) {
+  if (!wall.spanPolygon?.length) return null;
+
+  const heightSpan = spanAxisByName(wall, "height", 0);
+  const lengthSpan = spanAxisByName(wall, "length", 1);
+  if (!heightSpan?.axis || !lengthSpan?.axis) return null;
+
+  const objectPolygon = projectedObbPolygon2D(
+    objectObb,
+    heightSpan.axis,
+    lengthSpan.axis,
+  );
+
+  return polygonsOverlap2D(objectPolygon, wall.spanPolygon);
+}
+
 export function objectOverlapsWallSpan(objectObb, wall) {
   if (!wall.spanAxes?.length) return true;
+
+  const polygonOverlap = objectOverlapsWallSpanPolygon(objectObb, wall);
+  if (polygonOverlap != null) return polygonOverlap;
 
   return wall.spanAxes.every(({ axis, halfSize }) => {
     const objectRadius = projectionRadiusForObb(objectObb, axis);
@@ -193,7 +330,10 @@ export function objectTouchesWallForSlide(objectObb, wall) {
     );
   }
 
-  return objectObb.intersectsOBB(wall.obb, wallConfigNumber("collisionEpsilon"));
+  return (
+    objectOverlapsWallSpan(objectObb, wall) &&
+    objectObb.intersectsOBB(wall.obb, wallConfigNumber("collisionEpsilon"))
+  );
 }
 
 export function wallBoundaryPenetrationsForObject(object, wallColliders) {
@@ -219,7 +359,8 @@ export function wallBlocksObjectObb(objectObb, wall) {
   }
 
   return (
-    objectObb.intersectsOBB(wall.obb, wallConfigNumber("collisionEpsilon")) ||
+    (objectOverlapsWallSpan(objectObb, wall) &&
+      objectObb.intersectsOBB(wall.obb, wallConfigNumber("collisionEpsilon"))) ||
     objectObbViolatesWallBoundary(objectObb, wall)
   );
 }
@@ -239,11 +380,85 @@ export function hasWallCollision(object, wallColliders) {
 
 export function initializeWallConstraints(editableObjects, wallColliders) {
   editableObjects.forEach((object) => {
-    const startsInWallCollision = objectIntersectsWalls(object, wallColliders);
-    object.userData.startsInWallCollision = startsInWallCollision;
-    object.userData.ignoreWallConstraint = startsInWallCollision;
+    pushObjectOutOfWalls(object, wallColliders);
+    object.userData.startsInWallCollision = false;
+    object.userData.ignoreWallConstraint = false;
     rememberValidTransform(object);
   });
+}
+
+function wallPushVector(objectObb, wall) {
+  if (wall.roomFacingNormal && Number.isFinite(wall.roomFacingProjection)) {
+    const penetration = objectWallBoundaryPenetration(objectObb, wall);
+    if (penetration <= 0) return null;
+
+    return wall.roomFacingNormal
+      .clone()
+      .multiplyScalar(penetration + 1e-3);
+  }
+
+  if (
+    !objectOverlapsWallSpan(objectObb, wall) ||
+    !objectObb.intersectsOBB(wall.obb, wallConfigNumber("collisionEpsilon"))
+  ) {
+    return null;
+  }
+
+  const axisX = new THREE.Vector3();
+  const axisY = new THREE.Vector3();
+  const axisZ = new THREE.Vector3();
+  wall.obb.rotation.extractBasis(axisX, axisY, axisZ);
+  const axes = [axisX, axisY, axisZ];
+  const halfSizes = [
+    wall.obb.halfSize.x,
+    wall.obb.halfSize.y,
+    wall.obb.halfSize.z,
+  ];
+
+  let bestOverlap = Infinity;
+  let bestAxis = null;
+  let bestSign = 1;
+
+  for (let i = 0; i < 3; i += 1) {
+    const axis = axes[i].normalize();
+    const objRadius = projectionRadiusForObb(objectObb, axis);
+    const wallRadius = halfSizes[i];
+    const diff =
+      objectObb.center.dot(axis) - wall.obb.center.dot(axis);
+    const overlap = objRadius + wallRadius - Math.abs(diff);
+
+    if (overlap <= 0) return null;
+    if (overlap < bestOverlap) {
+      bestOverlap = overlap;
+      bestAxis = axis;
+      bestSign = diff >= 0 ? 1 : -1;
+    }
+  }
+
+  if (!bestAxis) return null;
+  return bestAxis.clone().multiplyScalar(bestSign * (bestOverlap + 1e-3));
+}
+
+function pushObjectOutOfWalls(object, wallColliders) {
+  for (let iteration = 0; iteration < 10; iteration += 1) {
+    object.updateWorldMatrix(true, false);
+    const objectObb = worldObbForObject(object);
+    const push = new THREE.Vector3();
+    let collisionFound = false;
+
+    wallColliders.forEach((wall) => {
+      if (!wallBlocksObjectObb(objectObb, wall)) return;
+      collisionFound = true;
+
+      const v = wallPushVector(objectObb, wall);
+      if (v) push.add(v);
+    });
+
+    if (!collisionFound) return;
+    object.position.add(push);
+  }
+
+  object.updateWorldMatrix(true, false);
 }
 
 export function applyInterpolatedTransform(object, from, to, t, scratch) {
@@ -580,26 +795,6 @@ export function refreshCollisionState(
       object.userData.collisions.push("wall");
     }
   });
-
-  const obbs = editableObjects
-    .filter(shouldCheckFurnitureCollision)
-    .map((object) => ({
-      object,
-      obb: worldObbForObject(object),
-    }));
-
-  for (let i = 0; i < obbs.length; i += 1) {
-    for (let j = i + 1; j < obbs.length; j += 1) {
-      if (!obbs[i].obb.intersectsOBB(obbs[j].obb, 0.0001)) continue;
-
-      obbs[i].object.userData.collisions.push(
-        editableObjectLabel(obbs[j].object),
-      );
-      obbs[j].object.userData.collisions.push(
-        editableObjectLabel(obbs[i].object),
-      );
-    }
-  }
 
   editableObjects.forEach((object) =>
     setFurnitureVisualState(object, selectedObject),

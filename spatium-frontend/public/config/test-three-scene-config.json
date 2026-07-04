@@ -67,8 +67,8 @@
     "sweepRotationStepDegrees": 2,
     "sweepMaxSteps": 240,
     "colliderHalfThickness": 0.005,
-    "boundaryEpsilon": 0.002,
-    "boundarySpanPadding": 0.04,
+    "boundaryEpsilon": 0,
+    "boundarySpanPadding": 0,
     "showColliderDebug": true
   }
 }
