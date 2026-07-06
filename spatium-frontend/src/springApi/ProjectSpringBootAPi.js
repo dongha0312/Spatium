@@ -15,3 +15,13 @@ export const getProjectInfo = (projectId) =>
     .get(`/api/projects/${projectId}`)
     .then(unwrapApiData)
     .catch(throwApiError);
+
+export const deleteProject = ({ projectId }) =>
+  springApi
+    .delete("/api/projects", {
+      data: {
+        projectId,
+      },
+    })
+    .then(unwrapApiData)
+    .catch(throwApiError);
