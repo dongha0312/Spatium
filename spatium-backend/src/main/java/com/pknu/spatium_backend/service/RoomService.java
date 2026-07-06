@@ -196,6 +196,8 @@ public class RoomService {
         Room room = getOwnedRoom(memId, roomId);
 
         return Map.of(
+                "roomId", room.getRoom_id(),
+                "roomName", room.getRoom_name(),
                 "roomPath", room.getRoom_path()
         );
     }

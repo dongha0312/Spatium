@@ -5,6 +5,8 @@ import { saveLoginSession } from "../../utils/authSession";
 import {
   postUserSignup,
   postSocialSignup,
+  postLogin,
+  postSocialLogin,
 } from "../../springApi/MemberSpringBootApi";
 
 function SignupPage() {
@@ -45,6 +47,8 @@ function SignupPage() {
     const genderCode = gender === "male" ? "0" : "1";
 
     try {
+      let loginData;
+
       if (isGoogleSignup) {
         // 소셜 회원가입 : LoginPage에서 넘겨받은 provider/providerUserId(구글 sub)로 가입
         await postSocialSignup({
@@ -57,6 +61,13 @@ function SignupPage() {
           termsAgreed: agree,
           privacyAgreed: agree,
         });
+
+        // 회원가입 API는 JWT 토큰을 내려주지 않으므로, 가입 직후 소셜 로그인을 한 번 더 호출해 토큰을 발급받음
+        loginData = await postSocialLogin({
+          provider: socialState.provider,
+          providerUserId: socialState.providerUserId,
+          email,
+        });
       } else {
         // 일반 회원가입
         await postUserSignup({
@@ -68,11 +79,22 @@ function SignupPage() {
           termsAgreed: agree,
           privacyAgreed: agree,
         });
+
+        // 회원가입 API는 JWT 토큰을 내려주지 않으므로, 가입 직후 로그인을 한 번 더 호출해 토큰을 발급받음
+        loginData = await postLogin({ email, password: pw });
       }
 
-      // 회원가입 성공 시 로그인 세션 저장 (입력한 닉네임 그대로 사용)
+      // 로그인 세션 저장 (실제 발급받은 토큰을 함께 저장해야 로그인 상태가 유효함)
       //  - 소셜(구글) 가입 회원은 provider를 "GOOGLE"로 저장 -> 계정설정 진입 시 비밀번호 게이트 생략용
-      saveLoginSession(email, nickname, isGoogleSignup ? "GOOGLE" : "LOCAL");
+      saveLoginSession(
+        email,
+        loginData.user?.nickname || nickname,
+        isGoogleSignup ? "GOOGLE" : "LOCAL",
+        {
+          accessToken: loginData.accessToken,
+          refreshToken: loginData.refreshToken,
+        },
+      );
       navigate("/");
     } catch (err) {
       console.error("회원가입 중 오류:", err);
