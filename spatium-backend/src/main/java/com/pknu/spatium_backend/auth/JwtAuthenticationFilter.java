@@ -42,7 +42,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             if (!token.isEmpty()) {
                 // JWT subject에는 Member.mem_id가 들어간다. (JwtUtil 참고)
-                String memId = jwtUtil.validateAndGetMemId(token);
+                // type=access인 토큰만 인증에 사용 가능 (refreshToken으로 API 호출 차단)
+                String memId = jwtUtil.validateAccessTokenAndGetMemId(token);
 
                 if (memId != null && !memId.isBlank()) {
                     UsernamePasswordAuthenticationToken authentication =

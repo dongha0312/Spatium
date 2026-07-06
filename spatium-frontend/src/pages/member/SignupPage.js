@@ -50,11 +50,11 @@ function SignupPage() {
       let loginData;
 
       if (isGoogleSignup) {
-        // 소셜 회원가입 : LoginPage에서 넘겨받은 provider/providerUserId(구글 sub)로 가입
+        // 소셜 회원가입 : LoginPage에서 넘겨받은 ID Token으로 가입
+        //  - 이메일/고유ID는 백엔드가 ID Token을 직접 검증해서 얻음 (프론트 값은 표시용)
         await postSocialSignup({
           provider: socialState.provider,
-          providerUserId: socialState.providerUserId,
-          email,
+          idToken: socialState.idToken,
           nickname,
           birthDate: birth,
           gender: genderCode,
@@ -65,8 +65,7 @@ function SignupPage() {
         // 회원가입 API는 JWT 토큰을 내려주지 않으므로, 가입 직후 소셜 로그인을 한 번 더 호출해 토큰을 발급받음
         loginData = await postSocialLogin({
           provider: socialState.provider,
-          providerUserId: socialState.providerUserId,
-          email,
+          idToken: socialState.idToken,
         });
       } else {
         // 일반 회원가입

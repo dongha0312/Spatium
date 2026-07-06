@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../../styles/loginpage.css";
 import { saveLoginSession } from "../../utils/authSession";
-import { useGoogleLogin } from "@react-oauth/google";
+import { GoogleLogin } from "@react-oauth/google";
 import {
   postLogin,
   postSocialLogin,
@@ -10,6 +10,17 @@ import {
 
 // 이메일 형식 검증용 정규식
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// ID Token(JWT)의 payload를 디코딩 (화면 표시용 - 실제 검증은 백엔드가 수행)
+const decodeJwtPayload = (token) => {
+  try {
+    const base64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return {};
+  }
+};
 
 function LoginPage({ onLoginSuccess }) {
   // 이메일을 저장할 수 있는 상태변수(객체) 정의
@@ -72,70 +83,52 @@ function LoginPage({ onLoginSuccess }) {
     navigate("/auth/signup", { state: { socialProvider: "apple" } });
   };
 
-  // 구글 인증(access_token) 성공 후, 구글 프로필 조회
-  //  -> 백엔드에 provider="GOOGLE" + providerUserId(구글 sub)로 로그인 시도
-  //  -> 이미 가입된 회원이면 로그인 처리, 미가입(404)이면 회원가입 페이지로 안내
-  const fetchGoogleProfileAndGoSignup = async (accessToken) => {
-    try {
-      const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      if (!res.ok) throw new Error("구글 프로필 조회 실패");
-      const profile = await res.json();
-
-      try {
-        const data = await postSocialLogin({
-          provider: "GOOGLE",
-          providerUserId: profile.sub,
-          email: profile.email,
-        });
-
-        // 기존 가입된 구글 계정 : 로그인 처리 (백엔드가 발급한 JWT 토큰도 함께 저장)
-        saveLoginSession(profile.email, data.user?.nickname, "GOOGLE", {
-          accessToken: data.accessToken,
-          refreshToken: data.refreshToken,
-        });
-
-        if (onLoginSuccess) {
-          onLoginSuccess();
-        } else {
-          navigate("/");
-        }
-      } catch (loginErr) {
-        if (loginErr.status === 404) {
-          // 가입되지 않은 구글 계정 : 회원가입 페이지로 안내
-          navigate("/auth/signup", {
-            state: {
-              socialProvider: "google",
-              provider: "GOOGLE",
-              providerUserId: profile.sub,
-              email: profile.email,
-            },
-          });
-        } else {
-          throw loginErr;
-        }
-      }
-    } catch (err) {
-      console.error("구글 로그인 처리 중 오류:", err);
-      alert(
-        err.message || "구글 로그인 중 문제가 발생했습니다. 다시 시도해주세요.",
-      );
-    }
-  };
-
-  // 구글 인증 팝업을 여는 트리거 함수 : 실제 구글 로그인 화면(계정 선택/동의)을 띄움
-  const triggerGoogleLogin = useGoogleLogin({
-    onSuccess: (tokenResponse) =>
-      fetchGoogleProfileAndGoSignup(tokenResponse.access_token),
-    onError: () => {
-      console.error("구글 로그인에 실패했습니다.");
+  // 구글 인증 성공 시 credential(ID Token)을 백엔드로 보내 로그인 시도
+  //  - 백엔드가 ID Token의 서명/발급자/대상(aud)을 직접 검증함 (프론트 값은 신뢰하지 않음)
+  //  - 이미 가입된 회원이면 로그인 처리, 미가입(404)이면 회원가입 페이지로 안내
+  const handleGoogleCredential = async (credentialResponse) => {
+    const idToken = credentialResponse?.credential;
+    if (!idToken) {
       alert("구글 로그인에 실패했습니다. 다시 시도해주세요.");
-    },
-  });
+      return;
+    }
 
-  const handleGoogleLogin = () => {
-    triggerGoogleLogin();
+    // 화면 표시/회원가입 폼 미리 채우기용 프로필 (검증은 백엔드가 수행)
+    const profile = decodeJwtPayload(idToken);
+
+    try {
+      const data = await postSocialLogin({ provider: "GOOGLE", idToken });
+
+      // 기존 가입된 구글 계정 : 로그인 처리 (백엔드가 발급한 JWT 토큰도 함께 저장)
+      saveLoginSession(profile.email, data.user?.nickname, "GOOGLE", {
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+      });
+
+      if (onLoginSuccess) {
+        onLoginSuccess();
+      } else {
+        navigate("/");
+      }
+    } catch (loginErr) {
+      if (loginErr.status === 404) {
+        // 가입되지 않은 구글 계정 : 회원가입 페이지로 안내 (idToken을 함께 전달)
+        navigate("/auth/signup", {
+          state: {
+            socialProvider: "google",
+            provider: "GOOGLE",
+            idToken,
+            email: profile.email,
+          },
+        });
+      } else {
+        console.error("구글 로그인 처리 중 오류:", loginErr);
+        alert(
+          loginErr.message ||
+            "구글 로그인 중 문제가 발생했습니다. 다시 시도해주세요.",
+        );
+      }
+    }
   };
 
   return (
@@ -230,32 +223,18 @@ function LoginPage({ onLoginSuccess }) {
                 </svg>
               </button>
 
-              <button
-                type="button"
-                className="lg-social-btn"
-                onClick={handleGoogleLogin}
-                aria-label="Google로 로그인"
-              >
-                {/* 구글 로고 이미지  */}
-                <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                  <path
-                    fill="#EA4335"
-                    d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
-                  />
-                  <path
-                    fill="#4285F4"
-                    d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
-                  />
-                </svg>
-              </button>
+              {/* 구글 공식 로그인 버튼 : credential(ID Token) 발급 방식
+                  - ID Token 서버 검증을 위해 커스텀 버튼(access_token 방식)에서 교체함 */}
+              <GoogleLogin
+                onSuccess={handleGoogleCredential}
+                onError={() => {
+                  console.error("구글 로그인에 실패했습니다.");
+                  alert("구글 로그인에 실패했습니다. 다시 시도해주세요.");
+                }}
+                type="icon"
+                shape="circle"
+                size="large"
+              />
             </div>
           </form>
         </div>
