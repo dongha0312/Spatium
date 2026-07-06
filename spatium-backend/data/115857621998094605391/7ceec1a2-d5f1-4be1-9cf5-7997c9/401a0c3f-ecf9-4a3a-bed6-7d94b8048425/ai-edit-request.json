@@ -1,0 +1,169 @@
+{
+  "doors" : [
+
+  ],
+  "editedObjects" : [
+    {
+      "depth" : 0.838134765625,
+      "detectedCategory" : "table",
+      "detectedRotationY" : -2.4180960655212402,
+      "displayName" : "table 1",
+      "editNote" : "",
+      "height" : 0.7198585271835327,
+      "id" : "10B6A997-4096-4C6C-B1FA-15A4B6B29BD3",
+      "isReplacementTarget" : true,
+      "positionX" : 0.484686017036438,
+      "positionY" : -0.8621952533721924,
+      "positionZ" : 2.4213523864746094,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 2.0626370906829834
+    },
+    {
+      "depth" : 0.5260010957717896,
+      "detectedCategory" : "chair",
+      "detectedRotationY" : -2.417607069015503,
+      "displayName" : "chair 2",
+      "editNote" : "",
+      "height" : 0.7759865522384644,
+      "id" : "36202CD7-0A97-494E-AC2B-A4E1118323E3",
+      "isReplacementTarget" : true,
+      "positionX" : -1.0580344200134277,
+      "positionY" : -0.8341312408447266,
+      "positionZ" : 4.026651859283447,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 0.4575193524360657
+    },
+    {
+      "depth" : 0,
+      "detectedCategory" : "창문",
+      "detectedRotationY" : -2.4180960655212402,
+      "displayName" : "창문 1",
+      "editNote" : "",
+      "height" : 1.8681377172470093,
+      "id" : "D6369048-3157-4326-B5B8-BAFB98D92CCD",
+      "isReplacementTarget" : false,
+      "positionX" : 1.1528340578079224,
+      "positionY" : 0.628806471824646,
+      "positionZ" : 3.1616909503936768,
+      "rotationY" : 0,
+      "sourceType" : "창문",
+      "width" : 6.468969345092773
+    }
+  ],
+  "objects" : [
+    {
+      "category" : "table",
+      "dimensions" : {
+        "x" : 2.062637,
+        "y" : 0.7198585,
+        "z" : 0.83813477
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.7494955,
+            0,
+            0.66200936,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            -0.6620093,
+            0,
+            -0.7494955,
+            0
+          ],
+          [
+            0.48468602,
+            -0.86219525,
+            2.4213524,
+            0.99999994
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "chair",
+      "dimensions" : {
+        "x" : 0.45751935,
+        "y" : 0.77598655,
+        "z" : 0.5260011
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.7491718,
+            0,
+            0.6623758,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            -0.66237575,
+            0,
+            -0.7491718,
+            0
+          ],
+          [
+            -1.0580344,
+            -0.83413124,
+            4.026652,
+            0.99999994
+          ]
+        ]
+      }
+    }
+  ],
+  "openings" : [
+
+  ],
+  "windows" : [
+    {
+      "dimensions" : {
+        "x" : 6.4689693,
+        "y" : 1.8681377,
+        "z" : 0
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.74949557,
+            0,
+            0.6620095,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            -0.6620094,
+            0,
+            -0.7494955,
+            0
+          ],
+          [
+            1.152834,
+            0.6288065,
+            3.161691,
+            0.99999994
+          ]
+        ]
+      }
+    }
+  ]
+}

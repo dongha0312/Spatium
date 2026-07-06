@@ -9,6 +9,7 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.pknu.spatium_backend.repository.MemberRepository;
 import com.pknu.spatium_backend.util.JwtUtil;
 
 import jakarta.servlet.FilterChain;
@@ -29,6 +30,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
 
+    private final MemberRepository memberRepository;
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,
@@ -42,9 +45,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             if (!token.isEmpty()) {
                 // JWT subject에는 Member.mem_id가 들어간다. (JwtUtil 참고)
-                String memId = jwtUtil.validateAndGetMemId(token);
+                // type=access인 토큰만 인증에 사용 가능 (refreshToken으로 API 호출 차단)
+                String memId = jwtUtil.validateAccessTokenAndGetMemId(token);
 
-                if (memId != null && !memId.isBlank()) {
+                // 토큰이 유효해도 mem_id가 실존 회원이어야 인증 인정
+                //  - 탈퇴한 회원의 만료 전 토큰으로 API를 쓰는 것을 차단
+                if (memId != null && !memId.isBlank() && memberRepository.existsById(memId)) {
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(memId, null, List.of());
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

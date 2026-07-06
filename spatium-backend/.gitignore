@@ -35,3 +35,11 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### 로컬 시크릿 (실제 비밀키/접속정보가 담기는 파일은 커밋 금지) ###
+.env
+.env.*
+application-local.properties
+application-secret.properties
+**/application-local.properties
+**/application-secret.properties
