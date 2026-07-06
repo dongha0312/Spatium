@@ -40,4 +40,28 @@ public class RoomDTO {
 
         private String updatedAt;
     }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RoomSceneResponse {
+        private String roomId;
+
+        private String roomName;
+
+        private Object metadata;
+
+        private RoomSceneModelResponse model;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class RoomSceneModelResponse {
+        private String fileName;
+
+        private String contentType;
+
+        private String dataBase64;
+    }
 }

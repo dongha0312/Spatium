@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
@@ -16,8 +17,11 @@ import java.util.stream.Stream;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pknu.spatium_backend.dto.RoomDTO.ResponseRoomCreateDTO;
 import com.pknu.spatium_backend.dto.RoomDTO.ResponseRoomSummaryDTO;
+import com.pknu.spatium_backend.dto.RoomDTO.RoomSceneModelResponse;
+import com.pknu.spatium_backend.dto.RoomDTO.RoomSceneResponse;
 import com.pknu.spatium_backend.exception.ApiException;
 import com.pknu.spatium_backend.model.Project;
 import com.pknu.spatium_backend.model.Room;
@@ -35,6 +39,7 @@ public class RoomService {
 
     private final RoomRepository roomRepository;
     private final ProjectRepository projectRepository;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     public void post3dData(
             String jsonDataFile,
@@ -207,6 +212,78 @@ public class RoomService {
                 "roomName", room.getRoom_name(),
                 "roomPath", room.getRoom_path()
         );
+    }
+
+    public RoomSceneResponse getRoomScene(
+            String memId,
+            String roomId) {
+
+        Room room = getOwnedRoom(memId, roomId);
+
+        if (room.getRoom_path() == null || room.getRoom_path().isBlank()) {
+            throw new ApiException(
+                    500,
+                    "ROOM_PATH_NOT_FOUND",
+                    "룸 저장 경로가 없습니다."
+            );
+        }
+
+        try {
+            Path saveDir = Paths
+                    .get(room.getRoom_path())
+                    .toAbsolutePath()
+                    .normalize();
+
+            Path metadataPath = findExistingRoomMetadataPath(saveDir)
+                    .toAbsolutePath()
+                    .normalize();
+            Path modelPath = findExistingRoomModelPath(saveDir)
+                    .toAbsolutePath()
+                    .normalize();
+
+            ensureInside(saveDir, metadataPath);
+            ensureInside(saveDir, modelPath);
+
+            if (!Files.exists(metadataPath) || !Files.isRegularFile(metadataPath)) {
+                throw new ApiException(
+                        404,
+                        "ROOM_METADATA_NOT_FOUND",
+                        "룸 metadata 파일을 찾을 수 없습니다."
+                );
+            }
+
+            if (!Files.exists(modelPath) || !Files.isRegularFile(modelPath)) {
+                throw new ApiException(
+                        404,
+                        "ROOM_MODEL_NOT_FOUND",
+                        "룸 model 파일을 찾을 수 없습니다."
+                );
+            }
+
+            Object metadata = objectMapper.readValue(metadataPath.toFile(), Object.class);
+            byte[] modelBytes = Files.readAllBytes(modelPath);
+
+            RoomSceneModelResponse model = new RoomSceneModelResponse(
+                    modelPath.getFileName().toString(),
+                    "model/vnd.usdz+zip",
+                    Base64.getEncoder().encodeToString(modelBytes)
+            );
+
+            return new RoomSceneResponse(
+                    room.getRoom_id(),
+                    room.getRoom_name(),
+                    metadata,
+                    model
+            );
+        } catch (ApiException e) {
+            throw e;
+        } catch (IOException e) {
+            throw new ApiException(
+                    500,
+                    "ROOM_SCENE_READ_FAILED",
+                    "룸 데이터를 불러오지 못했습니다."
+            );
+        }
     }
 
     @Transactional
@@ -474,6 +551,20 @@ public class RoomService {
                     ))
                     .findFirst()
                     .orElse(jsonFiles.get(0));
+        }
+    }
+
+    private Path findExistingRoomModelPath(Path saveDir) throws IOException {
+        try (Stream<Path> paths = Files.list(saveDir)) {
+            return paths
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName()
+                            .toString()
+                            .toLowerCase(Locale.ROOT)
+                            .endsWith(".usdz"))
+                    .sorted()
+                    .findFirst()
+                    .orElse(saveDir.resolve("room.usdz"));
         }
     }
 

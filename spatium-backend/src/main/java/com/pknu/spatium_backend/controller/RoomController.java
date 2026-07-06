@@ -22,6 +22,7 @@ import com.pknu.spatium_backend.auth.AuthenticatedMemId;
 import com.pknu.spatium_backend.dto.PageResponseDTO;
 import com.pknu.spatium_backend.dto.RoomDTO.ResponseRoomCreateDTO;
 import com.pknu.spatium_backend.dto.RoomDTO.ResponseRoomSummaryDTO;
+import com.pknu.spatium_backend.dto.RoomDTO.RoomSceneResponse;
 import com.pknu.spatium_backend.exception.ApiException;
 import com.pknu.spatium_backend.service.RoomService;
 
@@ -103,6 +104,20 @@ public class RoomController {
                 "statusCode", 200,
                 "message", "룸 상세 조회에 성공했습니다.",
                 "data", roomService.getRoom(memId, roomId)
+        ));
+    }
+
+    @GetMapping(path = "/api/rooms/{roomId}/scene")
+    public ResponseEntity<?> getRoomScene(
+            @AuthenticatedMemId String memId,
+            @PathVariable String roomId) {
+
+        RoomSceneResponse data = roomService.getRoomScene(memId, roomId);
+
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "룸 3D 데이터 조회에 성공했습니다.",
+                "data", data
         ));
     }
 
