@@ -127,11 +127,10 @@
   color: var(--t);
 }
 
-/* 히어로 영역 */
+/* 히어로 영역 (다크 테마) */
 .hp-hero {
-  flex: 1;
-  background: #1C1209;
-  padding: 80px 40px 72px;
+  background: #2A1D14;
+  padding: 72px 40px 64px;
   text-align: center;
   position: relative;
   overflow: hidden;
@@ -140,16 +139,32 @@
   justify-content: center;
 }
 
-.hp-hero::before {
-  content: '';
+.hp-hero::before,
+.hp-hero::after {
+  content: "";
   position: absolute;
-  top: -80px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 800px;
-  height: 480px;
-  background: radial-gradient(ellipse, rgba(196, 149, 106, .14) 0%, transparent 65%);
+  border-radius: 50%;
+  filter: blur(70px);
+  z-index: 0;
   pointer-events: none;
+}
+
+.hp-hero::before {
+  width: 420px;
+  height: 420px;
+  top: -160px;
+  left: -120px;
+  background: radial-gradient(circle, var(--ga) 0%, rgba(196, 149, 106, 0) 70%);
+  opacity: .45;
+}
+
+.hp-hero::after {
+  width: 480px;
+  height: 480px;
+  bottom: -220px;
+  right: -140px;
+  background: radial-gradient(circle, var(--g) 0%, rgba(92, 61, 46, 0) 70%);
+  opacity: .3;
 }
 
 .hp-hero-inner {
@@ -163,24 +178,24 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  background: rgba(196, 149, 106, .1);
-  border: 1px solid rgba(196, 149, 106, .25);
+  background: transparent;
+  border: 1px solid #4A3A2C;
   color: var(--ga);
   font-size: 11px;
   font-weight: 700;
-  padding: 5px 16px;
+  padding: 6px 16px;
   border-radius: 20px;
-  letter-spacing: 1px;
+  letter-spacing: 2px;
   text-transform: uppercase;
   margin-bottom: 24px;
 }
 
 .hp-hero-h1 {
-  font-size: clamp(32px, 5vw, 52px);
+  font-size: clamp(30px, 4.5vw, 44px);
   font-weight: 900;
-  color: #fff;
-  line-height: 1.12;
-  letter-spacing: -1.5px;
+  color: #F5EFE6;
+  line-height: 1.25;
+  letter-spacing: -1px;
   margin-bottom: 18px;
 }
 
@@ -193,8 +208,8 @@
 
 .hp-hero-desc {
   font-size: 16px;
-  color: rgba(255, 255, 255, .42);
-  max-width: 480px;
+  color: #C9BBAA;
+  max-width: 500px;
   margin: 0 auto 36px;
   line-height: 1.75;
 }
@@ -209,60 +224,135 @@
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 6px 28px rgba(155, 107, 69, .4);
-  transition: transform .2s;
+  transition: transform .2s, box-shadow .2s;
   text-decoration: none;
   display: inline-block;
 }
 
 .hp-hero-btn-main:hover {
   transform: translateY(-2px);
+  box-shadow: 0 10px 34px rgba(155, 107, 69, .55);
 }
 
-.hp-hero-stats {
-  display: flex;
-  justify-content: center;
-  margin-top: 56px;
-  border: 1px solid rgba(255, 255, 255, .07);
+/* 이용 순서 소개 */
+.hp-steps {
+  border-top: 1px solid var(--bd);
+  background: var(--bg);
+  padding: 72px 32px 84px;
+}
+
+.hp-steps-label {
+  text-align: center;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #996B3D;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.hp-steps-title {
+  text-align: center;
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--t);
+  margin-bottom: 48px;
+}
+
+.hp-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 32px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.hp-step-card {
+  position: relative;
+  background: var(--sur);
+  border: 1px solid var(--bd);
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 10px 30px rgba(28, 18, 9, .06);
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity .6s ease, transform .6s ease;
+}
+
+.hp-step-card.hp-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hp-step-shot {
   border-radius: 14px;
   overflow: hidden;
-  max-width: 560px;
-  margin-left: auto;
-  margin-right: auto;
-  background: rgba(255, 255, 255, .03);
+  border: 1px solid var(--bd);
+  background: #fff;
 }
 
-.hp-hero-stat {
-  flex: 1;
-  padding: 22px 16px;
-  text-align: center;
-  border-right: 1px solid rgba(255, 255, 255, .07);
+.hp-step-shot img {
+  width: 100%;
+  display: block;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
 }
 
-.hp-hero-stat:last-child {
-  border-right: none;
+.hp-step-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
 }
 
-.hp-hero-stat-num {
-  font-size: 26px;
-  font-weight: 900;
-  color: var(--ga);
-  margin-bottom: 4px;
+.hp-step-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--ga), var(--g));
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(155, 107, 69, .4);
 }
 
-.hp-hero-stat-label {
-  font-size: 11px;
-  color: rgba(255, 255, 255, .3);
+.hp-step-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #996B3D;
+  text-transform: uppercase;
+}
+
+.hp-step-name {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--t);
+  margin-top: 6px;
+}
+
+.hp-step-desc {
+  font-size: 16px;
+  color: var(--t2);
+  line-height: 1.6;
+  margin-top: 8px;
 }
 
 @media (max-width: 600px) {
   .hp-hero {
     padding: 56px 20px;
   }
-  .hp-hero-stats {
-    flex-wrap: wrap;
+  .hp-steps {
+    padding: 36px 20px 44px;
   }
-  .hp-hero-stat {
-    flex: 1 1 50%;
-    border-bottom: 1px solid rgba(255, 255, 255, .07);
+  .hp-steps-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .hp-steps-title {
+    font-size: 24px;
   }
 }

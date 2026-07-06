@@ -1,9 +1,12 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import "../../styles/mypage.css";
 import { clearLoginSession, getAccessToken } from "../../utils/authSession";
 import { deleteLogout, getMyInfo } from "../../springApi/MemberSpringBootApi";
-import { getProjectList, postProject } from "../../springApi/ProjectSpringBootAPi";
+import {
+  getProjectList,
+  postProject,
+} from "../../springApi/ProjectSpringBootAPi";
 import { getRoomList, postRoom } from "../../springApi/RoomSpringBootApi";
 import { deleteRoom } from "../../springApi/RoomSpringBootApi";
 
@@ -14,7 +17,7 @@ const DEFAULT_USER = {
   fullName: "SPATIUM",
   handle: "",
   email: "",
-}
+};
 
 // 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
 const USER = {
@@ -59,6 +62,7 @@ function normalizeProject(project, rooms = []) {
 
 function MyPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [panelOpen, setPanelOpen] = useState(false);
   const [user, setUser] = useState(DEFAULT_USER);
   const [projects, setProjects] = useState([]);
@@ -111,6 +115,16 @@ function MyPage() {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  // 홈에서 "시작하기"로 진입한 경우 새 프로젝트 모달 자동 오픈
+  useEffect(() => {
+    if (location.state?.openNewProject) {
+      openProjectModal("project");
+      // 새로고침/뒤로가기 시 모달이 다시 열리지 않도록 state 제거
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const totalRoomCount = projects.reduce((sum, p) => sum + p.rooms.length, 0);
   const totalFurnitureCount = projects.reduce(
