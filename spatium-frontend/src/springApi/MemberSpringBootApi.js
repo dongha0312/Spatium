@@ -22,16 +22,16 @@ export const getMyInfo = () =>
 export const deleteMyInfo = () =>
   springApi.delete("/api/users/me").then(unwrapApiData).catch(throwApiError);
 
-export const postSocialLogin = ({ provider, providerUserId, email }) =>
+// 소셜 로그인 : provider가 발급한 ID Token만 보내고, sub/email은 백엔드가 직접 검증해서 얻음
+export const postSocialLogin = ({ provider, idToken }) =>
   springApi
-    .post("/api/auth/social-sessions", { provider, providerUserId, email })
+    .post("/api/auth/social-sessions", { provider, idToken })
     .then(unwrapApiData)
     .catch(throwApiError);
 
 export const postSocialSignup = ({
   provider,
-  providerUserId,
-  email,
+  idToken,
   nickname,
   birthDate,
   gender,
@@ -41,8 +41,7 @@ export const postSocialSignup = ({
   springApi
     .post("/api/auth/social-users", {
       provider,
-      providerUserId,
-      email,
+      idToken,
       nickname,
       birthDate,
       gender,
