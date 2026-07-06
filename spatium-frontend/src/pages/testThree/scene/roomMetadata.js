@@ -2,8 +2,6 @@ import * as THREE from "three";
 import {
   SCENE_CONFIG_URL,
   getModelUrls,
-  getRoomMetadataUrl,
-  getRoomModelUrl,
   sceneColor,
 } from "./sceneConfig";
 import {
@@ -144,7 +142,7 @@ export function serializeRoomMesh(object) {
   };
 }
 
-export function serializeRoomModelToJson(roomModel) {
+export function serializeRoomModelToJson(roomModel, generatedFrom = null) {
   if (!roomModel) return null;
 
   const walls = [];
@@ -170,7 +168,7 @@ export function serializeRoomModelToJson(roomModel) {
   return {
     version: 1,
     coordinateSystem: "three-world",
-    generatedFrom: getRoomModelUrl(),
+    generatedFrom,
     walls,
     floors,
     meshes,
@@ -322,13 +320,16 @@ export function createReplayableMetadataJson(metadata, editedItems, roomModel) {
     ? windowEdits.map((edit) => applyReferenceEdit(edit, originalWindows))
     : originalWindows;
   nextMetadata._spatiumRoom =
-    serializeRoomModelToJson(roomModel) || nextMetadata._spatiumRoom || null;
+    serializeRoomModelToJson(
+      roomModel,
+      nextMetadata._spatiumRoom?.generatedFrom || "api:room-scene",
+    ) ||
+    nextMetadata._spatiumRoom ||
+    null;
   nextMetadata._spatiumExport = {
     version: 1,
     exportedAt: new Date().toISOString(),
     source: {
-      roomModelUrl: getRoomModelUrl(),
-      roomMetadataUrl: getRoomMetadataUrl(),
       sceneConfigUrl: SCENE_CONFIG_URL,
       modelUrls: getModelUrls(),
     },
