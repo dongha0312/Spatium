@@ -1,12 +1,12 @@
 .hp-root {
-  --g: #5C3D2E;
-  --ga: #C4956A;
-  --t: #1C1209;
-  --t2: #5A4535;
-  --t3: #A08878;
-  --bd: #DDD3C6;
-  --bg: #F2EDE6;
-  --sur: #FAF7F3;
+  --g: #5c3d2e;
+  --ga: #c4956a;
+  --t: #1c1209;
+  --t2: #5a4535;
+  --t3: #a08878;
+  --bd: #ddd3c6;
+  --bg: #f2ede6;
+  --sur: #faf7f3;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -99,7 +99,7 @@
   border-radius: 24px;
   background: var(--sur);
   cursor: pointer;
-  transition: all .15s;
+  transition: all 0.15s;
   text-decoration: none;
 }
 
@@ -129,7 +129,7 @@
 
 /* 히어로 영역 (다크 테마) */
 .hp-hero {
-  background: #2A1D14;
+  background: #2a1d14;
   padding: 72px 40px 64px;
   text-align: center;
   position: relative;
@@ -155,7 +155,7 @@
   top: -160px;
   left: -120px;
   background: radial-gradient(circle, var(--ga) 0%, rgba(196, 149, 106, 0) 70%);
-  opacity: .45;
+  opacity: 0.45;
 }
 
 .hp-hero::after {
@@ -164,7 +164,7 @@
   bottom: -220px;
   right: -140px;
   background: radial-gradient(circle, var(--g) 0%, rgba(92, 61, 46, 0) 70%);
-  opacity: .3;
+  opacity: 0.3;
 }
 
 .hp-hero-inner {
@@ -179,7 +179,7 @@
   align-items: center;
   gap: 7px;
   background: transparent;
-  border: 1px solid #4A3A2C;
+  border: 1px solid #4a3a2c;
   color: var(--ga);
   font-size: 11px;
   font-weight: 700;
@@ -193,14 +193,14 @@
 .hp-hero-h1 {
   font-size: clamp(30px, 4.5vw, 44px);
   font-weight: 900;
-  color: #F5EFE6;
+  color: #f5efe6;
   line-height: 1.25;
   letter-spacing: -1px;
   margin-bottom: 18px;
 }
 
 .hp-hero-h1 .hp-grad {
-  background: linear-gradient(90deg, var(--ga), #E8C49A);
+  background: linear-gradient(90deg, var(--ga), #e8c49a);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -208,7 +208,7 @@
 
 .hp-hero-desc {
   font-size: 16px;
-  color: #C9BBAA;
+  color: #c9bbaa;
   max-width: 500px;
   margin: 0 auto 36px;
   line-height: 1.75;
@@ -223,15 +223,17 @@
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  box-shadow: 0 6px 28px rgba(155, 107, 69, .4);
-  transition: transform .2s, box-shadow .2s;
+  box-shadow: 0 6px 28px rgba(155, 107, 69, 0.4);
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
   text-decoration: none;
   display: inline-block;
 }
 
 .hp-hero-btn-main:hover {
   transform: translateY(-2px);
-  box-shadow: 0 10px 34px rgba(155, 107, 69, .55);
+  box-shadow: 0 10px 34px rgba(155, 107, 69, 0.55);
 }
 
 /* 이용 순서 소개 */
@@ -245,7 +247,7 @@
   text-align: center;
   font-size: 14px;
   letter-spacing: 2px;
-  color: #996B3D;
+  color: #996b3d;
   font-weight: 700;
   margin-bottom: 10px;
 }
@@ -272,10 +274,12 @@
   border: 1px solid var(--bd);
   border-radius: 20px;
   padding: 28px;
-  box-shadow: 0 10px 30px rgba(28, 18, 9, .06);
+  box-shadow: 0 10px 30px rgba(28, 18, 9, 0.06);
   opacity: 0;
   transform: translateY(24px);
-  transition: opacity .6s ease, transform .6s ease;
+  transition:
+    opacity 0.6s ease,
+    transform 0.6s ease;
 }
 
 .hp-step-card.hp-visible {
@@ -316,14 +320,14 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 14px rgba(155, 107, 69, .4);
+  box-shadow: 0 4px 14px rgba(155, 107, 69, 0.4);
 }
 
 .hp-step-eyebrow {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 2px;
-  color: #996B3D;
+  color: #996b3d;
   text-transform: uppercase;
 }
 

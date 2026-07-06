@@ -1,8 +1,14 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import "../styles/3deditor.css";
 import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
-import { getAccessToken } from "../utils/authSession";
+import { getAccessToken, getLoginSession } from "../utils/authSession";
 import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
 import { getRoomJsonData } from "../springApi/RoomSpringBootApi";
 
@@ -52,15 +58,22 @@ function ThreeDEditor() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
-  const [projectLabel, setProjectLabel] = useState(shortId(projectId, "Project"));
+  const [projectLabel, setProjectLabel] = useState(
+    shortId(projectId, "Project"),
+  );
   const [roomLabel, setRoomLabel] = useState(shortId(roomId, "Room editor"));
+
+  const [session] = useState(() => getLoginSession());
 
   const activeLayer =
     INITIAL_LAYERS.find((layer) => layer.id === activeLayerId) ??
     INITIAL_LAYERS[0];
 
   const categoryFilters = useMemo(
-    () => Array.from(new Set(furnitureCatalog.map((item) => item.group).filter(Boolean))),
+    () =>
+      Array.from(
+        new Set(furnitureCatalog.map((item) => item.group).filter(Boolean)),
+      ),
     [furnitureCatalog],
   );
 
@@ -68,7 +81,9 @@ function ThreeDEditor() {
     const query = catalogSearch.trim().toLowerCase();
 
     return furnitureCatalog.filter((item) => {
-      const matchesCategory = activeCategory ? item.group === activeCategory : true;
+      const matchesCategory = activeCategory
+        ? item.group === activeCategory
+        : true;
       const haystack = [item.name, item.group, item.category]
         .filter(Boolean)
         .join(" ")
@@ -85,13 +100,17 @@ function ThreeDEditor() {
     fetch(FURNITURE_CATALOG_URL, { cache: "no-store" })
       .then((response) => {
         if (!response.ok) {
-          throw new Error(`Failed to load furniture catalog (${response.status})`);
+          throw new Error(
+            `Failed to load furniture catalog (${response.status})`,
+          );
         }
         return response.json();
       })
       .then((data) => {
         if (isMounted) {
-          setFurnitureCatalog((Array.isArray(data) ? data : []).map(normalizeCatalogItem));
+          setFurnitureCatalog(
+            (Array.isArray(data) ? data : []).map(normalizeCatalogItem),
+          );
           setCatalogError("");
         }
       })
@@ -275,12 +294,24 @@ function ThreeDEditor() {
         <div className="ed-nav-center">{roomLabel}</div>
         <div className="ed-nav-status">
           {isSaving && <span className="ed-save-state">Saving...</span>}
-          {!isSaving && saveMessage && <span className="ed-save-state ed-save-ok">{saveMessage}</span>}
-          {!isSaving && saveError && <span className="ed-save-state ed-save-error">{saveError}</span>}
+          {!isSaving && saveMessage && (
+            <span className="ed-save-state ed-save-ok">{saveMessage}</span>
+          )}
+          {!isSaving && saveError && (
+            <span className="ed-save-state ed-save-error">{saveError}</span>
+          )}
           {!isSaving && hasUnsavedChanges && !saveMessage && !saveError && (
             <span className="ed-save-state">Unsaved changes</span>
           )}
         </div>
+        <Link to="/member/mypage" className="ed-av-btn">
+          <div className="ed-av-circ">
+            {(session?.nickname || "S").charAt(0).toUpperCase()}
+          </div>
+          <span className="ed-av-name">
+            {session?.nickname || "마이페이지"}
+          </span>
+        </Link>
       </div>
 
       <div className="ed-wrap">
@@ -364,7 +395,9 @@ function ThreeDEditor() {
             </div>
 
             <div className="ed-cat-products">
-              {catalogError && <div className="ed-cat-empty">{catalogError}</div>}
+              {catalogError && (
+                <div className="ed-cat-empty">{catalogError}</div>
+              )}
               {!catalogError && visibleCatalogItems.length === 0 && (
                 <div className="ed-cat-empty">No furniture found.</div>
               )}
@@ -379,7 +412,9 @@ function ThreeDEditor() {
                     {item.thumbnailUrl ? (
                       <img src={item.thumbnailUrl} alt="" />
                     ) : (
-                      <span>{String(item.category || item.name || "?").slice(0, 2)}</span>
+                      <span>
+                        {String(item.category || item.name || "?").slice(0, 2)}
+                      </span>
                     )}
                   </span>
                   <span className="ed-cat-product-body">
@@ -409,9 +444,7 @@ function ThreeDEditor() {
             </div>
 
             {isSkyview && (
-              <div className="ed-canvas-badge ed-canvas-badge-sky">
-                Skyview
-              </div>
+              <div className="ed-canvas-badge ed-canvas-badge-sky">Skyview</div>
             )}
 
             {showMeasurements && (
@@ -478,7 +511,9 @@ function ThreeDEditor() {
                         key={color}
                         type="button"
                         className={`ed-wallcolor-swatch${
-                          wallColor === color ? " ed-wallcolor-swatch-active" : ""
+                          wallColor === color
+                            ? " ed-wallcolor-swatch-active"
+                            : ""
                         }`}
                         style={{ background: color }}
                         onClick={() => handleSelectWallColor(color)}
