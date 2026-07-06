@@ -1,12 +1,70 @@
-import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect, useRef } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import "../styles/homepage.css";
 import { getLoginSession } from "../utils/authSession";
+
+// 이용 순서 소개 (4단계)
+const STEPS = [
+  {
+    img: "/images/steps/step1.gif",
+    title: "새 프로젝트 생성",
+    desc: "프로젝트를 만들어 공간 작업을 시작해요",
+  },
+  {
+    img: "/images/steps/step2.gif",
+    title: "새 룸 만들기",
+    desc: "프로젝트 안에 방(룸)을 추가해요",
+  },
+  {
+    img: "/images/steps/step3.gif",
+    title: "스캔한 3D 업로드",
+    desc: "LiDAR로 스캔한 내 방 3D 파일을 업로드해요",
+  },
+  {
+    img: "/images/steps/step4.gif",
+    title: "가구 배치 · 교체",
+    desc: "가구를 옮기고 다른 가구로 바꿔봐요",
+  },
+];
 
 // HomePage 정의 하기
 function HomePage() {
   // 로그인 세션 (있으면 우측 상단에 닉네임 표시, 없으면 로그인 버튼 표시)
   const [session] = useState(() => getLoginSession());
+  const navigate = useNavigate();
+  const stepsGridRef = useRef(null);
+
+  // 이용 순서 카드가 스크롤로 화면에 들어오면 순차적으로 페이드인 + 슬라이드업
+  useEffect(() => {
+    const cards = stepsGridRef.current
+      ? stepsGridRef.current.querySelectorAll(".hp-step-card")
+      : [];
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("hp-visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.2 },
+    );
+    cards.forEach((card, i) => {
+      card.style.transitionDelay = `${i * 0.12}s`;
+      observer.observe(card);
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  // 시작하기 : 로그인 상태면 마이페이지로 이동하며 새 프로젝트 모달 자동 오픈, 아니면 로그인 페이지로
+  const handleStart = () => {
+    if (session) {
+      navigate("/member/mypage", { state: { openNewProject: true } });
+    } else {
+      navigate("/auth/login");
+    }
+  };
 
   return (
     <div className="hp-root">
@@ -35,45 +93,53 @@ function HomePage() {
         </div>
       </div>
 
-      {/* 히어로 영역 */}
+      {/* 히어로 영역 : 좌측 텍스트 + 우측 룸 일러스트 */}
       <div className="hp-hero">
         <div className="hp-hero-inner">
-          <div className="hp-hero-eyebrow">✦ 3D 인테리어 시뮬레이터</div>
-          <h1 className="hp-hero-h1">
-            나만의 공간을
-            <br />
-            <span className="hp-grad">직접 디자인하세요</span>
-          </h1>
-          <p className="hp-hero-desc">
-            가구를 배치하고, 색상을 바꾸고, 완성된 공간을 3D로 확인하세요.
-            <br />
-            전문가 없이도 완벽한 인테리어를 만들 수 있습니다.
-          </p>
-          <button
-            type="button"
-            className="hp-hero-btn-main"
-            onClick={() => alert("준비 중인 기능입니다.")}
-          >
-            지금 무료로 시작하기 →
-          </button>
-          <div className="hp-hero-stats">
-            <div className="hp-hero-stat">
-              <div className="hp-hero-stat-num">10,000+</div>
-              <div className="hp-hero-stat-label">가구 라이브러리</div>
-            </div>
-            <div className="hp-hero-stat">
-              <div className="hp-hero-stat-num">무료</div>
-              <div className="hp-hero-stat-label">기본 플랜 제공</div>
-            </div>
-            <div className="hp-hero-stat">
-              <div className="hp-hero-stat-num">3D</div>
-              <div className="hp-hero-stat-label">실시간 렌더링</div>
-            </div>
-            <div className="hp-hero-stat">
-              <div className="hp-hero-stat-num">5만+</div>
-              <div className="hp-hero-stat-label">활성 사용자</div>
-            </div>
+          <div className="hp-hero-left">
+            <div className="hp-hero-eyebrow">✦ 3D 인테리어 시뮬레이터</div>
+            <h1 className="hp-hero-h1">
+              "내 방 그대로" 옮긴 3D 공간에서
+              <br />
+              <span className="hp-grad">가구를 배치해보세요</span>
+            </h1>
+            <p className="hp-hero-desc">
+              아이폰 LiDAR로 스캔한 내 방을 3D로 불러와 가구를 원하는 위치에
+              놓아보고, 다른 가구로 바꿔볼 수 있어요. 직접 가구를 옮기지 않아도
+              배치 결과를 미리 확인해 시행착오를 줄입니다.
+            </p>
+            <button
+              type="button"
+              className="hp-hero-btn-main"
+              onClick={handleStart}
+            >
+              시작하기 →
+            </button>
           </div>
+          <div className="hp-hero-right">
+            <img src="/images/isoroom.svg" alt="3D 룸에서 가구를 배치하는 일러스트" />
+          </div>
+        </div>
+      </div>
+
+      {/* 이용 순서 소개 */}
+      <div className="hp-steps">
+        <div className="hp-steps-label">이용 순서</div>
+        <div className="hp-steps-title">4단계로 완성하는 우리 집 가구 배치</div>
+        <div className="hp-steps-grid" ref={stepsGridRef}>
+          {STEPS.map((step, i) => (
+            <div className="hp-step-card" key={step.title}>
+              <div className="hp-step-shot">
+                <img src={step.img} alt={step.title} />
+              </div>
+              <div className="hp-step-meta">
+                <div className="hp-step-badge">{i + 1}</div>
+                <span className="hp-step-eyebrow">STEP</span>
+              </div>
+              <div className="hp-step-name">{step.title}</div>
+              <div className="hp-step-desc">{step.desc}</div>
+            </div>
+          ))}
         </div>
       </div>
 
