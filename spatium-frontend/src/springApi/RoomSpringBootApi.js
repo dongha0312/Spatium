@@ -36,6 +36,12 @@ export const postRoom = ({ projectId, roomName, metadata, file }) => {
     .catch(throwApiError);
 };
 
+export const patchRoom = ({ roomId, roomName }) =>
+  springApi
+    .patch(`/api/rooms/${roomId}`, { roomName })
+    .then(unwrapApiData)
+    .catch(throwApiError);
+
 export const getRoomList = (projectId, params = {}) =>
   springApi
     .get(`/api/projects/${projectId}/rooms`, { params })

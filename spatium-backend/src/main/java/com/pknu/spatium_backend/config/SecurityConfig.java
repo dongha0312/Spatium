@@ -11,6 +11,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
@@ -35,6 +37,13 @@ public class SecurityConfig {
     private static final String UNAUTHORIZED_BODY =
             "{\"statusCode\":401,\"code\":\"UNAUTHORIZED\",\"message\":\"로그인이 필요합니다.\",\"errors\":[]}";
 
+    // 비밀번호 해시용 인코더 (BCrypt)
+    //  - 회원가입 : encode()로 해시 저장, 로그인/탈퇴 : matches()로 비교
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
@@ -56,6 +65,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/sessions").permitAll()
                         // 소셜 로그인/가입 (social-sessions, social-users)
                         .requestMatchers("/api/auth/social-*").permitAll()
+                        // 토큰 재발급 (accessToken 만료 상태에서 호출되므로 인증 불필요,
+                        //  refreshToken 자체 검증은 MemberService.reissueTokens가 수행)
+                        .requestMatchers(HttpMethod.POST, "/api/auth/token").permitAll()
                         // 그 외 전부 인증 필요
                         .anyRequest().authenticated())
                 // 미인증 요청의 401 응답을 기존 공통 에러 스펙으로 내려준다.

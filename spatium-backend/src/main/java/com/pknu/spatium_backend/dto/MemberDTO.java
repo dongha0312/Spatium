@@ -69,19 +69,17 @@ public class MemberDTO{
     @AllArgsConstructor
     @Data
     // 소셜 로그인 DTO (POST /api/auth/social-sessions)
+    //  - 보안 : 클라이언트가 보내는 email/providerUserId는 위조 가능하므로 받지 않는다.
+    //    provider가 발급한 ID Token을 서버가 직접 검증해서 sub/email을 얻는다.
     public static class MemberSocialLoginDTO {
 
-        // "GOOGLE", "KAKAO" 등 소셜 제공자 구분
+        // "GOOGLE", "APPLE" 등 소셜 제공자 구분
         @NotBlank(message = "provider 값이 필요합니다")
         private String provider;
 
-        // 제공자 쪽 고유 사용자 ID (구글의 sub 등)
-        //  - 참고 : ERD(Member 테이블)엔 이 값을 저장할 컬럼이 없어서, 현재는 받기만 하고 DB엔 저장 안 함
-        @NotBlank(message = "providerUserId 값이 필요합니다")
-        private String providerUserId;
-
-        @NotBlank(message = "이메일을 입력해주세요")
-        private String email;
+        // provider가 발급한 ID Token (JWT) - 서버가 서명/iss/aud를 직접 검증함
+        @NotBlank(message = "idToken 값이 필요합니다")
+        private String idToken;
     }
 
     @Getter
@@ -90,19 +88,16 @@ public class MemberDTO{
     @AllArgsConstructor
     @Data
     // 소셜 회원가입 DTO (POST /api/auth/social-users)
+    //  - 보안 : email/providerUserId는 서버가 ID Token을 검증해서 직접 얻는다.
     public static class MemberSocialSignupDTO {
 
-        // "GOOGLE", "KAKAO" 등 소셜 제공자 구분
+        // "GOOGLE", "APPLE" 등 소셜 제공자 구분
         @NotBlank(message = "provider 값이 필요합니다")
         private String provider;
 
-        // 제공자 쪽 고유 사용자 ID (구글의 sub 등)
-        //  - 참고 : ERD(Member 테이블)엔 이 값을 저장할 컬럼이 없어서, 현재는 받기만 하고 DB엔 저장 안 함
-        @NotBlank(message = "providerUserId 값이 필요합니다")
-        private String providerUserId;
-
-        @NotBlank(message = "이메일을 입력해주세요")
-        private String email;
+        // provider가 발급한 ID Token (JWT) - 서버가 서명/iss/aud를 직접 검증함
+        @NotBlank(message = "idToken 값이 필요합니다")
+        private String idToken;
 
         private String nickname;
 
@@ -132,6 +127,33 @@ public class MemberDTO{
 
         @NotBlank(message = "비밀번호를 입력해주세요")
         private String password;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Data
+    // 회원 탈퇴 요청 DTO (DELETE /api/users/me)
+    //  - 일반(LOCAL) 회원 : password로 본인 확인
+    //  - 소셜 회원 : 소셜 로그인을 다시 수행해 받은 idToken으로 본인 확인
+    public static class UserDeleteRequest {
+
+        private String password;
+
+        private String idToken;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Data
+    // 토큰 재발급 요청 DTO (POST /api/auth/token)
+    public static class TokenRefreshRequest {
+
+        @NotBlank(message = "refreshToken 값이 필요합니다")
+        private String refreshToken;
     }
 
     @Getter
