@@ -185,9 +185,10 @@ public class RoomController {
             @AuthenticatedMemId String memId,
             @RequestParam("projectId") String projectId,
             @RequestParam("roomId") String roomId,
+            @RequestParam(value = "area", required = false) String area,
             @RequestPart("metadata") MultipartFile metadata) {
 
-        roomService.saveEditedRoom(memId, projectId, roomId, metadata);
+        roomService.saveEditedRoom(memId, projectId, roomId, area, metadata);
 
         return ResponseEntity.ok(Map.of(
                 "statusCode", 200,

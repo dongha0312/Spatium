@@ -9,6 +9,7 @@ import {
   getRoomMetadataUrl,
   getRoomModelUrl,
   loadSceneConfig,
+  optionalConfigBoolean,
   referenceFallbackThickness,
   sceneColor,
   wallConfigBoolean,
@@ -50,6 +51,7 @@ import {
   createWallColliders,
   prepareRoomModel,
 } from "../scene/wallColliders";
+import { calculateRoomMeasurements } from "../scene/roomMeasurements";
 
 const DEFAULT_FURNITURE_DIMENSIONS = { x: 0.8, y: 0.8, z: 0.8 };
 const REFERENCE_CATEGORIES = new Set(["door", "window"]);
@@ -138,6 +140,13 @@ function createDimensionLabel() {
   return label;
 }
 
+function createRoomDimensionLabel(text) {
+  const element = document.createElement("div");
+  element.className = "room-dimension-label";
+  element.textContent = text;
+  return new CSS2DObject(element);
+}
+
 function createReferenceDebugLabel() {
   const element = document.createElement("div");
   element.className = "reference-debug-label";
@@ -148,6 +157,10 @@ function createReferenceDebugLabel() {
 
 function formatCentimeters(value) {
   return `${Math.max(Math.round(value * 100), 1)} cm`;
+}
+
+function formatSquareMeters(value) {
+  return Number.isFinite(value) ? `${value.toFixed(2)} m2` : "-";
 }
 
 function stableDimensionsForObject(object, fallbackSize) {
@@ -599,6 +612,10 @@ function formatCameraViewAngle(camera) {
   return `View Yaw ${yaw}° / Pitch ${pitch}°`;
 }
 
+function debugConfigBoolean(name, defaultValue = false) {
+  return optionalConfigBoolean(["debug", name], defaultValue);
+}
+
 function isReplaceableObject(object) {
   if (!object) return false;
 
@@ -695,6 +712,8 @@ export function useTestThreeEditor({
   const containerRef = useRef(null);
   const selectedObjectRef = useRef(null);
   const syncSelectedRef = useRef(null);
+  const syncRoomMeasurementsRef = useRef(null);
+  const roomMeasurementsRef = useRef(null);
   const sourceMetadataRef = useRef(null);
   const roomModelRef = useRef(null);
   const viewControllerRef = useRef(null);
@@ -737,6 +756,7 @@ export function useTestThreeEditor({
   useEffect(() => {
     showMeasurementsRef.current = showMeasurements;
     syncSelectedRef.current?.();
+    syncRoomMeasurementsRef.current?.();
   }, [showMeasurements]);
 
   useEffect(() => {
@@ -844,7 +864,10 @@ export function useTestThreeEditor({
     setStatus("Saving JSON...");
 
     try {
-      await saveMetadataJson(replayableMetadata, saveContext);
+      await saveMetadataJson(replayableMetadata, {
+        ...saveContext,
+        area: roomMeasurementsRef.current?.area,
+      });
       sourceMetadataRef.current = replayableMetadata;
       setStatus("JSON saved.");
       window.setTimeout(() => setStatus(""), 1200);
@@ -925,10 +948,21 @@ export function useTestThreeEditor({
     labelRenderer.domElement.className = "test-three-label-layer";
     root.appendChild(labelRenderer.domElement);
 
-    const cameraAngleBadge = document.createElement("div");
-    cameraAngleBadge.className = "test-three-camera-angle";
-    cameraAngleBadge.textContent = formatCameraViewAngle(camera);
-    root.appendChild(cameraAngleBadge);
+    const showCameraAngle = debugConfigBoolean("showCameraAngle", false);
+    const showReferenceLabels = debugConfigBoolean("showReferenceLabels", false);
+    const cameraAngleBadge = showCameraAngle
+      ? document.createElement("div")
+      : null;
+    if (cameraAngleBadge) {
+      cameraAngleBadge.className = "test-three-camera-angle";
+      cameraAngleBadge.textContent = formatCameraViewAngle(camera);
+      root.appendChild(cameraAngleBadge);
+    }
+    const roomAreaBadge = document.createElement("div");
+    roomAreaBadge.className = "test-three-room-area";
+    roomAreaBadge.textContent = "";
+    roomAreaBadge.hidden = true;
+    root.appendChild(roomAreaBadge);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -961,7 +995,15 @@ export function useTestThreeEditor({
     referenceLayer.name = "DoorWindowReferenceLayer";
     const selectionLayer = new THREE.Group();
     selectionLayer.name = "SelectionControlLayer";
-    worldGroup.add(furnitureLayer, referenceLayer, selectionLayer);
+    const roomMeasurementLayer = new THREE.Group();
+    roomMeasurementLayer.name = "RoomMeasurementLayer";
+    roomMeasurementLayer.visible = true;
+    worldGroup.add(
+      furnitureLayer,
+      referenceLayer,
+      selectionLayer,
+      roomMeasurementLayer,
+    );
 
     const controlPickTargets = [];
     const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -1021,6 +1063,159 @@ export function useTestThreeEditor({
       dimensionLabels.height,
     );
     controlPickTargets.push(selectionHandle);
+
+    function syncRoomMeasurementLayerVisibility() {
+      roomMeasurementLayer.visible = true;
+    }
+
+    function addRoomMeasurements(measurements) {
+      roomMeasurementLayer.clear();
+      roomMeasurementsRef.current = measurements || null;
+      if (Number.isFinite(measurements?.area)) {
+        roomAreaBadge.textContent = `Area ${formatSquareMeters(measurements.area)}`;
+        roomAreaBadge.hidden = false;
+      } else {
+        roomAreaBadge.hidden = true;
+      }
+      if (!measurements?.outlineSegments?.length) return;
+
+      const vertices = [];
+      const center = measurements.center || { x: 0, z: 0 };
+      const offsetDistance = 0.14;
+      const tickLength = 0.18;
+
+      measurements.outlineSegments.forEach((segment) => {
+        const start = new THREE.Vector3(
+          segment.start.x,
+          segment.start.y,
+          segment.start.z,
+        );
+        const end = new THREE.Vector3(
+          segment.end.x,
+          segment.end.y,
+          segment.end.z,
+        );
+        const midpoint = start.clone().add(end).multiplyScalar(0.5);
+        const outward = new THREE.Vector3(
+          midpoint.x - center.x,
+          0,
+          midpoint.z - center.z,
+        );
+
+        if (outward.lengthSq() < 0.0001) {
+          outward.set(end.z - start.z, 0, -(end.x - start.x));
+        }
+
+        outward.normalize();
+
+        const direction = end.clone().sub(start).setY(0).normalize();
+        const lineStart = start
+          .clone()
+          .addScaledVector(outward, offsetDistance)
+          .add(new THREE.Vector3(0, 0.06, 0));
+        const lineEnd = end
+          .clone()
+          .addScaledVector(outward, offsetDistance)
+          .add(new THREE.Vector3(0, 0.06, 0));
+        const tickAxis = new THREE.Vector3(-direction.z, 0, direction.x);
+        const firstTickA = lineStart.clone().addScaledVector(tickAxis, tickLength / 2);
+        const firstTickB = lineStart.clone().addScaledVector(tickAxis, -tickLength / 2);
+        const secondTickA = lineEnd.clone().addScaledVector(tickAxis, tickLength / 2);
+        const secondTickB = lineEnd.clone().addScaledVector(tickAxis, -tickLength / 2);
+
+        vertices.push(
+          lineStart.x,
+          lineStart.y,
+          lineStart.z,
+          lineEnd.x,
+          lineEnd.y,
+          lineEnd.z,
+          firstTickA.x,
+          firstTickA.y,
+          firstTickA.z,
+          firstTickB.x,
+          firstTickB.y,
+          firstTickB.z,
+          secondTickA.x,
+          secondTickA.y,
+          secondTickA.z,
+          secondTickB.x,
+          secondTickB.y,
+          secondTickB.z,
+        );
+
+        const label = createRoomDimensionLabel(formatCentimeters(segment.length));
+        label.position
+          .copy(midpoint)
+          .addScaledVector(outward, offsetDistance + 0.12)
+          .add(new THREE.Vector3(0, 0.12, 0));
+        roomMeasurementLayer.add(label);
+      });
+
+      if (measurements.heightSegment) {
+        const start = new THREE.Vector3(
+          measurements.heightSegment.start.x,
+          measurements.heightSegment.start.y,
+          measurements.heightSegment.start.z,
+        );
+        const end = new THREE.Vector3(
+          measurements.heightSegment.end.x,
+          measurements.heightSegment.end.y,
+          measurements.heightSegment.end.z,
+        );
+        const tickAxis = new THREE.Vector3(1, 0, 0);
+        const tickLength = 0.18;
+        const firstTickA = start.clone().addScaledVector(tickAxis, tickLength / 2);
+        const firstTickB = start.clone().addScaledVector(tickAxis, -tickLength / 2);
+        const secondTickA = end.clone().addScaledVector(tickAxis, tickLength / 2);
+        const secondTickB = end.clone().addScaledVector(tickAxis, -tickLength / 2);
+
+        vertices.push(
+          start.x,
+          start.y,
+          start.z,
+          end.x,
+          end.y,
+          end.z,
+          firstTickA.x,
+          firstTickA.y,
+          firstTickA.z,
+          firstTickB.x,
+          firstTickB.y,
+          firstTickB.z,
+          secondTickA.x,
+          secondTickA.y,
+          secondTickA.z,
+          secondTickB.x,
+          secondTickB.y,
+          secondTickB.z,
+        );
+
+        const label = createRoomDimensionLabel(formatCentimeters(measurements.height));
+        label.position.copy(start).lerp(end, 0.5).add(new THREE.Vector3(0.16, 0, 0));
+        roomMeasurementLayer.add(label);
+      }
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.Float32BufferAttribute(vertices, 3),
+      );
+      const line = new THREE.LineSegments(
+        geometry,
+        new THREE.LineBasicMaterial({
+          color: 0x8b8f94,
+          transparent: true,
+          opacity: 0.78,
+          depthTest: false,
+        }),
+      );
+      line.renderOrder = 40;
+      roomMeasurementLayer.add(line);
+      syncRoomMeasurementLayerVisibility();
+    }
+
+    syncRoomMeasurementsRef.current = syncRoomMeasurementLayerVisibility;
 
     function setPointerRay(event) {
       const rect = renderer.domElement.getBoundingClientRect();
@@ -1364,6 +1559,7 @@ export function useTestThreeEditor({
         roomModel.name = jsonRoomModel ? "JsonRoomLayer" : "RoomLayer";
         prepareRoomModel(roomModel);
         worldGroup.add(roomModel);
+        addRoomMeasurements(calculateRoomMeasurements(roomModel));
         const roomCenter = new THREE.Box3()
           .setFromObject(roomModel)
           .getCenter(new THREE.Vector3());
@@ -1714,11 +1910,13 @@ export function useTestThreeEditor({
 
         [...doorItems, ...windowItems].forEach((item) => {
           initializeReferenceFacingNormal(item.root, roomCenter);
-          const debugLabel = createReferenceDebugLabel();
-          const labelHeight = item.root.userData.localObb?.halfSize?.y ?? 1;
-          debugLabel.position.set(0, labelHeight + 0.2, 0);
-          item.root.userData.debugLabel = debugLabel;
-          item.root.add(debugLabel);
+          if (showReferenceLabels) {
+            const debugLabel = createReferenceDebugLabel();
+            const labelHeight = item.root.userData.localObb?.halfSize?.y ?? 1;
+            debugLabel.position.set(0, labelHeight + 0.2, 0);
+            item.root.userData.debugLabel = debugLabel;
+            item.root.add(debugLabel);
+          }
           referenceLayer.add(item.root);
           referenceRoots.push(item.root);
           pickTargets.push(...item.pickTargets);
@@ -1752,7 +1950,9 @@ export function useTestThreeEditor({
       frameId = requestAnimationFrame(animate);
       controls.update();
       updateViewFacingWalls(wallColliders, camera, referenceRoots);
-      cameraAngleBadge.textContent = formatCameraViewAngle(camera);
+      if (cameraAngleBadge) {
+        cameraAngleBadge.textContent = formatCameraViewAngle(camera);
+      }
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
     }
@@ -1796,8 +1996,10 @@ export function useTestThreeEditor({
       );
       selectedObjectRef.current = null;
       syncSelectedRef.current = null;
+      syncRoomMeasurementsRef.current = null;
       sourceMetadataRef.current = null;
       roomModelRef.current = null;
+      roomMeasurementsRef.current = null;
       viewControllerRef.current = null;
       sceneActionsRef.current = null;
       setCollisionSummary({ hasCollision: false, with: [] });
