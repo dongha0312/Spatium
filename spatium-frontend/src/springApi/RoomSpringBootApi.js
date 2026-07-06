@@ -23,6 +23,12 @@ export const saveRoomMetadataJson = ({ projectId, roomId, metadata, area }) => {
 export const getRoomJsonData = (roomId) =>
   springApi.get(`/api/rooms/${roomId}`).then(unwrapApiData).catch(throwApiError);
 
+export const getRoomSceneData = (roomId) =>
+  springApi
+    .get(`/api/rooms/${roomId}/scene`)
+    .then(unwrapApiData)
+    .catch(throwApiError);
+
 export const postRoom = ({ projectId, roomName, metadata, file }) => {
   const formData = new FormData();
   formData.append("metadata", metadata);

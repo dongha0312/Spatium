@@ -11,7 +11,9 @@ export function loadUsdRoomModel(url) {
   if (!url) return Promise.resolve(null);
 
   const separator = url.includes("?") ? "&" : "?";
-  const cacheSafeUrl = `${url}${separator}t=${Date.now()}`;
+  const cacheSafeUrl = url.startsWith("blob:")
+    ? url
+    : `${url}${separator}t=${Date.now()}`;
   return new Promise((resolve) => {
     new USDLoader().load(cacheSafeUrl, resolve, undefined, () =>
       resolve(null),
