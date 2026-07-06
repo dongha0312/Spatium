@@ -48,6 +48,8 @@ public class RoomService {
             throw new IOException("USDZ 파일이 비어 있습니다.");
         }
 
+        requireFileExtension(usdzDataFile, ".usdz", "3D 모델");
+
         Path uploadDir = Paths
                 .get(System.getProperty("user.dir"), "uploads", "models")
                 .toAbsolutePath()
@@ -132,6 +134,10 @@ public class RoomService {
                     "metadata와 file이 필요합니다."
             );
         }
+
+        // 허용된 확장자만 업로드 가능
+        requireFileExtension(metadata, ".json", "metadata");
+        requireFileExtension(file, ".usdz", "3D 모델");
 
         String roomId = UUID.randomUUID().toString();
 
@@ -245,6 +251,8 @@ public class RoomService {
                     "metadata 파일이 필요합니다."
             );
         }
+
+        requireFileExtension(metadata, ".json", "metadata");
 
         if (room.getRoom_path() == null || room.getRoom_path().isBlank()) {
             throw new ApiException(
@@ -403,6 +411,26 @@ public class RoomService {
         }
 
         return fileName;
+    }
+
+    // 확장자 화이트리스트 검사 (파일명이 없으면 기본 파일명이 사용되므로 통과)
+    private void requireFileExtension(
+            MultipartFile file,
+            String requiredExtension,
+            String label) {
+
+        String name = file.getOriginalFilename();
+        if (name == null || name.isBlank()) {
+            return;
+        }
+
+        if (!name.toLowerCase(Locale.ROOT).endsWith(requiredExtension)) {
+            throw new ApiException(
+                    400,
+                    "INVALID_FILE_TYPE",
+                    label + " 파일은 " + requiredExtension + " 형식만 업로드할 수 있습니다."
+            );
+        }
     }
 
     private String safeFileName(

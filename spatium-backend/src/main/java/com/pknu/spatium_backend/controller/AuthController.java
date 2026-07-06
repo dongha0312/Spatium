@@ -14,6 +14,7 @@ import com.pknu.spatium_backend.dto.MemberDTO.LoginRequest;
 import com.pknu.spatium_backend.dto.MemberDTO.TokenRefreshRequest;
 import com.pknu.spatium_backend.service.MemberService;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -24,11 +25,15 @@ public class AuthController {
     private final MemberService memberService;
 
     @PostMapping(path = "/sessions")
-    public ResponseEntity<?> postLogin(@RequestBody LoginRequest dto) {
+    public ResponseEntity<?> postLogin(
+            @RequestBody LoginRequest dto,
+            HttpServletRequest request) {
+        // brute-force 방어 키에 사용할 클라이언트 IP
+        //  (리버스 프록시 뒤에 배포하면 X-Forwarded-For 처리 필요 - server.forward-headers-strategy)
         return ResponseEntity.ok(Map.of(
                 "statusCode", 200,
                 "message", "로그인에 성공했습니다.",
-                "data", memberService.login(dto)));
+                "data", memberService.login(dto, request.getRemoteAddr())));
     }
 
     // 토큰 재발급 : refreshToken으로 새 access/refresh 쌍 발급 (기존 refresh는 폐기됨)
