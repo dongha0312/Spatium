@@ -161,9 +161,6 @@ function HomePage() {
           <a href="/member/mypage">[마이 페이지 바로가기]</a>
         </p>
         <p>
-          <a href="/test">[test 페이지 바로가기]</a>
-        </p>
-        <p>
           <a href="/test/three">[3d 모델링 편집 페이지 바로가기]</a>
         </p>
         <p>
