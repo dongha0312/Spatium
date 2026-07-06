@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.pknu.spatium_backend.auth.AuthenticatedMemId;
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSignupDTO;
+import com.pknu.spatium_backend.dto.MemberDTO.UserDeleteRequest;
 import com.pknu.spatium_backend.service.MemberService;
 
 import lombok.RequiredArgsConstructor;
@@ -39,9 +40,16 @@ public class UserController {
                 "data", memberService.getMyInfo(memId)));
     }
 
+    // 회원 탈퇴 : 비밀번호(일반) 또는 소셜 idToken(소셜) 재확인 필수
     @DeleteMapping(path = "/me")
-    public ResponseEntity<?> deleteUser(@AuthenticatedMemId String memId) {
-        memberService.deleteUser(memId);
+    public ResponseEntity<?> deleteUser(
+            @AuthenticatedMemId String memId,
+            @RequestBody(required = false) UserDeleteRequest dto) {
+
+        String password = dto == null ? null : dto.getPassword();
+        String idToken = dto == null ? null : dto.getIdToken();
+
+        memberService.deleteUser(memId, password, idToken);
         return ResponseEntity.noContent().build();
     }
 }

@@ -19,8 +19,12 @@ export const deleteLogout = () =>
 export const getMyInfo = () =>
   springApi.get("/api/users/me").then(unwrapApiData).catch(throwApiError);
 
-export const deleteMyInfo = () =>
-  springApi.delete("/api/users/me").then(unwrapApiData).catch(throwApiError);
+// 회원 탈퇴 : 일반 회원은 { password }, 소셜 회원은 { idToken }으로 본인 재확인
+export const deleteMyInfo = ({ password, idToken } = {}) =>
+  springApi
+    .delete("/api/users/me", { data: { password, idToken } })
+    .then(unwrapApiData)
+    .catch(throwApiError);
 
 // 소셜 로그인 : provider가 발급한 ID Token만 보내고, sub/email은 백엔드가 직접 검증해서 얻음
 export const postSocialLogin = ({ provider, idToken }) =>

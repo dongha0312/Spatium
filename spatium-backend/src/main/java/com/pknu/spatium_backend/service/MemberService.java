@@ -227,25 +227,36 @@ public class MemberService {
         return data;
     }
 
+    // 회원 탈퇴 (DELETE /api/users/me)
+    //  - accessToken 탈취만으로 계정을 삭제할 수 없도록 본인 재확인을 요구한다.
+    //  - 일반(LOCAL) 회원 : 현재 비밀번호 확인
+    //  - 소셜 회원(비밀번호 없음) : 소셜 로그인을 다시 수행해 받은 idToken 검증
     @Transactional
-    public void deleteUser(String memId, String password) {
+    public void deleteUser(String memId, String password, String idToken) {
         Member member = memberRepository.findById(memId)
             .orElseThrow(() -> new ApiException(404, "USER_NOT_FOUND", "회원을 찾을 수 없습니다."));
 
-        if (member.getMem_pass() == null
-                || password == null
-                || !passwordEncoder.matches(password, member.getMem_pass())) {
-            throw new ApiException(400, "INVALID_PASSWORD", "비밀번호가 일치하지 않습니다.");
+        if (member.getMem_pass() != null) {
+            // 일반(LOCAL) 회원 : 비밀번호 재확인
+            if (password == null || !passwordEncoder.matches(password, member.getMem_pass())) {
+                throw new ApiException(400, "INVALID_PASSWORD", "비밀번호가 일치하지 않습니다.");
+            }
+        } else {
+            // 소셜 회원 : 소셜 ID Token 재검증으로 본인 확인
+            if (idToken == null || idToken.isBlank()) {
+                throw new ApiException(400, "SOCIAL_VERIFICATION_REQUIRED",
+                    "소셜 계정 본인 확인(idToken)이 필요합니다.");
+            }
+
+            VerifiedSocialUser verified =
+                socialIdTokenVerifier.verify(member.getProvider(), idToken);
+
+            // 다른 소셜 계정의 토큰으로 탈퇴하는 것을 방지 (sub == mem_id 확인)
+            if (!verified.providerUserId().equals(member.getMem_id())) {
+                throw new ApiException(400, "SOCIAL_VERIFICATION_FAILED",
+                    "소셜 계정 본인 확인에 실패했습니다.");
+            }
         }
-
-        refreshTokenService.deleteAll(memId);
-        memberRepository.delete(member);
-    }
-
-    @Transactional
-    public void deleteUser(String memId) {
-        Member member = memberRepository.findById(memId)
-            .orElseThrow(() -> new ApiException(404, "USER_NOT_FOUND", "회원을 찾을 수 없습니다."));
 
         refreshTokenService.deleteAll(memId);
         memberRepository.delete(member);
