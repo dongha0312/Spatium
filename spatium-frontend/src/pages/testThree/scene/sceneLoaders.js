@@ -107,6 +107,7 @@ export function saveMetadataJson(metadata, saveContext = {}) {
   return saveRoomMetadataJson({
     projectId: saveContext.projectId,
     roomId: saveContext.roomId,
+    area: saveContext.area,
     metadata,
   });
 }

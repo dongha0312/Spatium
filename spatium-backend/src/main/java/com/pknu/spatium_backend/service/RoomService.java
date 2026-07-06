@@ -8,6 +8,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
@@ -205,6 +206,7 @@ public class RoomService {
             String memId,
             String projectId,
             String roomId,
+            String area,
             MultipartFile metadata) {
 
         validateRequired(memId, "AUTH_REQUIRED", "로그인이 필요합니다.");
@@ -258,6 +260,8 @@ public class RoomService {
                     metadataPath,
                     StandardCopyOption.REPLACE_EXISTING
             );
+
+            updateRoomArea(room, area);
 
         } catch (IOException e) {
             throw new ApiException(
@@ -430,6 +434,33 @@ public class RoomService {
                     .findFirst()
                     .orElse(jsonFiles.get(0));
         }
+    }
+
+    private void updateRoomArea(Room room, String area) {
+        if (area == null || area.isBlank()) {
+            return;
+        }
+
+        double parsedArea;
+        try {
+            parsedArea = Double.parseDouble(area);
+        } catch (NumberFormatException e) {
+            throw new ApiException(
+                    400,
+                    "INVALID_ROOM_AREA",
+                    "room area 값이 올바르지 않습니다."
+            );
+        }
+
+        if (!Double.isFinite(parsedArea) || parsedArea < 0) {
+            throw new ApiException(
+                    400,
+                    "INVALID_ROOM_AREA",
+                    "room area 값이 올바르지 않습니다."
+            );
+        }
+
+        room.setRoom_area(String.format(Locale.US, "%.2f", parsedArea));
     }
 
     private void ensureInside(

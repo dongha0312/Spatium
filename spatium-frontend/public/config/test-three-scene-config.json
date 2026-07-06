@@ -60,6 +60,10 @@
     "door": 0.08,
     "window": 0.08
   },
+  "debug": {
+    "showReferenceLabels": false,
+    "showCameraAngle": false
+  },
   "wallConstraints": {
     "collisionEpsilon": 0,
     "clampIterations": 14,
