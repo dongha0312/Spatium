@@ -204,6 +204,17 @@ public class RoomService {
     }
 
     @Transactional
+    public void renameRoom(String memId, String roomId, String roomName) {
+        if (roomName == null || roomName.isBlank()) {
+            throw new ApiException(400, "INVALID_ROOM_NAME", "룸 이름이 올바르지 않습니다.");
+        }
+
+        Room room = getOwnedRoom(memId, roomId);
+        room.setRoom_name(roomName.trim());
+        roomRepository.save(room);
+    }
+
+    @Transactional
     public void saveEditedRoom(
             String memId,
             String projectId,

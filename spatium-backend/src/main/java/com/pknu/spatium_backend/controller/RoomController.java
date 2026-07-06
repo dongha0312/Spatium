@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -177,6 +178,27 @@ public class RoomController {
                 "statusCode", 200,
                 "message", "룸 상세 조회에 성공했습니다.",
                 "data", roomService.getRoom(memId, roomId)
+        ));
+    }
+
+    @PatchMapping(path = "/api/rooms/{roomId}")
+    public ResponseEntity<?> renameRoom(
+            @AuthenticatedMemId String memId,
+            @PathVariable String roomId,
+            @RequestBody Map<String, String> requestBody) {
+
+        String roomName = requestBody == null ? null : requestBody.get("roomName");
+        if (roomName == null || roomName.trim().isEmpty()) {
+            throw new ApiException(400, "INVALID_ROOM_NAME", "룸 이름이 올바르지 않습니다.");
+        }
+
+        String trimmedName = roomName.trim();
+        roomService.renameRoom(memId, roomId, trimmedName);
+
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "룸 이름이 수정되었습니다.",
+                "data", Map.of("roomId", roomId, "roomName", trimmedName)
         ));
     }
 
