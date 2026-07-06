@@ -36,6 +36,22 @@ export function getAccessToken() {
   return getLoginSession()?.accessToken || null;
 }
 
+// 저장된 refreshToken 조회 (없으면 null) : 토큰 재발급 API 호출 시 사용
+export function getRefreshToken() {
+  return getLoginSession()?.refreshToken || null;
+}
+
+// 토큰 재발급 성공 시 세션의 토큰만 갱신 (이메일/닉네임 등은 유지)
+export function updateTokens({ accessToken, refreshToken }) {
+  const session = getLoginSession();
+  if (!session) return null;
+
+  session.accessToken = accessToken || session.accessToken;
+  session.refreshToken = refreshToken || session.refreshToken;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(session));
+  return session;
+}
+
 // 현재 로그인 세션 조회 (없으면 null)
 export function getLoginSession() {
   try {

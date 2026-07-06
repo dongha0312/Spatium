@@ -33,8 +33,8 @@ public class JwtUtil {
     // accessToken 만료 시간 : 3600초 (명세 기준)
     public static final long ACCESS_TOKEN_EXPIRES_IN = 3600;
 
-    // refreshToken 만료 시간 : 14일
-    private static final long REFRESH_TOKEN_EXPIRES_IN = 60L * 60 * 24 * 14;
+    // refreshToken 만료 시간 : 14일 (RefreshTokenService의 DB 만료시각 계산에도 사용)
+    public static final long REFRESH_TOKEN_EXPIRES_IN = 60L * 60 * 24 * 14;
 
     public JwtUtil(@Value("${spatium.jwt.secret}") String secret) {
         if (secret == null || secret.getBytes(StandardCharsets.UTF_8).length < 32) {

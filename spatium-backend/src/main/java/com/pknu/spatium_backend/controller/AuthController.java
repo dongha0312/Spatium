@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.pknu.spatium_backend.auth.AuthenticatedMemId;
 import com.pknu.spatium_backend.dto.MemberDTO.LoginRequest;
+import com.pknu.spatium_backend.dto.MemberDTO.TokenRefreshRequest;
 import com.pknu.spatium_backend.service.MemberService;
 
 import lombok.RequiredArgsConstructor;
@@ -30,8 +31,19 @@ public class AuthController {
                 "data", memberService.login(dto)));
     }
 
+    // 토큰 재발급 : refreshToken으로 새 access/refresh 쌍 발급 (기존 refresh는 폐기됨)
+    @PostMapping(path = "/token")
+    public ResponseEntity<?> postTokenRefresh(@RequestBody TokenRefreshRequest dto) {
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "토큰이 재발급되었습니다.",
+                "data", memberService.reissueTokens(dto.getRefreshToken())));
+    }
+
     @DeleteMapping(path = "/sessions/current")
     public ResponseEntity<?> deleteLogout(@AuthenticatedMemId String memId) {
+        // 서버에 저장된 refreshToken을 폐기해서 로그아웃이 실제 효력을 갖게 함
+        memberService.logout(memId);
         return ResponseEntity.noContent().build();
     }
 }
