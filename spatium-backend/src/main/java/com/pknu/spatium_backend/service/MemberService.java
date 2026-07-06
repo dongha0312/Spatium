@@ -14,6 +14,7 @@ import com.pknu.spatium_backend.dto.MemberDTO.MemberSignupDTO;
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSocialLoginDTO;
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSocialSignupDTO;
 import com.pknu.spatium_backend.dto.MemberDTO.UserSummaryResponse;
+import com.pknu.spatium_backend.auth.LoginAttemptLimiter;
 import com.pknu.spatium_backend.auth.SocialIdTokenVerifier;
 import com.pknu.spatium_backend.auth.SocialIdTokenVerifier.VerifiedSocialUser;
 import com.pknu.spatium_backend.exception.ApiException;
@@ -39,6 +40,8 @@ public class MemberService {
     private final SocialIdTokenVerifier socialIdTokenVerifier;
 
     private final RefreshTokenService refreshTokenService;
+
+    private final LoginAttemptLimiter loginAttemptLimiter;
 
 
     // 디폴트 이미지 위치.
@@ -76,21 +79,33 @@ public class MemberService {
     }
 
     // 일반 로그인 (POST /api/auth/sessions)
-    //  - stateless JWT 방식 : DB에 세션을 저장하지 않고 토큰만 발급함
-    public LoginResponse login(LoginRequest dto) {
+    //  - brute-force 방어 : 같은 (이메일+IP) 조합이 5회 연속 실패하면 5분간 잠금(429)
+    public LoginResponse login(LoginRequest dto, String clientIp) {
+        String attemptKey = normalizeEmail(dto.getEmail()) + "|" + clientIp;
+        loginAttemptLimiter.checkNotBlocked(attemptKey);
+
         // 입력한 이메일로 DB에서 회원 조회
         Member member = memberRepository.findByMemEmail(dto.getEmail())
-            .orElseThrow(() -> new ApiException(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 일치하지 않습니다."));
+            .orElseThrow(() -> {
+                loginAttemptLimiter.recordFailure(attemptKey);
+                return new ApiException(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 일치하지 않습니다.");
+            });
 
         // 소셜 계정은 mem_pass가 null이므로 일반 로그인 불가
         // DB에 저장된 BCrypt 해시(mem_pass)와 입력한 비밀번호 비교
         if (member.getMem_pass() == null
                 || dto.getPassword() == null
                 || !passwordEncoder.matches(dto.getPassword(), member.getMem_pass())) {
+            loginAttemptLimiter.recordFailure(attemptKey);
             throw new ApiException(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 일치하지 않습니다.");
         }
 
+        loginAttemptLimiter.recordSuccess(attemptKey);
         return issueLoginResponse(member);
+    }
+
+    private String normalizeEmail(String email) {
+        return email == null ? "" : email.trim().toLowerCase();
     }
 
     // 소셜 로그인 (POST /api/auth/social-sessions)
