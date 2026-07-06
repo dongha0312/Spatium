@@ -116,9 +116,6 @@ function HomePage() {
               시작하기 →
             </button>
           </div>
-          <div className="hp-hero-right">
-            <img src="/images/isoroom.svg" alt="3D 룸에서 가구를 배치하는 일러스트" />
-          </div>
         </div>
       </div>
 
