@@ -881,3 +881,27 @@
   border-color: #D77A63;
   background: #FFE9E4;
 }
+
+.mp-project-delete-btn {
+  flex-shrink: 0;
+  border: 1px solid #E8B4A8;
+  background: #FFF6F4;
+  color: #B0442E;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .12s;
+}
+
+.mp-project-delete-btn:hover:not(:disabled) {
+  border-color: #D77A63;
+  background: #FFE9E4;
+}
+
+.mp-project-delete-btn:disabled {
+  cursor: wait;
+  opacity: .6;
+}

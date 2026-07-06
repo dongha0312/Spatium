@@ -32,8 +32,14 @@ export const springApi = axios.create({
 springApi.interceptors.request.use((config) => {
     const accessToken = getAccessToken();
 
+    config.headers = config.headers || {};
+
+    if (config.data instanceof FormData) {
+        delete config.headers["Content-Type"];
+        delete config.headers["content-type"];
+    }
+
     if (accessToken) {
-        config.headers = config.headers || {};
         config.headers.Authorization = `Bearer ${accessToken}`;
     }
 
