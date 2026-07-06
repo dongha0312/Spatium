@@ -56,6 +56,24 @@ import { calculateRoomMeasurements } from "../scene/roomMeasurements";
 const DEFAULT_FURNITURE_DIMENSIONS = { x: 0.8, y: 0.8, z: 0.8 };
 const REFERENCE_CATEGORIES = new Set(["door", "window"]);
 
+function base64ToObjectUrl(base64, contentType = "application/octet-stream") {
+  const binary = window.atob(base64);
+  const bytes = [];
+
+  for (let offset = 0; offset < binary.length; offset += 1024) {
+    const slice = binary.slice(offset, offset + 1024);
+    const chunk = new Uint8Array(slice.length);
+
+    for (let index = 0; index < slice.length; index += 1) {
+      chunk[index] = slice.charCodeAt(index);
+    }
+
+    bytes.push(chunk);
+  }
+
+  return URL.createObjectURL(new Blob(bytes, { type: contentType }));
+}
+
 function normalizedDimensions(dimensions = {}) {
   return {
     x: Math.max(Number(dimensions.x) || DEFAULT_FURNITURE_DIMENSIONS.x, 0.04),
@@ -707,6 +725,7 @@ export function useTestThreeEditor({
   isSkyview = false,
   showMeasurements = false,
   wallColor = null,
+  roomScene = null,
   onSceneChanged,
 } = {}) {
   const containerRef = useRef(null);
@@ -1526,10 +1545,21 @@ export function useTestThreeEditor({
     );
 
     // 변수 추가
-    Promise.all([
-      loadUsdRoomModel(getRoomModelUrl()),
-      fetchJson(getRoomMetadataUrl(), "room metadata"),
-    ])
+    let roomModelObjectUrl = null;
+    const roomModelUrl = roomScene?.model?.dataBase64
+      ? (() => {
+          roomModelObjectUrl = base64ToObjectUrl(
+            roomScene.model.dataBase64,
+            roomScene.model.contentType,
+          );
+          return roomModelObjectUrl;
+        })()
+      : getRoomModelUrl();
+    const metadataPromise = roomScene?.metadata
+      ? Promise.resolve(roomScene.metadata)
+      : fetchJson(getRoomMetadataUrl(), "room metadata");
+
+    Promise.all([loadUsdRoomModel(roomModelUrl), metadataPromise])
       .then(([model, metadata]) =>
         Promise.all([model, loadModelTemplates(), metadata]),
       )
@@ -2007,8 +2037,11 @@ export function useTestThreeEditor({
       disposeScene(scene);
       renderer.dispose();
       root.replaceChildren();
+      if (roomModelObjectUrl) {
+        URL.revokeObjectURL(roomModelObjectUrl);
+      }
     };
-  }, [isSceneConfigReady]);
+  }, [isSceneConfigReady, roomScene]);
 
   return {
     containerRef,

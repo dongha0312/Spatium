@@ -10,7 +10,7 @@ import "../styles/3deditor.css";
 import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
 import { getAccessToken, getLoginSession } from "../utils/authSession";
 import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
-import { getRoomJsonData } from "../springApi/RoomSpringBootApi";
+import { getRoomSceneData } from "../springApi/RoomSpringBootApi";
 
 const FURNITURE_CATALOG_URL = "/data/furniture_catalog.json";
 
@@ -62,6 +62,9 @@ function ThreeDEditor() {
     shortId(projectId, "Project"),
   );
   const [roomLabel, setRoomLabel] = useState(shortId(roomId, "Room editor"));
+  const [roomScene, setRoomScene] = useState(null);
+  const [roomSceneLoading, setRoomSceneLoading] = useState(Boolean(roomId));
+  const [roomSceneError, setRoomSceneError] = useState("");
 
   const [session] = useState(() => getLoginSession());
 
@@ -141,15 +144,31 @@ function ThreeDEditor() {
     }
 
     if (roomId) {
-      getRoomJsonData(roomId)
+      setRoomScene(null);
+      setRoomSceneError("");
+      setRoomSceneLoading(true);
+
+      getRoomSceneData(roomId)
         .then((data) => {
+          if (!isMounted) return;
+          setRoomScene(data);
           if (isMounted && data?.roomName) {
             setRoomLabel(data.roomName);
           }
         })
-        .catch(() => {
-          if (isMounted) setRoomLabel(shortId(roomId, "Room editor"));
+        .catch((error) => {
+          if (!isMounted) return;
+          setRoomScene(null);
+          setRoomSceneError(error.message || "Failed to load room scene.");
+          setRoomLabel(shortId(roomId, "Room editor"));
+        })
+        .finally(() => {
+          if (isMounted) setRoomSceneLoading(false);
         });
+    } else {
+      setRoomScene(null);
+      setRoomSceneError("");
+      setRoomSceneLoading(false);
     }
 
     return () => {
@@ -434,13 +453,20 @@ function ThreeDEditor() {
             style={wallColor ? { background: wallColor } : undefined}
           >
             <div className="ed-canvas-placeholder">
-              <TestThreeStagingPage
-                ref={editorRef}
-                isSkyview={isSkyview}
-                showMeasurements={showMeasurements}
-                wallColor={wallColor}
-                onSceneChanged={handleSceneChanged}
-              />
+              {roomSceneLoading ? (
+                <div className="ed-cat-empty">Loading room scene...</div>
+              ) : roomSceneError ? (
+                <div className="ed-cat-empty">{roomSceneError}</div>
+              ) : (
+                <TestThreeStagingPage
+                  ref={editorRef}
+                  isSkyview={isSkyview}
+                  showMeasurements={showMeasurements}
+                  wallColor={wallColor}
+                  roomScene={roomScene}
+                  onSceneChanged={handleSceneChanged}
+                />
+              )}
             </div>
 
             {isSkyview && (
