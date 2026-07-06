@@ -4,6 +4,7 @@ import "../../styles/mypage.css";
 import { clearLoginSession, getAccessToken } from "../../utils/authSession";
 import { deleteLogout, getMyInfo } from "../../springApi/MemberSpringBootApi";
 import {
+  deleteProject,
   getProjectList,
   postProject,
 } from "../../springApi/ProjectSpringBootAPi";
@@ -80,6 +81,7 @@ function MyPage() {
   const [roomFile, setRoomFile] = useState(null);
   const [modalError, setModalError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [deletingProjectId, setDeletingProjectId] = useState(null);
 
   const loadDashboard = useCallback(async () => {
     if (!getAccessToken()) {
@@ -248,6 +250,44 @@ function MyPage() {
     }
   };
 
+  const handleDeleteProject = async (event, project) => {
+    event.stopPropagation();
+
+    const confirmed = window.confirm(
+      `"${project.name}" 프로젝트를 삭제하시겠습니까?\n프로젝트 안의 룸도 함께 삭제됩니다.`,
+    );
+    if (!confirmed) return;
+
+    if (!getAccessToken()) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
+
+    setDeletingProjectId(project.id);
+
+    try {
+      await deleteProject({
+        projectId: project.id,
+      });
+
+      setProjects((prev) => prev.filter((p) => p.id !== project.id));
+
+      if (editingProjectId === project.id) {
+        cancelRenameProject();
+      }
+
+      if (editingRoomKey?.projectId === project.id) {
+        cancelRenameRoom();
+      }
+
+      alert("프로젝트가 삭제되었습니다.");
+    } catch (err) {
+      alert(err.message || "프로젝트 삭제에 실패했습니다.");
+    } finally {
+      setDeletingProjectId(null);
+    }
+  };
+
   // 모달 열기 : mode='project'면 새 프로젝트(새 칸), mode='room'이면 해당 프로젝트에 룸 추가
   const openProjectModal = (mode = "project", projectId = null) => {
     setModalMode(mode);
@@ -395,6 +435,14 @@ function MyPage() {
                         onClick={() => openProjectModal("room", project.id)}
                       >
                         + 룸 만들기
+                      </button>
+                      <button
+                        type="button"
+                        className="mp-project-delete-btn"
+                        disabled={deletingProjectId === project.id}
+                        onClick={(event) => handleDeleteProject(event, project)}
+                      >
+                        {deletingProjectId === project.id ? "삭제 중..." : "삭제"}
                       </button>
                       <div className="mp-room-card-count">
                         총 {project.rooms.length}개

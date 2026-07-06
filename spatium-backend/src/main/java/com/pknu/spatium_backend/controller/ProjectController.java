@@ -79,15 +79,17 @@ public class ProjectController {
     public ResponseEntity<?> deleteProject(
             @AuthenticatedMemId String memId,
             @RequestBody Map<String, String> requestBody) {
-        String projectId = requestBody.get("projectId");
-        if (projectId == null || projectId.trim().isEmpty()) {
+        String projectId = requestBody == null ? null : requestBody.get("projectId");
+        if (projectId == null || projectId.isBlank()) {
             throw new ApiException(400, "INVALID_REQUEST", "요청 값이 올바르지 않습니다.");
         }
 
-        projectService.deleteProject(memId, projectId.trim());
+        String trimmedProjectId = projectId.trim();
+
+        projectService.deleteProject(memId, trimmedProjectId);
         return ResponseEntity.ok(Map.of(
                 "statusCode", 200,
                 "message", "프로젝트 삭제에 성공했습니다.",
-                "data", projectId.trim()));
+                "data", trimmedProjectId));
     }
 }

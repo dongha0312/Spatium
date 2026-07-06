@@ -247,17 +247,7 @@ public class RoomService {
 
             Files.createDirectories(saveDir);
 
-            String metadataFileName = safeFileName(
-                    metadata.getOriginalFilename(),
-                    "metadata.json"
-            );
-
-            if (!metadataFileName.toLowerCase().endsWith(".json")) {
-                metadataFileName = "metadata.json";
-            }
-
-            Path metadataPath = saveDir
-                    .resolve(metadataFileName)
+            Path metadataPath = findExistingRoomMetadataPath(saveDir)
                     .toAbsolutePath()
                     .normalize();
 
@@ -413,6 +403,33 @@ public class RoomService {
         fileName = fileName.replaceAll("[^a-zA-Z0-9._-]", "_");
 
         return fileName.isBlank() ? defaultFilename : fileName;
+    }
+
+    private Path findExistingRoomMetadataPath(Path saveDir) throws IOException {
+        try (Stream<Path> paths = Files.list(saveDir)) {
+            List<Path> jsonFiles = paths
+                    .filter(Files::isRegularFile)
+                    .filter(path -> path.getFileName()
+                            .toString()
+                            .toLowerCase()
+                            .endsWith(".json"))
+                    .filter(path -> !"ai-edit-request.json".equalsIgnoreCase(
+                            path.getFileName().toString()
+                    ))
+                    .sorted()
+                    .toList();
+
+            if (jsonFiles.isEmpty()) {
+                return saveDir.resolve("metadata.json");
+            }
+
+            return jsonFiles.stream()
+                    .filter(path -> !"metadata.json".equalsIgnoreCase(
+                            path.getFileName().toString()
+                    ))
+                    .findFirst()
+                    .orElse(jsonFiles.get(0));
+        }
     }
 
     private void ensureInside(
