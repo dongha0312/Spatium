@@ -5,16 +5,12 @@ import React from "react";
 //  - Routes : 라우트 전체 관리  
 //  - Route : 
 import { Route, Routes } from "react-router-dom";
-import TestPage from "../pages/test/TestPage";
-import TestRenderingPage from "../pages/test/TestRenderingPage";
 import TestThreeStagingPage from "../pages/testThree/TestThreeStagingPage";
 
 
 function TestRouters(){
     return(
         <Routes>
-            <Route path="/test" element={<TestPage></TestPage>}></Route>
-            <Route path="/test/render" element={<TestRenderingPage></TestRenderingPage>}></Route>
             <Route path="/test/three" element={<TestThreeStagingPage></TestThreeStagingPage>}></Route>
         </Routes>
     )

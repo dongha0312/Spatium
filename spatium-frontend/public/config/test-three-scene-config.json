@@ -1,11 +1,4 @@
 {
-  "room": {
-    "modelUrl": "/testdata/myroom.usdz",
-    "metadataUrl": "/testdata/myroom.json"
-  },
-  "save": {
-    "metadataApiUrl": "/api/test-three/metadata"
-  },
   "models": {
     "bathtub": "/testdata/default_3d_models/bathtub.glb",
     "bed": "/testdata/default_3d_models/bed.glb",

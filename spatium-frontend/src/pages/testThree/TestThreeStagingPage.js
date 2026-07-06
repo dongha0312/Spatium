@@ -17,7 +17,13 @@ function snapRotation(value) {
 }
 
 const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
-  { isSkyview = false, showMeasurements = false, wallColor = null, onSceneChanged },
+  {
+    isSkyview = false,
+    showMeasurements = false,
+    wallColor = null,
+    roomScene = null,
+    onSceneChanged,
+  },
   ref,
 ) {
   const {
@@ -38,6 +44,7 @@ const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
     isSkyview,
     showMeasurements,
     wallColor,
+    roomScene,
     onSceneChanged,
   });
 
