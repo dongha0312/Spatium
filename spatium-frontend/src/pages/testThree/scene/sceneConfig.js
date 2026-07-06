@@ -44,6 +44,13 @@ export function configBoolean(path) {
   return Boolean(requiredConfigValue(path));
 }
 
+export function optionalConfigBoolean(path, defaultValue = false) {
+  if (!sceneConfig) return defaultValue;
+
+  const value = path.reduce((current, key) => current?.[key], sceneConfig);
+  return value == null ? defaultValue : Boolean(value);
+}
+
 export function configString(path) {
   return String(requiredConfigValue(path));
 }

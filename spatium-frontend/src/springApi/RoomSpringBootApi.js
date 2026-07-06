@@ -1,7 +1,7 @@
 import { springApi } from "../config/axiosInstance";
 import { throwApiError, unwrapApiData } from "../utils/apiResponse";
 
-export const saveRoomMetadataJson = ({ projectId, roomId, metadata }) => {
+export const saveRoomMetadataJson = ({ projectId, roomId, metadata, area }) => {
   const formData = new FormData();
   const metadataFile = new Blob([JSON.stringify(metadata)], {
     type: "application/json",
@@ -9,6 +9,9 @@ export const saveRoomMetadataJson = ({ projectId, roomId, metadata }) => {
 
   formData.append("projectId", projectId);
   formData.append("roomId", roomId);
+  if (Number.isFinite(area)) {
+    formData.append("area", String(area));
+  }
   formData.append("metadata", metadataFile, "metadata.json");
 
   return springApi
