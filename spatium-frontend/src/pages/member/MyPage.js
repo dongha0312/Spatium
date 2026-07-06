@@ -6,9 +6,10 @@ import { deleteLogout, getMyInfo } from "../../springApi/MemberSpringBootApi";
 import {
   deleteProject,
   getProjectList,
+  patchProject,
   postProject,
 } from "../../springApi/ProjectSpringBootAPi";
-import { getRoomList, postRoom } from "../../springApi/RoomSpringBootApi";
+import { getRoomList, patchRoom, postRoom } from "../../springApi/RoomSpringBootApi";
 import { deleteRoom } from "../../springApi/RoomSpringBootApi";
 
 const DEFAULT_USER = {
@@ -173,15 +174,27 @@ function MyPage() {
     setEditingName("");
   };
 
-  const saveRenameProject = () => {
+  const saveRenameProject = async () => {
     const name = editingName.trim();
-    if (name) {
-      setProjects((prev) =>
-        prev.map((p) => (p.id === editingProjectId ? { ...p, name } : p)),
-      );
-    }
+    const projectId = editingProjectId;
     setEditingProjectId(null);
     setEditingName("");
+
+    if (!name || !projectId) return;
+
+    const project = projects.find((p) => p.id === projectId);
+    if (project && project.name === name) return;
+
+    setProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, name } : p)),
+    );
+
+    try {
+      await patchProject({ projectId, projectName: name });
+    } catch (err) {
+      alert(err.message || "프로젝트 이름 변경에 실패했습니다.");
+      await loadDashboard();
+    }
   };
 
   const startRenameRoom = (project, room) => {
@@ -194,24 +207,37 @@ function MyPage() {
     setEditingRoomName("");
   };
 
-  const saveRenameRoom = () => {
+  const saveRenameRoom = async () => {
     const name = editingRoomName.trim();
-    if (name && editingRoomKey) {
-      setProjects((prev) =>
-        prev.map((p) =>
-          p.id !== editingRoomKey.projectId
-            ? p
-            : {
-                ...p,
-                rooms: p.rooms.map((r) =>
-                  r.id === editingRoomKey.roomId ? { ...r, name } : r,
-                ),
-              },
-        ),
-      );
-    }
+    const roomKey = editingRoomKey;
     setEditingRoomKey(null);
     setEditingRoomName("");
+
+    if (!name || !roomKey) return;
+
+    const project = projects.find((p) => p.id === roomKey.projectId);
+    const room = project?.rooms.find((r) => r.id === roomKey.roomId);
+    if (room && room.name === name) return;
+
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id !== roomKey.projectId
+          ? p
+          : {
+              ...p,
+              rooms: p.rooms.map((r) =>
+                r.id === roomKey.roomId ? { ...r, name } : r,
+              ),
+            },
+      ),
+    );
+
+    try {
+      await patchRoom({ roomId: roomKey.roomId, roomName: name });
+    } catch (err) {
+      alert(err.message || "룸 이름 변경에 실패했습니다.");
+      await loadDashboard();
+    }
   };
 
   const handleDeleteRoom = async (event, project, room) => {
@@ -484,6 +510,7 @@ function MyPage() {
                           ) : (
                             <div
                               className="mp-room-name"
+                              onClick={(event) => event.stopPropagation()}
                               onDoubleClick={(event) => {
                                 event.stopPropagation();
                                 startRenameRoom(project, room);

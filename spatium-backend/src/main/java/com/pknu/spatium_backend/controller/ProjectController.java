@@ -6,6 +6,7 @@ import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -73,6 +74,25 @@ public class ProjectController {
                 "statusCode", 200,
                 "message", "프로젝트 상세 조회에 성공했습니다.",
                 "data", projectService.getProject(memId, projectId)));
+    }
+
+    @PatchMapping(path = "/{projectId}")
+    public ResponseEntity<?> renameProject(
+            @AuthenticatedMemId String memId,
+            @PathVariable String projectId,
+            @RequestBody Map<String, String> requestBody) {
+        String projectName = requestBody == null ? null : requestBody.get("projectName");
+        if (projectName == null || projectName.trim().isEmpty()) {
+            throw new ApiException(400, "INVALID_PROJECT_NAME", "프로젝트 이름이 올바르지 않습니다.");
+        }
+
+        String trimmedName = projectName.trim();
+        projectService.renameProject(memId, projectId, trimmedName);
+
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "프로젝트 이름이 수정되었습니다.",
+                "data", Map.of("projectId", projectId, "projectName", trimmedName)));
     }
 
     @DeleteMapping

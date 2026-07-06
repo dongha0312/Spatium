@@ -57,6 +57,17 @@ public class ProjectService {
                 savedProject.getProj_name());
     }
 
+    @Transactional
+    public void renameProject(String memId, String projectId, String projectName) {
+        if (projectName == null || projectName.isBlank()) {
+            throw new ApiException(400, "INVALID_PROJECT_NAME", "프로젝트 이름이 올바르지 않습니다.");
+        }
+
+        Project project = getOwnedProject(memId, projectId);
+        project.setProj_name(projectName.trim());
+        projectRepository.save(project);
+    }
+
     public Map<String, Object> getProject(String memId, String projectId) {
         Project project = getOwnedProject(memId, projectId);
         Path projectDir = dataRoot()
