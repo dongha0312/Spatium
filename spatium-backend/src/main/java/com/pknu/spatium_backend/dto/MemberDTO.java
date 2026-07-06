@@ -134,6 +134,21 @@ public class MemberDTO{
     @NoArgsConstructor
     @AllArgsConstructor
     @Data
+    // 회원 탈퇴 요청 DTO (DELETE /api/users/me)
+    //  - 일반(LOCAL) 회원 : password로 본인 확인
+    //  - 소셜 회원 : 소셜 로그인을 다시 수행해 받은 idToken으로 본인 확인
+    public static class UserDeleteRequest {
+
+        private String password;
+
+        private String idToken;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Data
     // 토큰 재발급 요청 DTO (POST /api/auth/token)
     public static class TokenRefreshRequest {
 
