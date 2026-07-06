@@ -11,7 +11,12 @@
  */
 // axios 라이브러리 불러들이기
 import axios from "axios";
-import { clearLoginSession, getAccessToken } from "../utils/authSession";
+import {
+  clearLoginSession,
+  getAccessToken,
+  getRefreshToken,
+  updateTokens,
+} from "../utils/authSession";
 
 /** SpringBoot 백엔드 서버 통신 설정 */
 export const springApi = axios.create({
@@ -46,16 +51,62 @@ springApi.interceptors.request.use((config) => {
     return config;
 });
 
+// 토큰 재발급 (POST /api/auth/token)
+//  - springApi가 아닌 순수 axios를 사용 : 인터셉터 재귀 호출 방지
+//  - 동시에 여러 요청이 401을 받아도 재발급은 1번만 수행 (refreshPromise 공유)
+let refreshPromise = null;
+
+const reissueTokens = async () => {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) {
+        throw new Error("저장된 refreshToken이 없습니다.");
+    }
+
+    const res = await axios.post("/api/auth/token", { refreshToken });
+    const data = res.data?.data;
+
+    updateTokens({
+        accessToken: data?.accessToken,
+        refreshToken: data?.refreshToken,
+    });
+
+    return data?.accessToken;
+};
+
 springApi.interceptors.response.use(
     (response) => response,
-    (error) => {
+    async (error) => {
         const status = error.response?.data?.statusCode || error.response?.status;
         const requestUrl = error.config?.url || "";
-        const isLoginRequest =
+        const isAuthRequest =
             requestUrl.includes("/api/auth/sessions") ||
-            requestUrl.includes("/api/auth/social-sessions");
+            requestUrl.includes("/api/auth/social-sessions") ||
+            requestUrl.includes("/api/auth/token");
 
-        if (status === 401 && !isLoginRequest) {
+        // accessToken 만료(401) 시 : refreshToken으로 자동 재발급 후 원래 요청 1회 재시도
+        if (status === 401 && !isAuthRequest && !error.config._retried) {
+            try {
+                refreshPromise = refreshPromise || reissueTokens();
+                const newAccessToken = await refreshPromise;
+                refreshPromise = null;
+
+                error.config._retried = true;
+                error.config.headers = error.config.headers || {};
+                error.config.headers.Authorization = `Bearer ${newAccessToken}`;
+                return springApi(error.config);
+            } catch (refreshError) {
+                // 재발급 실패(refreshToken 만료/폐기) : 세션 정리 후 로그인 페이지로
+                refreshPromise = null;
+                clearLoginSession();
+                if (window.location.pathname !== "/auth/login") {
+                    window.location.assign("/auth/login");
+                }
+                return Promise.reject(error);
+            }
+        }
+
+        // 재시도까지 실패한 401 : 세션 정리 후 로그인 페이지로
+        if (status === 401 && !isAuthRequest) {
             clearLoginSession();
             if (window.location.pathname !== "/auth/login") {
                 window.location.assign("/auth/login");

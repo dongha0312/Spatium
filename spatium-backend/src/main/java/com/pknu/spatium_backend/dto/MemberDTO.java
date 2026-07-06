@@ -134,6 +134,18 @@ public class MemberDTO{
     @NoArgsConstructor
     @AllArgsConstructor
     @Data
+    // 토큰 재발급 요청 DTO (POST /api/auth/token)
+    public static class TokenRefreshRequest {
+
+        @NotBlank(message = "refreshToken 값이 필요합니다")
+        private String refreshToken;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Data
     // 로그인 응답 DTO (POST /api/auth/sessions)
     public static class LoginResponse {
 

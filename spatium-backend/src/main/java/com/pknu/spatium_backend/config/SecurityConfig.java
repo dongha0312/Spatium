@@ -65,6 +65,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/auth/sessions").permitAll()
                         // 소셜 로그인/가입 (social-sessions, social-users)
                         .requestMatchers("/api/auth/social-*").permitAll()
+                        // 토큰 재발급 (accessToken 만료 상태에서 호출되므로 인증 불필요,
+                        //  refreshToken 자체 검증은 MemberService.reissueTokens가 수행)
+                        .requestMatchers(HttpMethod.POST, "/api/auth/token").permitAll()
                         // 그 외 전부 인증 필요
                         .anyRequest().authenticated())
                 // 미인증 요청의 401 응답을 기존 공통 에러 스펙으로 내려준다.

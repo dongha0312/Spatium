@@ -38,6 +38,8 @@ public class MemberService {
 
     private final SocialIdTokenVerifier socialIdTokenVerifier;
 
+    private final RefreshTokenService refreshTokenService;
+
 
     // 디폴트 이미지 위치.
     private static final String DEFAULT_PROFILE_IMAGE_URL = "http://localhost:8080/images/default-profile.png";
@@ -88,20 +90,7 @@ public class MemberService {
             throw new ApiException(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 일치하지 않습니다.");
         }
 
-        UserSummaryResponse user = new UserSummaryResponse(
-            member.getMem_id(),
-            member.getMem_email(),
-            member.getMem_nick(),
-            null
-        );
-
-        return new LoginResponse(
-            jwtUtil.createAccessToken(member.getMem_id()),
-            jwtUtil.createRefreshToken(member.getMem_id()),
-            "Bearer",
-            JwtUtil.ACCESS_TOKEN_EXPIRES_IN,
-            user
-        );
+        return issueLoginResponse(member);
     }
 
     // 소셜 로그인 (POST /api/auth/social-sessions)
@@ -118,6 +107,42 @@ public class MemberService {
             .filter(found -> verified.provider().equalsIgnoreCase(found.getProvider()))
             .orElseThrow(() -> new ApiException(404, "SOCIAL_USER_NOT_FOUND", "가입되지 않은 소셜 계정입니다. 회원가입이 필요합니다."));
 
+        return issueLoginResponse(member);
+    }
+
+    // 토큰 재발급 (POST /api/auth/token)
+    //  - refreshToken(type=refresh)의 서명/만료 검증 + 서버 저장소 대조 후
+    //    기존 토큰을 폐기하고 새 access/refresh 쌍을 발급한다 (rotation)
+    public LoginResponse reissueTokens(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new ApiException(400, "INVALID_REQUEST", "refreshToken이 필요합니다.");
+        }
+
+        // 1) JWT 자체 검증 : 서명/만료/type=refresh
+        String memId = jwtUtil.validateRefreshTokenAndGetMemId(refreshToken);
+        if (memId == null) {
+            throw new ApiException(401, "INVALID_REFRESH_TOKEN", "유효하지 않은 refresh token입니다.");
+        }
+
+        // 2) 실존 회원 확인
+        Member member = memberRepository.findById(memId)
+            .orElseThrow(() -> new ApiException(401, "INVALID_REFRESH_TOKEN", "유효하지 않은 refresh token입니다."));
+
+        // 3) 서버 저장소 대조 : 폐기되지 않은 저장 토큰인지 확인 후 폐기(rotation)
+        refreshTokenService.validateAndRevokeForRotation(memId, refreshToken);
+
+        // 4) 새 토큰 쌍 발급/저장
+        return issueLoginResponse(member);
+    }
+
+    // 로그아웃 (DELETE /api/auth/sessions/current)
+    //  - 해당 회원의 refreshToken을 서버에서 전부 폐기 -> 재발급 불가
+    public void logout(String memId) {
+        refreshTokenService.revokeAll(memId);
+    }
+
+    // 토큰 쌍 발급 + refreshToken 서버 저장 + 로그인 응답 생성 (공통)
+    private LoginResponse issueLoginResponse(Member member) {
         UserSummaryResponse user = new UserSummaryResponse(
             member.getMem_id(),
             member.getMem_email(),
@@ -125,9 +150,15 @@ public class MemberService {
             null
         );
 
+        String accessToken = jwtUtil.createAccessToken(member.getMem_id());
+        String refreshToken = jwtUtil.createRefreshToken(member.getMem_id());
+
+        // 발급된 refreshToken을 서버에 저장해야 로그아웃/재발급 시 무효화 가능
+        refreshTokenService.issue(member.getMem_id(), refreshToken);
+
         return new LoginResponse(
-            jwtUtil.createAccessToken(member.getMem_id()),
-            jwtUtil.createRefreshToken(member.getMem_id()),
+            accessToken,
+            refreshToken,
             "Bearer",
             JwtUtil.ACCESS_TOKEN_EXPIRES_IN,
             user
@@ -207,6 +238,7 @@ public class MemberService {
             throw new ApiException(400, "INVALID_PASSWORD", "비밀번호가 일치하지 않습니다.");
         }
 
+        refreshTokenService.deleteAll(memId);
         memberRepository.delete(member);
     }
 
@@ -215,6 +247,7 @@ public class MemberService {
         Member member = memberRepository.findById(memId)
             .orElseThrow(() -> new ApiException(404, "USER_NOT_FOUND", "회원을 찾을 수 없습니다."));
 
+        refreshTokenService.deleteAll(memId);
         memberRepository.delete(member);
     }
 }
