@@ -56,6 +56,18 @@
   white-space: nowrap;
 }
 
+.room-dimension-label {
+  color: rgba(104, 109, 115, 0.72);
+  font: 700 13px Arial, Helvetica, sans-serif;
+  pointer-events: none;
+  text-shadow:
+    0 1px 2px rgba(255, 255, 255, 0.75),
+    1px 0 2px rgba(255, 255, 255, 0.65),
+    -1px 0 2px rgba(255, 255, 255, 0.65);
+  user-select: none;
+  white-space: nowrap;
+}
+
 .test-three-info-drawer {
   position: absolute;
   top: 16px;
@@ -243,7 +255,7 @@
 .test-three-collision-warning {
   position: absolute;
   right: 16px;
-  top: 16px;
+  top: 58px;
   z-index: 9;
   max-width: 280px;
   padding: 10px 12px;
@@ -253,6 +265,25 @@
   color: #854d0e;
   font: 700 12px Arial, Helvetica, sans-serif;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+}
+
+.test-three-room-area {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  z-index: 8;
+  padding: 9px 11px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
+  color: #1f2933;
+  font: 800 13px Arial, Helvetica, sans-serif;
+  pointer-events: none;
+}
+
+.test-three-room-area[hidden] {
+  display: none;
 }
 
 .test-three-camera-angle {
@@ -310,4 +341,5 @@
     width: 100%;
     max-width: 320px;
   }
+
 }
