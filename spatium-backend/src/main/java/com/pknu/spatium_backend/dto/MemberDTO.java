@@ -149,6 +149,23 @@ public class MemberDTO{
     @NoArgsConstructor
     @AllArgsConstructor
     @Data
+    // 내 정보 수정 요청 DTO (PATCH /api/users/me)
+    //  - 전달된 필드만 수정 (null이면 기존 값 유지)
+    //  - password : 값이 있을 때만 새 비밀번호로 변경 (소셜 회원은 무시)
+    public static class UserUpdateRequest {
+
+        private String nickname;
+
+        private String birthDate;
+
+        private String password;
+    }
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Data
     // 토큰 재발급 요청 DTO (POST /api/auth/token)
     public static class TokenRefreshRequest {
 

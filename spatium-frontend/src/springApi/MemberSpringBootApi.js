@@ -19,6 +19,13 @@ export const deleteLogout = () =>
 export const getMyInfo = () =>
   springApi.get("/api/users/me").then(unwrapApiData).catch(throwApiError);
 
+// 내 정보 수정 : 전달된 필드만 수정 (nickname/birthDate/password)
+export const patchMyInfo = ({ nickname, birthDate, password } = {}) =>
+  springApi
+    .patch("/api/users/me", { nickname, birthDate, password })
+    .then(unwrapApiData)
+    .catch(throwApiError);
+
 // 회원 탈퇴 : 일반 회원은 { password }, 소셜 회원은 { idToken }으로 본인 재확인
 export const deleteMyInfo = ({ password, idToken } = {}) =>
   springApi
