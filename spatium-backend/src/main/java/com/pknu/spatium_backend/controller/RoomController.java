@@ -39,6 +39,7 @@ public class RoomController {
     // 테스트/디버그용 엔드포인트(/api/scans, /api/test-three/metadata, /test/read)는
     // RoomDevController(@Profile("dev"))로 이동 : 운영 프로필에서는 존재하지 않음
 
+    // 룸 목록 조회
     @GetMapping(path = "/api/projects/{projectId}/rooms")
     public ResponseEntity<?> getRooms(
             @AuthenticatedMemId String memId,
@@ -64,6 +65,7 @@ public class RoomController {
         ));
     }
 
+    // 새 룸 만들기
     @PostMapping(path = "/api/projects/{projectId}/rooms", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> createRoom(
             @AuthenticatedMemId String memId,
@@ -95,6 +97,7 @@ public class RoomController {
         }
     }
 
+    // 룸 불러오기
     @GetMapping(path = "/api/rooms/{roomId}")
     public ResponseEntity<?> getRoom(
             @AuthenticatedMemId String memId,
@@ -106,7 +109,8 @@ public class RoomController {
                 "data", roomService.getRoom(memId, roomId)
         ));
     }
-
+    
+    // 저장된 내 룸 모델링 데이터 불러오기
     @GetMapping(path = "/api/rooms/{roomId}/scene")
     public ResponseEntity<?> getRoomScene(
             @AuthenticatedMemId String memId,
@@ -121,6 +125,7 @@ public class RoomController {
         ));
     }
 
+    // 룸 이름 변경
     @PatchMapping(path = "/api/rooms/{roomId}")
     public ResponseEntity<?> renameRoom(
             @AuthenticatedMemId String memId,
@@ -142,6 +147,7 @@ public class RoomController {
         ));
     }
 
+    // 수정된 룸 저장하기
     @PostMapping(path = "/api/rooms/save", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> saveEditedRoom(
             @AuthenticatedMemId String memId,
@@ -159,6 +165,7 @@ public class RoomController {
         ));
     }
 
+    // 내 룸 삭제하기
     @DeleteMapping(path = "/api/rooms")
     public ResponseEntity<?> deleteRoom(
             @AuthenticatedMemId String memId,
