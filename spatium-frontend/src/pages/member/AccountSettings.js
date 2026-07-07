@@ -3,14 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { GoogleLogin } from "@react-oauth/google";
 import "../../styles/accountsettings.css";
 import Footer from "../../components/Footer";
-
-// 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
-const USER = {
-  initial: "김",
-  name: "김스파티",
-  email: "spatium@example.com",
-  birth: "1998. 06. 07",
-};
 import {
   clearLoginSession,
   getLoginSession,
@@ -21,6 +13,14 @@ import {
   getMyInfo,
   patchMyInfo,
 } from "../../springApi/MemberSpringBootApi";
+
+// 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
+const USER = {
+  initial: "김",
+  name: "김스파티",
+  email: "spatium@example.com",
+  birth: "1998. 06. 07",
+};
 
 function AccountSettings() {
   const navigate = useNavigate();
