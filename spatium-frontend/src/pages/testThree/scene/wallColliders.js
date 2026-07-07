@@ -265,6 +265,56 @@ function addPointRange(ranges, point, axes) {
   });
 }
 
+function crossSpan2D(a, b, c) {
+  return (
+    (b.length - a.length) * (c.height - a.height) -
+    (b.height - a.height) * (c.length - a.length)
+  );
+}
+
+function spanConvexHull(points) {
+  const sortedPoints = [...points].sort((a, b) =>
+    a.length === b.length ? a.height - b.height : a.length - b.length,
+  );
+  const uniquePoints = sortedPoints.filter(
+    (point, index) =>
+      index === 0 ||
+      Math.abs(point.length - sortedPoints[index - 1].length) > 1e-8 ||
+      Math.abs(point.height - sortedPoints[index - 1].height) > 1e-8,
+  );
+
+  if (uniquePoints.length <= 2) return uniquePoints;
+
+  const lower = [];
+  uniquePoints.forEach((point) => {
+    while (
+      lower.length >= 2 &&
+      crossSpan2D(lower[lower.length - 2], lower[lower.length - 1], point) <=
+        1e-10
+    ) {
+      lower.pop();
+    }
+    lower.push(point);
+  });
+
+  const upper = [];
+  [...uniquePoints].reverse().forEach((point) => {
+    while (
+      upper.length >= 2 &&
+      crossSpan2D(upper[upper.length - 2], upper[upper.length - 1], point) <=
+        1e-10
+    ) {
+      upper.pop();
+    }
+    upper.push(point);
+  });
+
+  lower.pop();
+  upper.pop();
+
+  return [...lower, ...upper];
+}
+
 function pointInTriangleXZ(point, a, b, c) {
   const area =
     (b.x - a.x) * (c.z - a.z) -
@@ -381,12 +431,7 @@ function createWallColliderFromFaceGroup(
     normal,
     floorTriangles,
   );
-  const roomSide =
-    sampledRoomSide == null
-      ? roomCenter.dot(normal) >= projection
-        ? 1
-        : -1
-      : sampledRoomSide;
+  const roomSide = sampledRoomSide;
   const boundaryRoomSide = roomSide === 0 ? null : roomSide;
   const roomFacingNormal =
     boundaryRoomSide == null
@@ -444,10 +489,12 @@ function createWallColliderFromFaceGroup(
     halfSize,
     matrix3FromBasis(thicknessAxis, heightAxis, lengthAxis),
   );
-  const spanPolygon = group.points.map((point) => ({
-    height: point.dot(heightAxis),
-    length: point.dot(lengthAxis),
-  }));
+  const spanPolygon = spanConvexHull(
+    group.points.map((point) => ({
+      height: point.dot(heightAxis),
+      length: point.dot(lengthAxis),
+    })),
+  );
 
   return {
     object,
@@ -727,9 +774,13 @@ function createBoundaryBaselineGeometry(center, spanAxes) {
   ]);
 }
 
-export function createWallColliderVisuals(wallColliders) {
+export function createWallColliderVisuals(wallColliders, options = {}) {
   const group = new THREE.Group();
-  group.name = "WallColliderDebugLayer";
+  const color = options.color || sceneColor("wallColliderDebug");
+  const opacityMultiplier = options.opacityMultiplier ?? 1;
+  const renderOrderOffset = options.renderOrderOffset || 0;
+
+  group.name = options.name || "WallColliderDebugLayer";
 
   wallColliders.forEach((wall, index) => {
     const normal = wall.roomFacingNormal?.clone().normalize();
@@ -746,9 +797,9 @@ export function createWallColliderVisuals(wallColliders) {
     const colliderEdge = new THREE.LineSegments(
       new THREE.EdgesGeometry(colliderGeometry),
       new THREE.LineBasicMaterial({
-        color: sceneColor("wallColliderDebug"),
+        color,
         transparent: true,
-        opacity: 0.42,
+        opacity: 0.42 * opacityMultiplier,
         depthTest: false,
         depthWrite: false,
       }),
@@ -761,9 +812,9 @@ export function createWallColliderVisuals(wallColliders) {
       ? new THREE.LineSegments(
           outlineGeometry,
           new THREE.LineBasicMaterial({
-            color: sceneColor("wallColliderDebug"),
+            color,
             transparent: true,
-            opacity: 0.58,
+            opacity: 0.58 * opacityMultiplier,
             depthTest: false,
             depthWrite: false,
           }),
@@ -773,9 +824,9 @@ export function createWallColliderVisuals(wallColliders) {
       ? new THREE.Line(
           baselineGeometry,
           new THREE.LineBasicMaterial({
-            color: sceneColor("wallColliderDebug"),
+            color,
             transparent: true,
-            opacity: 0.98,
+            opacity: 0.98 * opacityMultiplier,
             depthTest: false,
             depthWrite: false,
           }),
@@ -784,18 +835,18 @@ export function createWallColliderVisuals(wallColliders) {
     colliderEdge.name = `wall-collider-obb-edge-${index + 1}`;
     colliderEdge.position.copy(wall.obb.center);
     colliderEdge.quaternion.setFromRotationMatrix(colliderRotation);
-    colliderEdge.renderOrder = 20;
+    colliderEdge.renderOrder = 20 + renderOrderOffset;
     group.add(colliderEdge);
 
     if (outline) {
       outline.name = `wall-collider-boundary-outline-${index + 1}`;
-      outline.renderOrder = 21;
+      outline.renderOrder = 21 + renderOrderOffset;
       group.add(outline);
     }
 
     if (baseline) {
       baseline.name = `wall-collider-boundary-line-${index + 1}`;
-      baseline.renderOrder = 22;
+      baseline.renderOrder = 22 + renderOrderOffset;
       group.add(baseline);
     }
   });
