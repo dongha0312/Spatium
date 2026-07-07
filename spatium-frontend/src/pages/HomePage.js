@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../styles/homepage.css";
-import { getLoginSession } from "../utils/authSession";
+import {
+  clearLoginSession,
+  getAccessToken,
+  getLoginSession,
+} from "../utils/authSession";
+import { deleteLogout, getMyInfo } from "../springApi/MemberSpringBootApi";
+import { getProjectList } from "../springApi/ProjectSpringBootAPi";
 import Footer from "../components/Footer";
 
 // 이용 순서 소개 (4단계)
@@ -31,9 +37,74 @@ const STEPS = [
 // HomePage 정의 하기
 function HomePage() {
   // 로그인 세션 (있으면 우측 상단에 닉네임 표시, 없으면 로그인 버튼 표시)
-  const [session] = useState(() => getLoginSession());
+  const [session, setSession] = useState(() => getLoginSession());
   const navigate = useNavigate();
   const stepsGridRef = useRef(null);
+
+  // 닉네임 클릭 시 열리는 "내 정보" 우측 패널
+  const [panelOpen, setPanelOpen] = useState(false);
+
+  // 패널 이용현황에 표시할 통계 (프로젝트 수 / 배치 가구 수)
+  const [stats, setStats] = useState({ projectCount: 0, furnitureCount: 0 });
+
+  // 상단바/패널 아바타에 표시할 프로필 사진 (없으면 이니셜)
+  const [profileImage, setProfileImage] = useState(null);
+
+  // 로그인 상태면 내 정보(프로필 사진)와 프로젝트 목록을 불러옴
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+
+    getMyInfo()
+      .then((me) => {
+        if (active) setProfileImage(me?.profileImageUrl || null);
+      })
+      .catch((err) => {
+        console.warn("내 정보 조회 실패:", err);
+      });
+
+    getProjectList()
+      .then((page) => {
+        if (!active) return;
+        const items = page?.items || [];
+        const furnitureCount = items.reduce(
+          (sum, p) => sum + (p.furnitureCount || 0),
+          0,
+        );
+        setStats({ projectCount: items.length, furnitureCount });
+      })
+      .catch((err) => {
+        console.warn("프로젝트 수 조회 실패:", err);
+      });
+    return () => {
+      active = false;
+    };
+  }, [session]);
+
+  const togglePanel = () => setPanelOpen((prev) => !prev);
+
+  // 마이페이지 버튼 : 대시보드로 이동
+  const handleGoMypage = () => navigate("/member/mypage");
+
+  // 계정설정 이동 (패널 닫고 이동)
+  const handleGoAccount = () => {
+    setPanelOpen(false);
+    navigate("/member/account");
+  };
+
+  // 로그아웃 : 서버 세션 정리 후 로컬 세션 삭제, 상단바를 로그인 버튼 상태로 되돌림
+  const handleLogout = async () => {
+    try {
+      if (getAccessToken()) {
+        await deleteLogout();
+      }
+    } catch (err) {
+      console.warn("Logout API failed, clearing local session anyway.", err);
+    }
+    clearLoginSession();
+    setSession(null);
+    setPanelOpen(false);
+  };
 
   // 이용 순서 카드가 스크롤로 화면에 들어오면 순차적으로 페이드인 + 슬라이드업
   useEffect(() => {
@@ -79,10 +150,33 @@ function HomePage() {
         </Link>
         <div className="hp-nav-right">
           {session ? (
-            <Link to="/member/mypage" className="hp-av-btn">
-              <div className="hp-av-circ">{session.nickname.charAt(0)}</div>
-              <span className="hp-av-name">{session.nickname}</span>
-            </Link>
+            <div className="hp-nav-account">
+              {/* 닉네임 왼쪽 : 마이페이지로 바로 이동하는 외곽선 버튼 */}
+              <button
+                type="button"
+                className="hp-mypage-btn"
+                onClick={handleGoMypage}
+              >
+                마이페이지
+              </button>
+              {/* 닉네임 클릭 : 우측 "내 정보" 패널 열기 */}
+              <button
+                type="button"
+                className="hp-av-btn"
+                onClick={togglePanel}
+                aria-label="내 정보 열기"
+              >
+                <div className="hp-av-circ">
+                  {profileImage ? (
+                    <img className="hp-av-img" src={profileImage} alt="" />
+                  ) : (
+                    session.nickname.charAt(0)
+                  )}
+                </div>
+                <span className="hp-av-name">{session.nickname}</span>
+                <span className="hp-av-caret">⌄</span>
+              </button>
+            </div>
           ) : (
             <Link to="/auth/login" className="hp-btn-prim">
               로그인
@@ -177,6 +271,72 @@ function HomePage() {
           </a>
         </p>
       </div>
+
+      {/* 닉네임 클릭 시 열리는 "내 정보" 우측 패널 */}
+      {session && panelOpen && (
+        <>
+          <div className="hp-scrim" onClick={() => setPanelOpen(false)}></div>
+          <div className="hp-panel">
+            <div className="hp-panel-head">
+              <div className="hp-panel-title">내 정보</div>
+              <button
+                className="hp-panel-close"
+                onClick={() => setPanelOpen(false)}
+                aria-label="닫기"
+              >
+                ×
+              </button>
+            </div>
+            <div className="hp-panel-body">
+              <span className="hp-panel-label">기본정보</span>
+              <button className="hp-panel-profile" onClick={handleGoAccount}>
+                <div className="hp-panel-avatar">
+                  {profileImage ? (
+                    <img className="hp-panel-avatar-img" src={profileImage} alt="" />
+                  ) : (
+                    session.nickname.charAt(0)
+                  )}
+                </div>
+                <div>
+                  <div className="hp-panel-pname">{session.nickname}</div>
+                  <div className="hp-panel-pnick">@{session.email}</div>
+                </div>
+                <span className="hp-panel-arrow">›</span>
+              </button>
+
+              <span className="hp-panel-label">이용현황</span>
+              <div className="hp-panel-stats">
+                <div className="hp-panel-stat">
+                  <span className="hp-panel-stat-num">
+                    {stats.projectCount}
+                  </span>
+                  <span className="hp-panel-stat-label">프로젝트</span>
+                </div>
+                <div className="hp-panel-stat">
+                  <span className="hp-panel-stat-num">
+                    {stats.furnitureCount}
+                  </span>
+                  <span className="hp-panel-stat-label">배치 가구</span>
+                </div>
+              </div>
+            </div>
+            <div className="hp-panel-foot">
+              <button
+                className="hp-panel-foot-btn hp-panel-sub"
+                onClick={handleLogout}
+              >
+                로그아웃
+              </button>
+              <button
+                className="hp-panel-foot-btn hp-panel-main"
+                onClick={handleGoAccount}
+              >
+                계정설정
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

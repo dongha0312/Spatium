@@ -26,6 +26,24 @@ export const patchMyInfo = ({ nickname, birthDate, password } = {}) =>
     .then(unwrapApiData)
     .catch(throwApiError);
 
+// 프로필 사진 변경 : multipart/form-data 로 image 파일 업로드
+//  - axiosInstance가 FormData일 때 Content-Type을 자동 처리(boundary 설정)함
+export const putMyAvatar = (file) => {
+  const formData = new FormData();
+  formData.append("image", file);
+  return springApi
+    .put("/api/users/me/avatar", formData)
+    .then(unwrapApiData)
+    .catch(throwApiError);
+};
+
+// 프로필 사진 삭제 : 저장된 이미지를 지우고 기본(이니셜) 상태로 되돌림 (204 No Content)
+export const deleteMyAvatar = () =>
+  springApi
+    .delete("/api/users/me/avatar")
+    .then(unwrapApiData)
+    .catch(throwApiError);
+
 // 회원 탈퇴 : 일반 회원은 { password }, 소셜 회원은 { idToken }으로 본인 재확인
 export const deleteMyInfo = ({ password, idToken } = {}) =>
   springApi
