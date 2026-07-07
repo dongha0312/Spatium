@@ -141,7 +141,6 @@ function LoginPage({ onLoginSuccess }) {
           </div>
           SPATIUM
         </Link>
-        <span className="lg-nav-link">룸 인테리어</span>
         <div className="lg-nav-right">
           <Link to="/auth/signup" className="lg-btn-out">
             회원가입

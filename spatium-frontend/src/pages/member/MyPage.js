@@ -388,7 +388,6 @@ function MyPage() {
           </div>
           SPATIUM
         </Link>
-        <span className="mp-nav-link">룸 인테리어</span>
         <div className="mp-nav-right">
           <button className="mp-av-btn" onClick={togglePanel}>
             <div className="mp-av-circ">{user.initial}</div>
