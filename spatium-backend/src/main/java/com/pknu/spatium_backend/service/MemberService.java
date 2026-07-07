@@ -11,15 +11,15 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.pknu.spatium_backend.auth.LoginAttemptLimiter;
+import com.pknu.spatium_backend.auth.SocialIdTokenVerifier;
+import com.pknu.spatium_backend.auth.SocialIdTokenVerifier.VerifiedSocialUser;
 import com.pknu.spatium_backend.dto.MemberDTO.LoginRequest;
 import com.pknu.spatium_backend.dto.MemberDTO.LoginResponse;
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSignupDTO;
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSocialLoginDTO;
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSocialSignupDTO;
 import com.pknu.spatium_backend.dto.MemberDTO.UserSummaryResponse;
-import com.pknu.spatium_backend.auth.LoginAttemptLimiter;
-import com.pknu.spatium_backend.auth.SocialIdTokenVerifier;
-import com.pknu.spatium_backend.auth.SocialIdTokenVerifier.VerifiedSocialUser;
 import com.pknu.spatium_backend.exception.ApiException;
 import com.pknu.spatium_backend.model.Member;
 import com.pknu.spatium_backend.repository.MemberRepository;
