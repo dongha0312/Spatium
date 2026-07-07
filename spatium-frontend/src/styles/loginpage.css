@@ -117,7 +117,9 @@
 .lg-auth-form-sub {
   font-size: 13px;
   color: var(--t3);
+  margin-top: 16px;
   margin-bottom: 28px;
+  text-align: center;
 }
 
 .lg-auth-form-sub a {

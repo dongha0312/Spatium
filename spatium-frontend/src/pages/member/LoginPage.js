@@ -51,10 +51,10 @@ function LoginPage({ onLoginSuccess }) {
       // 백엔드 로그인 API 호출 (POST /api/auth/sessions)
       const data = await postLogin({ email, password: pw });
 
-      // 로그인 세션 저장 (백엔드가 내려준 닉네임 + JWT 토큰)
+      // 로그인 세션 저장 (백엔드가 내려준 닉네임 + accessToken)
+      //  - refreshToken은 백엔드가 httpOnly 쿠키로 내려주므로 JS에서 저장하지 않음
       saveLoginSession(email, data.user?.nickname, "LOCAL", {
         accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
       });
 
       if (onLoginSuccess) {
@@ -99,10 +99,10 @@ function LoginPage({ onLoginSuccess }) {
     try {
       const data = await postSocialLogin({ provider: "GOOGLE", idToken });
 
-      // 기존 가입된 구글 계정 : 로그인 처리 (백엔드가 발급한 JWT 토큰도 함께 저장)
+      // 기존 가입된 구글 계정 : 로그인 처리 (accessToken만 저장,
+      //  refreshToken은 httpOnly 쿠키로 관리)
       saveLoginSession(profile.email, data.user?.nickname, "GOOGLE", {
         accessToken: data.accessToken,
-        refreshToken: data.refreshToken,
       });
 
       if (onLoginSuccess) {
@@ -154,9 +154,6 @@ function LoginPage({ onLoginSuccess }) {
         <div className="lg-auth-card">
           <form className="lg-auth-form" onSubmit={handleSubmit}>
             <div className="lg-auth-form-title">로그인</div>
-            <div className="lg-auth-form-sub">
-              처음이신가요? <Link to="/auth/signup">회원가입 →</Link>
-            </div>
 
             <div className="lg-fgrp">
               <label className="lg-flabel">이메일</label>
@@ -202,6 +199,10 @@ function LoginPage({ onLoginSuccess }) {
             <button type="submit" className="lg-btn-full">
               로그인
             </button>
+
+            <div className="lg-auth-form-sub">
+              처음이신가요? <Link to="/auth/signup">회원가입 →</Link>
+            </div>
 
             <div className="lg-social-divider">
               <span>SNS계정으로 간편 로그인/회원가입</span>

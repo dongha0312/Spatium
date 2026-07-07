@@ -72,10 +72,10 @@ public class RoomDevController {
         try {
             Path savedPath = roomService.saveEditedMetadata(metadataUrl, metadataJson);
 
+            // 서버 내부 절대경로(savedPath)는 응답에 포함하지 않는다 (파일명만 반환)
             return ResponseEntity.ok(Map.of(
                     "message", "metadata JSON saved.",
-                    "fileName", savedPath.getFileName().toString(),
-                    "savedPath", savedPath.toString()
+                    "fileName", savedPath.getFileName().toString()
             ));
         } catch (IOException e) {
             log.error("Failed to save edited metadata JSON.", e);

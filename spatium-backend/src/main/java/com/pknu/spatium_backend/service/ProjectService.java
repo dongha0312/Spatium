@@ -70,15 +70,32 @@ public class ProjectService {
 
     public Map<String, Object> getProject(String memId, String projectId) {
         Project project = getOwnedProject(memId, projectId);
-        Path projectDir = dataRoot()
-                .resolve(project.getProj_mem())
-                .resolve(project.getProj_code())
+
+        // 서버 내부 파일시스템 경로(projectPath)는 응답에 포함하지 않는다.
+        //  - 서버 디렉터리 구조가 외부에 노출되는 정보 유출 방지
+        return Map.of(
+                "projectId", project.getProj_code(),
+                "projectName", project.getProj_name());
+    }
+
+    // 회원 탈퇴 시 정리 : 해당 회원의 모든 룸/프로젝트 DB 레코드와
+    // data/{memId} 폴더(스캔 파일 포함)를 삭제한다.
+    //  - 탈퇴 후 개인정보(방 스캔 데이터)가 서버에 남지 않도록 하기 위함
+    @Transactional
+    public void deleteAllByMember(String memId) {
+        List<Project> projects = projectRepository.getProjectList(memId);
+
+        for (Project project : projects) {
+            roomRepository.deleteByRoomProj(project.getProj_code());
+        }
+        projectRepository.deleteAll(projects);
+        projectRepository.flush();
+
+        Path memberDir = dataRoot()
+                .resolve(memId)
                 .toAbsolutePath()
                 .normalize();
-
-        return Map.of(
-                "projectName", project.getProj_name(),
-                "projectPath", projectDir.toString());
+        deleteDirectory(memberDir);
     }
 
     @Transactional
