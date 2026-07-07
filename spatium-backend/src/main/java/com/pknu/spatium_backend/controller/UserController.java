@@ -12,11 +12,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.pknu.spatium_backend.auth.AuthenticatedMemId;
+import com.pknu.spatium_backend.auth.SignupRateLimiter;
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSignupDTO;
 import com.pknu.spatium_backend.dto.MemberDTO.UserDeleteRequest;
 import com.pknu.spatium_backend.dto.MemberDTO.UserUpdateRequest;
 import com.pknu.spatium_backend.service.MemberService;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
@@ -26,9 +28,17 @@ import lombok.RequiredArgsConstructor;
 public class UserController {
 
     private final MemberService memberService;
+    private final SignupRateLimiter signupRateLimiter;
 
     @PostMapping
-    public ResponseEntity<?> postSignup(@Valid @RequestBody MemberSignupDTO memDTO) {
+    public ResponseEntity<?> postSignup(
+            @Valid @RequestBody MemberSignupDTO memDTO,
+            HttpServletRequest request) {
+
+        // 이메일 열거/대량 가입 방지 : 같은 IP의 가입 시도 횟수 제한 (초과 시 429)
+        //  (리버스 프록시 뒤에 배포하면 X-Forwarded-For 처리 필요 - server.forward-headers-strategy)
+        signupRateLimiter.checkAndRecord(request.getRemoteAddr());
+
         return ResponseEntity.status(201).body(Map.of(
                 "statusCode", 201,
                 "message", "회원가입이 완료되었습니다.",
