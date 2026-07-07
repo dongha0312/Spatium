@@ -43,6 +43,8 @@ public class MemberService {
 
     private final LoginAttemptLimiter loginAttemptLimiter;
 
+    private final ProjectService projectService;
+
 
     // 디폴트 이미지 위치.
     private static final String DEFAULT_PROFILE_IMAGE_URL = "http://localhost:8080/images/default-profile.png";
@@ -303,6 +305,11 @@ public class MemberService {
         }
 
         refreshTokenService.deleteAll(memId);
+
+        // 회원 소유의 프로젝트/룸 레코드와 data/{memId} 폴더(스캔 파일)까지 정리
+        //  - 탈퇴 후에도 개인정보(방 스캔 데이터)가 서버에 남는 것을 방지
+        projectService.deleteAllByMember(memId);
+
         memberRepository.delete(member);
     }
 }
