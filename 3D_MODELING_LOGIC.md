@@ -8,17 +8,17 @@
 
 주요 파일은 다음과 같다.
 
-| 파일 | 역할 |
-| --- | --- |
+| 파일                          | 역할                                                                |
+| ----------------------------- | ------------------------------------------------------------------- |
 | `hooks/useTestThreeEditor.js` | 3D 에디터 전체 orchestration, 입력 이벤트, 선택/이동/회전/저장 처리 |
-| `scene/objectFactory.js` | 가구, 문, 창문 3D 오브젝트 생성 및 OBB 생성 |
-| `scene/wallColliders.js` | USD 방 모델에서 벽/바닥을 판별하고 벽 충돌체 생성 |
-| `scene/collision.js` | 가구 OBB와 벽 충돌/경계 판정, 이동 제한, 충돌 시각 상태 |
-| `scene/roomMetadata.js` | 편집된 오브젝트와 방 모델을 JSON으로 직렬화/복원 |
-| `scene/roomMeasurements.js` | 방 바닥 면적, 외곽선, 폭/깊이/높이 측정 |
-| `scene/sceneLoaders.js` | USD/GLB/JSON 로딩 및 메타데이터 저장 API 호출 |
-| `scene/sceneConfig.js` | 설정값, 색상, 모델 URL, 벽 제약 파라미터 조회 |
-| `scene/threeUtils.js` | 행렬 변환, 라벨 생성, 리소스 dispose, 카메라 framing 유틸 |
+| `scene/objectFactory.js`      | 가구, 문, 창문 3D 오브젝트 생성 및 OBB 생성                         |
+| `scene/wallColliders.js`      | USD 방 모델에서 벽/바닥을 판별하고 벽 충돌체 생성                   |
+| `scene/collision.js`          | 가구 OBB와 벽 충돌/경계 판정, 이동 제한, 충돌 시각 상태             |
+| `scene/roomMetadata.js`       | 편집된 오브젝트와 방 모델을 JSON으로 직렬화/복원                    |
+| `scene/roomMeasurements.js`   | 방 바닥 면적, 외곽선, 폭/깊이/높이 측정                             |
+| `scene/sceneLoaders.js`       | USD/GLB/JSON 로딩 및 메타데이터 저장 API 호출                       |
+| `scene/sceneConfig.js`        | 설정값, 색상, 모델 URL, 벽 제약 파라미터 조회                       |
+| `scene/threeUtils.js`         | 행렬 변환, 라벨 생성, 리소스 dispose, 카메라 framing 유틸           |
 
 ## 방 모델 로딩 및 준비
 
@@ -204,13 +204,12 @@ GLB 템플릿을 복제해 실제 가구 모델을 생성한다.
 1. 현재 pointer angle 계산
 2. 시작 angle과의 delta 계산
 3. 시작 quaternion에 Y축 회전 quaternion을 premultiply
-4. 회전은 벽 충돌 제한 없이 적용
 
 ### `rotateSelectedObject()`
 
 위치: `hooks/useTestThreeEditor.js`
 
-선택된 오브젝트를 Y축 기준 90도 회전한다. 현재 구현에서는 벽 충돌 체크 없이 회전 후 상태를 동기화한다.
+선택된 오브젝트를 Y축 기준 90도 회전한다.
 
 ### `setSelectedRotationDegrees(degrees)`
 
@@ -430,28 +429,26 @@ GLB 템플릿을 복제해 실제 가구 모델을 생성한다.
 
 위치: `public/config/test-three-scene-config.json`
 
-| 키 | 의미 |
-| --- | --- |
-| `models` | category별 기본 GLB 모델 URL |
-| `colors.category` | category별 fallback box 색상 |
-| `colors.collision` | 충돌 edge 색상 |
-| `colors.collisionFill` | 충돌 fill 색상 |
-| `wallConstraints.collisionEpsilon` | OBB 교차 판정 여유값 |
-| `wallConstraints.sweepStep` | 이동 제한 step 크기 |
-| `wallConstraints.sweepMaxSteps` | 한 번 이동에서 나눌 최대 step 수 |
-| `wallConstraints.colliderHalfThickness` | 벽 콜라이더 최소 반두께 |
-| `wallConstraints.boundaryEpsilon` | 벽 경계 허용 오차 |
-| `wallConstraints.boundarySpanPadding` | 벽 span 판정 padding |
-| `wallConstraints.showColliderDebug` | 벽 콜라이더 디버그 표시 여부 |
+| 키                                      | 의미                             |
+| --------------------------------------- | -------------------------------- |
+| `models`                                | category별 기본 GLB 모델 URL     |
+| `colors.category`                       | category별 fallback box 색상     |
+| `colors.collision`                      | 충돌 edge 색상                   |
+| `colors.collisionFill`                  | 충돌 fill 색상                   |
+| `wallConstraints.collisionEpsilon`      | OBB 교차 판정 여유값             |
+| `wallConstraints.sweepStep`             | 이동 제한 step 크기              |
+| `wallConstraints.sweepMaxSteps`         | 한 번 이동에서 나눌 최대 step 수 |
+| `wallConstraints.colliderHalfThickness` | 벽 콜라이더 최소 반두께          |
+| `wallConstraints.boundaryEpsilon`       | 벽 경계 허용 오차                |
+| `wallConstraints.boundarySpanPadding`   | 벽 span 판정 padding             |
+| `wallConstraints.showColliderDebug`     | 벽 콜라이더 디버그 표시 여부     |
 
 ## 현재 구현상 중요한 특징
 
 - 가구와 벽 충돌은 OBB 중심이다.
 - 가구 `localObb`는 모델 bounds를 기반으로 생성되고, 이동/회전 시 object matrix를 적용해 world OBB로 변환한다.
 - UI 선택 링과 치수 라벨은 `Box3` AABB 기반이다.
-- 회전은 벽 충돌로 제한하지 않는다.
 - 이동은 충돌 후 되돌리는 방식이 아니라, 이동 적용 전에 movement vector를 제한한다.
 - 빠른 이동에서 벽을 건너뛰지 않도록 movement를 작은 step으로 분할한다.
 - 문/창문은 reference object로 관리되며 일반 가구와 충돌 제한 대상에서 제외된다.
 - 충돌 상태 표시는 유지되며, 충돌한 editable furniture에는 `"wall"` collision이 기록된다.
-
