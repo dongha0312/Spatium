@@ -7,6 +7,7 @@ import {
   postLogin,
   postSocialLogin,
 } from "../../springApi/MemberSpringBootApi";
+import Footer from "../../components/Footer";
 
 // 이메일 형식 검증용 정규식
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -272,14 +273,15 @@ function LoginPage({ onLoginSuccess }) {
       </div>
 
       {/* 하단 푸터 : 쿠키 정책 / 개인정보처리방침 */}
-      <div className="lg-footer">
+      {/* <div className="lg-footer">
         <span className="lg-footer-brand">SPATIUM</span>
         <span className="lg-footer-sep">·</span>
         <Link to="/cookie-policy">쿠키 정책</Link>
         <span className="lg-footer-sep">·</span>
         <Link to="/privacy-consent">개인정보처리방침</Link>
         <div className="lg-footer-copy">© SPATIUM 2026</div>
-      </div>
+      </div> */}
+      <Footer/>
     </div>
   );
 }

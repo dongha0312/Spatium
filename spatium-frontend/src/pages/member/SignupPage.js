@@ -8,6 +8,7 @@ import {
   postLogin,
   postSocialLogin,
 } from "../../springApi/MemberSpringBootApi";
+import Footer from "../../components/Footer";
 
 function SignupPage() {
   // 로그인 페이지의 구글 소셜 로그인에서 넘어온 경우, 구글 인증 결과(이메일)가 담겨있음
@@ -228,6 +229,7 @@ function SignupPage() {
           </form>
         </div>
       </div>
+      <Footer />
     </div>
   );
 }
