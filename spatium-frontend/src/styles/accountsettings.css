@@ -78,6 +78,13 @@
   border: 1px solid var(--bd);
   border-radius: 24px;
   background: var(--sur);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.as-av-btn:hover {
+  background: var(--bg);
 }
 
 .as-av-circ {
@@ -105,6 +112,247 @@
   font-size: 13px;
   font-weight: 600;
   color: var(--t);
+}
+
+/* 상단바 : 마이페이지 버튼(외곽선) + 닉네임 버튼 묶음 */
+.as-nav-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.as-mypage-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  background: var(--sur);
+  color: var(--g);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+
+.as-mypage-btn:hover {
+  background: var(--bg);
+  border-color: var(--ga);
+}
+
+.as-av-caret {
+  font-size: 10px;
+  color: var(--t3);
+}
+
+/* 내 정보 우측 패널 (닉네임 클릭 시) */
+.as-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 18, 9, 0.28);
+  z-index: 40;
+}
+
+.as-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 300px;
+  max-width: 100%;
+  background: var(--sur);
+  border-left: 1px solid var(--bd);
+  box-shadow: -4px 0 20px rgba(60, 30, 10, 0.08);
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  animation: as-panel-slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes as-panel-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.as-panel-head {
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--bd);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.as-panel-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--t);
+}
+
+.as-panel-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--bd);
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--t2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.as-panel-body {
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.as-panel-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--t3);
+  margin-bottom: 10px;
+  display: block;
+}
+
+.as-panel-profile {
+  width: 100%;
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  background: var(--sur);
+  transition: all 0.15s;
+  margin-bottom: 14px;
+  text-align: left;
+  font-family: inherit;
+}
+
+.as-panel-profile:hover {
+  background: var(--bg);
+  border-color: var(--ga);
+}
+
+.as-panel-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ga), var(--g));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.as-panel-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.as-panel-pname {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--t);
+}
+
+.as-panel-pnick {
+  font-size: 12px;
+  color: var(--t3);
+  margin-top: 1px;
+}
+
+.as-panel-arrow {
+  color: var(--t3);
+  font-size: 16px;
+  margin-left: auto;
+}
+
+.as-panel-stats {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.as-panel-stat {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 11px;
+  text-align: center;
+}
+
+.as-panel-stat-num {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--t);
+  display: block;
+}
+
+.as-panel-stat-label {
+  font-size: 10px;
+  color: var(--t3);
+  margin-top: 2px;
+  display: block;
+}
+
+.as-panel-foot {
+  padding: 13px 16px;
+  border-top: 1px solid var(--bd);
+  display: flex;
+  gap: 8px;
+}
+
+.as-panel-foot-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.as-panel-main {
+  background: var(--g);
+  color: #fff;
+  border: none;
+}
+
+.as-panel-main:hover {
+  opacity: 0.87;
+}
+
+.as-panel-sub {
+  background: transparent;
+  border: 1px solid var(--bd);
+  color: var(--t2);
+}
+
+.as-panel-sub:hover {
+  background: var(--bg);
 }
 
 /* 본문 레이아웃 */
