@@ -40,8 +40,7 @@ public class SocialIdTokenVerifier {
     }
 
     private static final String GOOGLE_JWKS_URI = "https://www.googleapis.com/oauth2/v3/certs";
-    private static final Set<String> GOOGLE_ISSUERS =
-            Set.of("https://accounts.google.com", "accounts.google.com");
+    private static final Set<String> GOOGLE_ISSUERS = Set.of("https://accounts.google.com", "accounts.google.com");
 
     private static final String APPLE_JWKS_URI = "https://appleid.apple.com/auth/keys";
     private static final Set<String> APPLE_ISSUERS = Set.of("https://appleid.apple.com");
@@ -105,7 +104,17 @@ public class SocialIdTokenVerifier {
 
             // aud 검증 : 우리 앱(클라이언트 ID)용으로 발급된 토큰인지 확인
             //  - 다른 서비스용으로 발급된 토큰의 재사용(replay)을 차단
-            if (claims.getAudience() == null || !claims.getAudience().contains(clientId)) {
+            // aud 검증: 콤마로 구분된 허용 클라이언트 ID(웹/iOS 등) 중 하나라도 포함되면 통과
+            boolean audOk = false;
+            if (claims.getAudience() != null) {
+                for (String allowed : clientId.split(",")) {
+                    if (claims.getAudience().contains(allowed.trim())) {
+                        audOk = true;
+                        break;
+                    }
+                }
+            }
+            if (!audOk) {
                 throw new JwtException("audience mismatch");
             }
 
@@ -155,8 +164,7 @@ public class SocialIdTokenVerifier {
                     .GET()
                     .build();
 
-            HttpResponse<String> response =
-                    httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
                 throw new JwtException("JWKS fetch failed: HTTP " + response.statusCode());
