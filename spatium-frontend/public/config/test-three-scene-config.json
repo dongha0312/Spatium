@@ -66,6 +66,8 @@
     "colliderHalfThickness": 0.005,
     "boundaryEpsilon": 0,
     "boundarySpanPadding": 0,
+    "showWallDiagnostics": true,
+    "logWallDiagnostics": true,
     "showColliderDebug": false
   }
 }

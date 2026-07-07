@@ -34,7 +34,8 @@ import {
 } from "../scene/roomMetadata";
 import {
   canTransformObject,
-  clampObjectToWallBoundary,
+  constrainedMovementBeforeWallCollision,
+  hasWallCollision,
   initializeWallConstraints,
   objectIntersectsWalls,
   refreshCollisionState,
@@ -1021,6 +1022,8 @@ export function useTestThreeEditor({
     referenceLayer.name = "DoorWindowReferenceLayer";
     const selectionLayer = new THREE.Group();
     selectionLayer.name = "SelectionControlLayer";
+    const wallDiagnosticLayer = new THREE.Group();
+    wallDiagnosticLayer.name = "WallDiagnosticLayer";
     const roomMeasurementLayer = new THREE.Group();
     roomMeasurementLayer.name = "RoomMeasurementLayer";
     roomMeasurementLayer.visible = true;
@@ -1028,6 +1031,7 @@ export function useTestThreeEditor({
       furnitureLayer,
       referenceLayer,
       selectionLayer,
+      wallDiagnosticLayer,
       roomMeasurementLayer,
     );
 
@@ -1416,19 +1420,35 @@ export function useTestThreeEditor({
         return;
 
       if (activeInteraction.type === "move") {
-        object.position.copy(floorHitPoint).add(activeInteraction.offset);
+        const targetPosition = floorHitPoint
+          .clone()
+          .add(activeInteraction.offset);
+        targetPosition.y = activeInteraction.y;
+
+        const movement = targetPosition.clone().sub(object.position);
+        const adjustedMovement = constrainedMovementBeforeWallCollision(
+          object,
+          movement,
+          wallColliders,
+        );
+        object.position.add(adjustedMovement);
         object.position.y = activeInteraction.y;
       } else if (activeInteraction.type === "rotate") {
         const angle = angleOnFloor(activeInteraction.center, floorHitPoint);
         const delta = angle - activeInteraction.startAngle;
+        const previousQuaternion = object.quaternion.clone();
         object.position.copy(activeInteraction.center);
         object.quaternion
           .copy(activeInteraction.startQuaternion)
           .premultiply(new THREE.Quaternion().setFromAxisAngle(upAxis, delta));
+        object.updateWorldMatrix(true, false);
+        if (hasWallCollision(object, wallColliders)) {
+          object.quaternion.copy(previousQuaternion);
+        }
       }
 
       object.updateWorldMatrix(true, false);
-      clampObjectToWallBoundary(object, wallColliders);
+      rememberValidTransform(object);
       syncSceneState(object);
     }
 
@@ -1447,6 +1467,52 @@ export function useTestThreeEditor({
       releasePointer(event.pointerId);
       syncSceneState(object);
       markSceneChanged();
+    }
+
+    function clearWallDiagnostics() {
+      while (wallDiagnosticLayer.children.length) {
+        const child = wallDiagnosticLayer.children.pop();
+        disposeScene(child);
+      }
+    }
+
+    function uniqueWalls(walls) {
+      return [...new Set((walls || []).filter(Boolean))];
+    }
+
+    function addWallDiagnosticVisuals(walls, options) {
+      const uniqueWallColliders = uniqueWalls(walls);
+      if (!uniqueWallColliders.length) return;
+
+      wallDiagnosticLayer.add(
+        createWallColliderVisuals(uniqueWallColliders, options),
+      );
+    }
+
+    function updateWallDiagnostics(object = selectedObjectRef.current) {
+      clearWallDiagnostics();
+      if (
+        !object ||
+        !optionalConfigBoolean(
+          ["wallConstraints", "showWallDiagnostics"],
+          true,
+        )
+      ) {
+        return;
+      }
+
+      addWallDiagnosticVisuals(object.userData.intersectingWallColliders, {
+        name: "IntersectingWallDiagnosticLayer",
+        color: sceneColor("collision"),
+        opacityMultiplier: 1.35,
+        renderOrderOffset: 40,
+      });
+      addWallDiagnosticVisuals(object.userData.blockedWallColliders, {
+        name: "BlockedWallDiagnosticLayer",
+        color: sceneColor("selectedEdge"),
+        opacityMultiplier: 1.45,
+        renderOrderOffset: 60,
+      });
     }
 
     function syncSceneState(selectedObject = selectedObjectRef.current) {
@@ -1470,6 +1536,7 @@ export function useTestThreeEditor({
         hasCollision: collisions.length > 0,
         with: collisions,
       });
+      updateWallDiagnostics(selectedObject);
       updateSelectionOverlay(selectedObject);
     }
 
@@ -1899,13 +1966,18 @@ export function useTestThreeEditor({
             const object = selectedObjectRef.current;
             if (!isReplaceableObject(object)) return false;
 
+            const previousQuaternion = object.quaternion.clone();
             object.quaternion.premultiply(
               new THREE.Quaternion().setFromAxisAngle(upAxis, Math.PI / 2),
             );
             object.updateWorldMatrix(true, false);
-            if (canTransformObject(object)) {
-              clampObjectToWallBoundary(object, wallColliders);
+            if (hasWallCollision(object, wallColliders)) {
+              object.quaternion.copy(previousQuaternion);
+              object.updateWorldMatrix(true, false);
+              syncSceneState(object);
+              return false;
             }
+            rememberValidTransform(object);
             syncSceneState(object);
             markSceneChanged();
             return true;
@@ -1915,14 +1987,19 @@ export function useTestThreeEditor({
             if (!isReplaceableObject(object)) return false;
 
             const normalized = normalizeRotationDegrees(Number(degrees) || 0);
+            const previousQuaternion = object.quaternion.clone();
             object.quaternion.setFromAxisAngle(
               upAxis,
               THREE.MathUtils.degToRad(normalized),
             );
             object.updateWorldMatrix(true, false);
-            if (canTransformObject(object)) {
-              clampObjectToWallBoundary(object, wallColliders);
+            if (hasWallCollision(object, wallColliders)) {
+              object.quaternion.copy(previousQuaternion);
+              object.updateWorldMatrix(true, false);
+              syncSceneState(object);
+              return false;
             }
+            rememberValidTransform(object);
             syncSceneState(object);
             markSceneChanged();
             return true;

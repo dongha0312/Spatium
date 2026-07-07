@@ -137,6 +137,19 @@
   color: var(--t3);
 }
 
+/* 프로필 사진(아바타 이미지) : 원형 안을 꽉 채움 */
+.mp-av-circ,
+.mp-panel-avatar {
+  overflow: hidden;
+}
+
+.mp-av-img,
+.mp-panel-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 /* 본문 레이아웃 */
 .mp-body {
   flex: 1;
