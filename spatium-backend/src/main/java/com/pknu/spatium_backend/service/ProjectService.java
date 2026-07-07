@@ -70,15 +70,12 @@ public class ProjectService {
 
     public Map<String, Object> getProject(String memId, String projectId) {
         Project project = getOwnedProject(memId, projectId);
-        Path projectDir = dataRoot()
-                .resolve(project.getProj_mem())
-                .resolve(project.getProj_code())
-                .toAbsolutePath()
-                .normalize();
 
+        // 서버 내부 파일시스템 경로(projectPath)는 응답에 포함하지 않는다.
+        //  - 서버 디렉터리 구조가 외부에 노출되는 정보 유출 방지
         return Map.of(
-                "projectName", project.getProj_name(),
-                "projectPath", projectDir.toString());
+                "projectId", project.getProj_code(),
+                "projectName", project.getProj_name());
     }
 
     @Transactional
