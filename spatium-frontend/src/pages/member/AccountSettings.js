@@ -168,7 +168,6 @@ function AccountSettings() {
             </div>
             SPATIUM
           </Link>
-          <span className="as-nav-link">룸 인테리어</span>
           <div className="as-nav-right">
             <div className="as-av-btn">
               <div className="as-av-circ">{USER.initial}</div>
@@ -232,7 +231,6 @@ function AccountSettings() {
           </div>
           SPATIUM
         </Link>
-        <span className="as-nav-link">룸 인테리어</span>
         <div className="as-nav-right">
           <div className="as-av-btn">
             <div className="as-av-circ">{USER.initial}</div>

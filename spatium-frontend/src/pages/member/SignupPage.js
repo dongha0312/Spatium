@@ -113,7 +113,6 @@ function SignupPage() {
           </div>
           SPATIUM
         </Link>
-        <span className="su-nav-link">룸 인테리어</span>
         <div className="su-nav-right">
           <Link to="/auth/login" className="su-btn-out">
             로그인

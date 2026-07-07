@@ -76,9 +76,6 @@ function HomePage() {
           </div>
           SPATIUM
         </Link>
-        <Link to="/member/editor" className="hp-nav-link">
-          룸 인테리어
-        </Link>
         <div className="hp-nav-right">
           {session ? (
             <Link to="/member/mypage" className="hp-av-btn">
