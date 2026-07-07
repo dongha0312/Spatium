@@ -214,7 +214,7 @@ function ThreeDEditor() {
 
     const handlePopState = () => {
       const confirmed = window.confirm(
-        "You have unsaved changes. Leave the editor anyway?",
+        "수정중인 방인 저장되지 않았습니다. 그래도 떠나시겠습니까?",
       );
 
       if (confirmed) {
@@ -252,7 +252,7 @@ function ThreeDEditor() {
 
     if (hasUnsavedChanges) {
       const confirmed = window.confirm(
-        "You have unsaved changes. Switch rooms anyway?",
+        "수정중인 방이 저장되지 않았습니다. 그래도 새로운 방을 불러오시겠습니까?",
       );
       if (!confirmed) return;
     }
@@ -301,7 +301,7 @@ function ThreeDEditor() {
   const handleCancel = () => {
     if (hasUnsavedChanges) {
       const confirmed = window.confirm(
-        "You have unsaved changes. Leave the editor anyway?",
+        "수정중인 방이 저장되지 않았습니다. 그래도 떠나시겠습니까?",
       );
       if (!confirmed) return;
     }
