@@ -12,6 +12,7 @@ import com.pknu.spatium_backend.dto.MemberDTO.MemberSocialLoginDTO;
 import com.pknu.spatium_backend.dto.MemberDTO.MemberSocialSignupDTO;
 import com.pknu.spatium_backend.service.MemberService;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -22,7 +23,7 @@ public class MemberController {
     private final MemberService memberService;
 
     @PostMapping(path = "/social-sessions")
-    public ResponseEntity<?> postSocialLogin(@RequestBody MemberSocialLoginDTO memDTO) {
+    public ResponseEntity<?> postSocialLogin(@Valid @RequestBody MemberSocialLoginDTO memDTO) {
         return ResponseEntity.ok(Map.of(
                 "statusCode", 200,
                 "message", "소셜 로그인에 성공했습니다.",
@@ -30,7 +31,7 @@ public class MemberController {
     }
 
     @PostMapping(path = "/social-users")
-    public ResponseEntity<?> postSocialSignup(@RequestBody MemberSocialSignupDTO memDTO) {
+    public ResponseEntity<?> postSocialSignup(@Valid @RequestBody MemberSocialSignupDTO memDTO) {
         return ResponseEntity.status(201).body(Map.of(
                 "statusCode", 201,
                 "message", "소셜 회원가입이 완료되었습니다.",

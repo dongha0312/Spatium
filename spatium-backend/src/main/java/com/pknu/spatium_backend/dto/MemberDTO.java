@@ -1,7 +1,9 @@
 package com.pknu.spatium_backend.dto;
 
 import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Getter;
@@ -21,10 +23,18 @@ public class MemberDTO{
     public static class MemberSignupDTO {
 
         @NotBlank(message = "이메일을 입력해주세요")
+        @Email(message = "이메일 형식이 올바르지 않습니다")
         private String email;
 
         private String nickname;
 
+        // 비밀번호 정책 : 8자 이상 + 영문 포함 + 숫자 포함
+        //  - @Pattern은 null이면 검사를 통과하므로 @NotBlank를 함께 사용해야 한다.
+        @NotBlank(message = "비밀번호를 입력해주세요")
+        @Pattern(
+            regexp = "^(?=.*[A-Za-z])(?=.*\\d).{8,}$",
+            message = "비밀번호는 8자 이상이며 영문과 숫자를 모두 포함해야 합니다"
+        )
         private String password;
 
         private String birthDate;
@@ -158,6 +168,12 @@ public class MemberDTO{
 
         private String birthDate;
 
+        // 선택 필드 : null이면 비밀번호를 변경하지 않으므로 @NotBlank는 붙이지 않는다.
+        // 값이 있을 때만 회원가입과 동일한 정책(8자 이상 + 영문 + 숫자)을 적용한다.
+        @Pattern(
+            regexp = "^(?=.*[A-Za-z])(?=.*\\d).{8,}$",
+            message = "비밀번호는 8자 이상이며 영문과 숫자를 모두 포함해야 합니다"
+        )
         private String password;
     }
 

@@ -17,6 +17,7 @@ import com.pknu.spatium_backend.dto.MemberDTO.UserDeleteRequest;
 import com.pknu.spatium_backend.dto.MemberDTO.UserUpdateRequest;
 import com.pknu.spatium_backend.service.MemberService;
 
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -27,7 +28,7 @@ public class UserController {
     private final MemberService memberService;
 
     @PostMapping
-    public ResponseEntity<?> postSignup(@RequestBody MemberSignupDTO memDTO) {
+    public ResponseEntity<?> postSignup(@Valid @RequestBody MemberSignupDTO memDTO) {
         return ResponseEntity.status(201).body(Map.of(
                 "statusCode", 201,
                 "message", "회원가입이 완료되었습니다.",
@@ -46,7 +47,7 @@ public class UserController {
     @PatchMapping(path = "/me")
     public ResponseEntity<?> updateMyInfo(
             @AuthenticatedMemId String memId,
-            @RequestBody(required = false) UserUpdateRequest dto) {
+            @Valid @RequestBody(required = false) UserUpdateRequest dto) {
 
         String nickname = dto == null ? null : dto.getNickname();
         String birthDate = dto == null ? null : dto.getBirthDate();
