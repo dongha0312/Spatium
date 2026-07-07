@@ -774,9 +774,13 @@ function createBoundaryBaselineGeometry(center, spanAxes) {
   ]);
 }
 
-export function createWallColliderVisuals(wallColliders) {
+export function createWallColliderVisuals(wallColliders, options = {}) {
   const group = new THREE.Group();
-  group.name = "WallColliderDebugLayer";
+  const color = options.color || sceneColor("wallColliderDebug");
+  const opacityMultiplier = options.opacityMultiplier ?? 1;
+  const renderOrderOffset = options.renderOrderOffset || 0;
+
+  group.name = options.name || "WallColliderDebugLayer";
 
   wallColliders.forEach((wall, index) => {
     const normal = wall.roomFacingNormal?.clone().normalize();
@@ -793,9 +797,9 @@ export function createWallColliderVisuals(wallColliders) {
     const colliderEdge = new THREE.LineSegments(
       new THREE.EdgesGeometry(colliderGeometry),
       new THREE.LineBasicMaterial({
-        color: sceneColor("wallColliderDebug"),
+        color,
         transparent: true,
-        opacity: 0.42,
+        opacity: 0.42 * opacityMultiplier,
         depthTest: false,
         depthWrite: false,
       }),
@@ -808,9 +812,9 @@ export function createWallColliderVisuals(wallColliders) {
       ? new THREE.LineSegments(
           outlineGeometry,
           new THREE.LineBasicMaterial({
-            color: sceneColor("wallColliderDebug"),
+            color,
             transparent: true,
-            opacity: 0.58,
+            opacity: 0.58 * opacityMultiplier,
             depthTest: false,
             depthWrite: false,
           }),
@@ -820,9 +824,9 @@ export function createWallColliderVisuals(wallColliders) {
       ? new THREE.Line(
           baselineGeometry,
           new THREE.LineBasicMaterial({
-            color: sceneColor("wallColliderDebug"),
+            color,
             transparent: true,
-            opacity: 0.98,
+            opacity: 0.98 * opacityMultiplier,
             depthTest: false,
             depthWrite: false,
           }),
@@ -831,18 +835,18 @@ export function createWallColliderVisuals(wallColliders) {
     colliderEdge.name = `wall-collider-obb-edge-${index + 1}`;
     colliderEdge.position.copy(wall.obb.center);
     colliderEdge.quaternion.setFromRotationMatrix(colliderRotation);
-    colliderEdge.renderOrder = 20;
+    colliderEdge.renderOrder = 20 + renderOrderOffset;
     group.add(colliderEdge);
 
     if (outline) {
       outline.name = `wall-collider-boundary-outline-${index + 1}`;
-      outline.renderOrder = 21;
+      outline.renderOrder = 21 + renderOrderOffset;
       group.add(outline);
     }
 
     if (baseline) {
       baseline.name = `wall-collider-boundary-line-${index + 1}`;
-      baseline.renderOrder = 22;
+      baseline.renderOrder = 22 + renderOrderOffset;
       group.add(baseline);
     }
   });

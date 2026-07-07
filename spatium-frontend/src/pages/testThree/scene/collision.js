@@ -1,10 +1,34 @@
 import * as THREE from "three";
-import { wallConfigNumber } from "./sceneConfig";
+import { optionalConfigBoolean, wallConfigNumber } from "./sceneConfig";
 
 const WALL_PARALLEL_RELAXATION = 0;
 const WALL_ALIGNMENT_RELAXATION_ANGLE = Math.PI / 4;
 const WALL_SLIDE_CONTACT_DISTANCE = 0.08;
 const WALL_MOVEMENT_MARGIN = 1e-4;
+
+function vectorSummary(vector) {
+  return {
+    x: Number(vector.x.toFixed(4)),
+    y: Number(vector.y.toFixed(4)),
+    z: Number(vector.z.toFixed(4)),
+  };
+}
+
+function wallDebugSummary(wall) {
+  return {
+    wallObject: wall.object?.name || "(unnamed wall)",
+    triangleStart: wall.triangleStart,
+    triangleCount: wall.triangleCount,
+    roomFacingNormal: wall.roomFacingNormal
+      ? vectorSummary(wall.roomFacingNormal)
+      : null,
+    roomFacingProjection: wall.roomFacingProjection,
+  };
+}
+
+function shouldLogWallDiagnostics() {
+  return optionalConfigBoolean(["wallConstraints", "logWallDiagnostics"], true);
+}
 
 export function editableObjectLabel(object) {
   const item = object.userData.roomItem;
@@ -496,6 +520,7 @@ function adjustedMovementForObbBeforeWallCollision(
   objectObb,
   movement,
   wallColliders,
+  onBlockedWall = null,
 ) {
   if (!objectObb || !wallColliders.length || movement.lengthSq() <= 1e-10) {
     return movement.clone();
@@ -533,6 +558,12 @@ function adjustedMovementForObbBeforeWallCollision(
         -normalDistance - allowedInwardDistance;
 
       if (blockedInwardDistance > 1e-10) {
+        onBlockedWall?.(wall, {
+          type: "boundary",
+          clearance,
+          requestedInwardDistance: -normalDistance,
+          blockedInwardDistance,
+        });
         adjusted.addScaledVector(
           wall.roomFacingNormal,
           blockedInwardDistance,
@@ -566,6 +597,13 @@ function adjustedMovementForObbBeforeWallCollision(
         -normalDistance - allowedInwardDistance;
 
       if (blockedInwardDistance > 1e-10) {
+        onBlockedWall?.(wall, {
+          type: "solid",
+          clearance,
+          normal: vectorSummary(normal),
+          requestedInwardDistance: -normalDistance,
+          blockedInwardDistance,
+        });
         adjusted.addScaledVector(normal, blockedInwardDistance);
         changed = true;
       }
@@ -598,12 +636,31 @@ export function constrainedMovementBeforeWallCollision(
   const requestedStep = movement.clone().multiplyScalar(1 / stepCount);
   const objectObb = worldObbForObject(object);
   const constrained = new THREE.Vector3();
+  const blockedWalls = [];
+  const blockedWallSet = new Set();
+
+  object.userData.blockedWallColliders = blockedWalls;
+
+  const rememberBlockedWall = (wall, details) => {
+    if (blockedWallSet.has(wall)) return;
+
+    blockedWallSet.add(wall);
+    blockedWalls.push(wall);
+    if (shouldLogWallDiagnostics()) {
+      console.debug("[testThree] wall movement blocked", {
+        object: editableObjectLabel(object),
+        ...wallDebugSummary(wall),
+        ...details,
+      });
+    }
+  };
 
   for (let step = 0; step < stepCount; step += 1) {
     const adjustedStep = adjustedMovementForObbBeforeWallCollision(
       objectObb,
       requestedStep,
       wallColliders,
+      rememberBlockedWall,
     );
 
     if (adjustedStep.lengthSq() <= 1e-10) break;
@@ -653,13 +710,22 @@ export function refreshCollisionState(
 ) {
   editableObjects.forEach((object) => {
     object.userData.collisions = [];
+    object.userData.intersectingWallColliders = [];
   });
 
   editableObjects.forEach((object) => {
-    if (
-      shouldCheckFurnitureCollision(object) &&
-      objectIntersectsWalls(object, wallColliders)
-    ) {
+    if (!shouldCheckFurnitureCollision(object)) return;
+
+    const intersectingWalls = getIntersectingWalls(object, wallColliders);
+    object.userData.intersectingWallColliders = intersectingWalls;
+
+    if (intersectingWalls.length) {
+      if (object === selectedObject && shouldLogWallDiagnostics()) {
+        console.debug("[testThree] furniture wall collision", {
+          object: editableObjectLabel(object),
+          walls: intersectingWalls.map(wallDebugSummary),
+        });
+      }
       object.userData.collisions.push("wall");
     }
   });

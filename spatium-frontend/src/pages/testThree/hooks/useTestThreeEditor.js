@@ -1022,6 +1022,8 @@ export function useTestThreeEditor({
     referenceLayer.name = "DoorWindowReferenceLayer";
     const selectionLayer = new THREE.Group();
     selectionLayer.name = "SelectionControlLayer";
+    const wallDiagnosticLayer = new THREE.Group();
+    wallDiagnosticLayer.name = "WallDiagnosticLayer";
     const roomMeasurementLayer = new THREE.Group();
     roomMeasurementLayer.name = "RoomMeasurementLayer";
     roomMeasurementLayer.visible = true;
@@ -1029,6 +1031,7 @@ export function useTestThreeEditor({
       furnitureLayer,
       referenceLayer,
       selectionLayer,
+      wallDiagnosticLayer,
       roomMeasurementLayer,
     );
 
@@ -1466,6 +1469,52 @@ export function useTestThreeEditor({
       markSceneChanged();
     }
 
+    function clearWallDiagnostics() {
+      while (wallDiagnosticLayer.children.length) {
+        const child = wallDiagnosticLayer.children.pop();
+        disposeScene(child);
+      }
+    }
+
+    function uniqueWalls(walls) {
+      return [...new Set((walls || []).filter(Boolean))];
+    }
+
+    function addWallDiagnosticVisuals(walls, options) {
+      const uniqueWallColliders = uniqueWalls(walls);
+      if (!uniqueWallColliders.length) return;
+
+      wallDiagnosticLayer.add(
+        createWallColliderVisuals(uniqueWallColliders, options),
+      );
+    }
+
+    function updateWallDiagnostics(object = selectedObjectRef.current) {
+      clearWallDiagnostics();
+      if (
+        !object ||
+        !optionalConfigBoolean(
+          ["wallConstraints", "showWallDiagnostics"],
+          true,
+        )
+      ) {
+        return;
+      }
+
+      addWallDiagnosticVisuals(object.userData.intersectingWallColliders, {
+        name: "IntersectingWallDiagnosticLayer",
+        color: sceneColor("collision"),
+        opacityMultiplier: 1.35,
+        renderOrderOffset: 40,
+      });
+      addWallDiagnosticVisuals(object.userData.blockedWallColliders, {
+        name: "BlockedWallDiagnosticLayer",
+        color: sceneColor("selectedEdge"),
+        opacityMultiplier: 1.45,
+        renderOrderOffset: 60,
+      });
+    }
+
     function syncSceneState(selectedObject = selectedObjectRef.current) {
       const collisions = refreshCollisionState(
         editableRoots,
@@ -1487,6 +1536,7 @@ export function useTestThreeEditor({
         hasCollision: collisions.length > 0,
         with: collisions,
       });
+      updateWallDiagnostics(selectedObject);
       updateSelectionOverlay(selectedObject);
     }
 
