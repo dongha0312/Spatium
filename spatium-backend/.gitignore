@@ -43,3 +43,10 @@ application-local.properties
 application-secret.properties
 **/application-local.properties
 **/application-secret.properties
+
+### 업로드된 사용자 스캔 데이터 (개인정보 - 커밋 금지) ###
+# data/, uploads/ 아래 실제 스캔 파일(.usdz)/metadata는 절대 커밋하지 않는다.
+# 단, data/userId/... 아래의 빈 폴더 구조 placeholder(.gitkeep)는 유지한다.
+/data/*
+!/data/userId/
+/uploads/
