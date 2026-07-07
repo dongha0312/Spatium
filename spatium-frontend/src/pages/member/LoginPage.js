@@ -154,9 +154,6 @@ function LoginPage({ onLoginSuccess }) {
         <div className="lg-auth-card">
           <form className="lg-auth-form" onSubmit={handleSubmit}>
             <div className="lg-auth-form-title">로그인</div>
-            <div className="lg-auth-form-sub">
-              처음이신가요? <Link to="/auth/signup">회원가입 →</Link>
-            </div>
 
             <div className="lg-fgrp">
               <label className="lg-flabel">이메일</label>
@@ -202,6 +199,10 @@ function LoginPage({ onLoginSuccess }) {
             <button type="submit" className="lg-btn-full">
               로그인
             </button>
+
+            <div className="lg-auth-form-sub">
+              처음이신가요? <Link to="/auth/signup">회원가입 →</Link>
+            </div>
 
             <div className="lg-social-divider">
               <span>SNS계정으로 간편 로그인/회원가입</span>
