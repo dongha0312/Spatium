@@ -1,10 +1,10 @@
 package com.pknu.spatium_backend.auth;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.time.Duration;
 import java.time.Instant;
@@ -48,12 +48,11 @@ public class SocialIdTokenVerifier {
     // JWKS 캐시 유효 시간 (구글/애플 모두 키를 주기적으로 회전하므로 캐시 필요)
     private static final Duration JWKS_CACHE_TTL = Duration.ofHours(6);
 
+    // JWKS 조회 타임아웃 (연결/읽기)
+    private static final int JWKS_HTTP_TIMEOUT_MS = 5000;
+
     private final String googleClientId;
     private final String appleClientId;
-
-    private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .build();
 
     // JWKS URI별 공개키 캐시 (kid -> 공개키)
     private final Map<String, CachedJwks> jwksCache = new ConcurrentHashMap<>();
@@ -157,20 +156,22 @@ public class SocialIdTokenVerifier {
         return key;
     }
 
+    // JWKS(공개키 목록)를 provider 엔드포인트에서 받아온다.
+    //  - NIO Selector(loopback self-pipe)가 필요 없는 블로킹 방식(HttpURLConnection)을 사용한다.
     private CachedJwks fetchJwks(String jwksUri) {
+        HttpURLConnection conn = null;
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(jwksUri))
-                    .timeout(Duration.ofSeconds(5))
-                    .GET()
-                    .build();
+            conn = (HttpURLConnection) URI.create(jwksUri).toURL().openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(JWKS_HTTP_TIMEOUT_MS);
+            conn.setReadTimeout(JWKS_HTTP_TIMEOUT_MS);
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200) {
-                throw new JwtException("JWKS fetch failed: HTTP " + response.statusCode());
+            String body;
+            try (InputStream in = conn.getInputStream()) {
+                body = new String(in.readAllBytes(), StandardCharsets.UTF_8);
             }
 
-            JwkSet jwkSet = Jwks.setParser().build().parse(response.body());
+            JwkSet jwkSet = Jwks.setParser().build().parse(body);
 
             Map<String, Key> keysByKid = new HashMap<>();
             for (Jwk<?> jwk : jwkSet.getKeys()) {
@@ -180,9 +181,10 @@ public class SocialIdTokenVerifier {
             return new CachedJwks(Map.copyOf(keysByKid), Instant.now());
         } catch (IOException e) {
             throw new JwtException("JWKS fetch failed: " + e.getMessage(), e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new JwtException("JWKS fetch interrupted", e);
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
         }
     }
 
