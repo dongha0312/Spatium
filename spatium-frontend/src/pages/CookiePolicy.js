@@ -12,7 +12,6 @@ function CookiePolicy() {
                     <div className="cp-logo-sq"><div className="cp-logo-sq-i"></div></div>
                     SPATIUM
                 </Link>
-                <span className="cp-nav-link">룸 인테리어</span>
                 <div className="cp-nav-right">
                     <Link to="/" className="cp-btn-out">홈으로</Link>
                 </div>
