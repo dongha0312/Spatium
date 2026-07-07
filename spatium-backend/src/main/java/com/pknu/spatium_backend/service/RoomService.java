@@ -226,10 +226,10 @@ public class RoomService {
 
         Room room = getOwnedRoom(memId, roomId);
 
+        // 서버 저장 경로(roomPath)는 내부 구현 정보라 응답에 포함하지 않는다.
         return Map.of(
                 "roomId", room.getRoom_id(),
-                "roomName", room.getRoom_name(),
-                "roomPath", room.getRoom_path()
+                "roomName", room.getRoom_name()
         );
     }
 
