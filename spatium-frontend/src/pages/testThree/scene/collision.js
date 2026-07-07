@@ -545,6 +545,14 @@ function adjustedMovementForObbBeforeWallCollision(
       const movedObb = objectObb.clone();
       movedObb.center.add(adjusted);
       if (!objectOverlapsWallSpan(movedObb, wall)) return;
+      if (
+        !movedObb.intersectsOBB(
+          wall.obb,
+          wallConfigNumber("collisionEpsilon"),
+        )
+      ) {
+        return;
+      }
 
       const { normal, clearance } = wallSolidClearance(objectObb, wall);
       const normalDistance = adjusted.dot(normal);
@@ -579,11 +587,14 @@ export function constrainedMovementBeforeWallCollision(
   }
 
   const totalDistance = movement.length();
-  const stepSize = Math.max(wallConfigNumber("sweepStep"), 0.005);
-  const stepCount = Math.min(
-    wallConfigNumber("sweepMaxSteps"),
-    Math.max(1, Math.ceil(totalDistance / stepSize)),
+  const stepSize = Math.max(
+    0.005,
+    Math.min(
+      wallConfigNumber("sweepStep"),
+      wallConfigNumber("colliderHalfThickness") * 2,
+    ),
   );
+  const stepCount = Math.max(1, Math.ceil(totalDistance / stepSize));
   const requestedStep = movement.clone().multiplyScalar(1 / stepCount);
   const objectObb = worldObbForObject(object);
   const constrained = new THREE.Vector3();

@@ -1,0 +1,170 @@
+{
+  "doors" : [
+
+  ],
+  "editedObjects" : [
+    {
+      "depth" : 0.8885741233825684,
+      "detectedCategory" : "table",
+      "detectedRotationY" : -0.06739924848079681,
+      "displayName" : "table 1",
+      "editNote" : "",
+      "height" : 0.7341877222061157,
+      "id" : "D193B484-3EF6-4EA3-AABF-401DABDD5DF1",
+      "isReplacementTarget" : true,
+      "positionX" : -2.883375883102417,
+      "positionY" : -0.557529628276825,
+      "positionZ" : 0.7667726278305054,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 1.4580203294754028
+    },
+    {
+      "depth" : 0.5939940810203552,
+      "detectedCategory" : "table",
+      "detectedRotationY" : -0.06739921122789383,
+      "displayName" : "table 2",
+      "editNote" : "",
+      "height" : 0.7393146753311157,
+      "id" : "F43A3A67-5D68-4D3F-BB90-4AAD0723391B",
+      "isReplacementTarget" : true,
+      "positionX" : -2.455592393875122,
+      "positionY" : -0.554966151714325,
+      "positionZ" : -0.6108792424201965,
+      "rotationY" : 0,
+      "sourceType" : "가구",
+      "width" : 1.1083980798721313
+    },
+    {
+      "depth" : 0,
+      "detectedCategory" : "창문",
+      "detectedRotationY" : 3.0741934776306152,
+      "displayName" : "창문 1",
+      "editNote" : "",
+      "height" : 1.9560253620147705,
+      "id" : "381E0CBE-5AC3-47D9-86C5-B5DCF988D5A0",
+      "isReplacementTarget" : false,
+      "positionX" : -1.0866259336471558,
+      "positionY" : 0.8063641786575317,
+      "positionZ" : 3.4096124172210693,
+      "rotationY" : 0,
+      "sourceType" : "창문",
+      "width" : 5.394642353057861
+    }
+  ],
+  "objects" : [
+    {
+      "category" : "table",
+      "dimensions" : {
+        "x" : 1.4580203,
+        "y" : 0.7341877,
+        "z" : 0.8885741
+      },
+      "transform" : {
+        "columns" : [
+          [
+            0.9977295,
+            0,
+            0.06734823,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            -0.067348205,
+            0,
+            0.99772954,
+            0
+          ],
+          [
+            -2.883376,
+            -0.5575296,
+            0.7667726,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "category" : "table",
+      "dimensions" : {
+        "x" : 1.1083981,
+        "y" : 0.7393147,
+        "z" : 0.5939941
+      },
+      "transform" : {
+        "columns" : [
+          [
+            0.9977294,
+            0,
+            0.06734819,
+            0
+          ],
+          [
+            0,
+            1,
+            0,
+            0
+          ],
+          [
+            -0.06734817,
+            0,
+            0.9977295,
+            0
+          ],
+          [
+            -2.4555924,
+            -0.55496615,
+            -0.61087924,
+            1
+          ]
+        ]
+      }
+    }
+  ],
+  "openings" : [
+
+  ],
+  "roomType" : "db저장",
+  "windows" : [
+    {
+      "dimensions" : {
+        "x" : 5.3946424,
+        "y" : 1.9560254,
+        "z" : 0
+      },
+      "transform" : {
+        "columns" : [
+          [
+            -0.9977294,
+            0,
+            -0.06734822,
+            0
+          ],
+          [
+            0,
+            0.99999994,
+            0,
+            0
+          ],
+          [
+            0.06734819,
+            0,
+            -0.9977294,
+            0
+          ],
+          [
+            -1.0866259,
+            0.8063642,
+            3.4096124,
+            1
+          ]
+        ]
+      }
+    }
+  ]
+}

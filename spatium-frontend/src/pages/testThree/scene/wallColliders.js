@@ -265,6 +265,56 @@ function addPointRange(ranges, point, axes) {
   });
 }
 
+function crossSpan2D(a, b, c) {
+  return (
+    (b.length - a.length) * (c.height - a.height) -
+    (b.height - a.height) * (c.length - a.length)
+  );
+}
+
+function spanConvexHull(points) {
+  const sortedPoints = [...points].sort((a, b) =>
+    a.length === b.length ? a.height - b.height : a.length - b.length,
+  );
+  const uniquePoints = sortedPoints.filter(
+    (point, index) =>
+      index === 0 ||
+      Math.abs(point.length - sortedPoints[index - 1].length) > 1e-8 ||
+      Math.abs(point.height - sortedPoints[index - 1].height) > 1e-8,
+  );
+
+  if (uniquePoints.length <= 2) return uniquePoints;
+
+  const lower = [];
+  uniquePoints.forEach((point) => {
+    while (
+      lower.length >= 2 &&
+      crossSpan2D(lower[lower.length - 2], lower[lower.length - 1], point) <=
+        1e-10
+    ) {
+      lower.pop();
+    }
+    lower.push(point);
+  });
+
+  const upper = [];
+  [...uniquePoints].reverse().forEach((point) => {
+    while (
+      upper.length >= 2 &&
+      crossSpan2D(upper[upper.length - 2], upper[upper.length - 1], point) <=
+        1e-10
+    ) {
+      upper.pop();
+    }
+    upper.push(point);
+  });
+
+  lower.pop();
+  upper.pop();
+
+  return [...lower, ...upper];
+}
+
 function pointInTriangleXZ(point, a, b, c) {
   const area =
     (b.x - a.x) * (c.z - a.z) -
@@ -381,12 +431,7 @@ function createWallColliderFromFaceGroup(
     normal,
     floorTriangles,
   );
-  const roomSide =
-    sampledRoomSide == null
-      ? roomCenter.dot(normal) >= projection
-        ? 1
-        : -1
-      : sampledRoomSide;
+  const roomSide = sampledRoomSide;
   const boundaryRoomSide = roomSide === 0 ? null : roomSide;
   const roomFacingNormal =
     boundaryRoomSide == null
@@ -444,10 +489,12 @@ function createWallColliderFromFaceGroup(
     halfSize,
     matrix3FromBasis(thicknessAxis, heightAxis, lengthAxis),
   );
-  const spanPolygon = group.points.map((point) => ({
-    height: point.dot(heightAxis),
-    length: point.dot(lengthAxis),
-  }));
+  const spanPolygon = spanConvexHull(
+    group.points.map((point) => ({
+      height: point.dot(heightAxis),
+      length: point.dot(lengthAxis),
+    })),
+  );
 
   return {
     object,
