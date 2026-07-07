@@ -128,14 +128,16 @@ public class RoomService {
             throw new ApiException(
                     400,
                     "INVALID_ROOM_REQUEST",
-                    "룸 생성 요청 값이 올바르지 않습니다.");
+                    "룸 생성 요청 값이 올바르지 않습니다."
+            );
         }
 
         if (metadata == null || metadata.isEmpty() || file == null || file.isEmpty()) {
             throw new ApiException(
                     400,
                     "INVALID_ROOM_REQUEST",
-                    "metadata와 file이 필요합니다.");
+                    "metadata와 file이 필요합니다."
+            );
         }
 
         // 허용된 확장자만 업로드 가능
@@ -144,12 +146,13 @@ public class RoomService {
 
         String roomId = UUID.randomUUID().toString();
 
-        Path saveDir = dataRoot()
-                .resolve(project.getProj_mem())
-                .resolve(project.getProj_code())
-                .resolve(roomId)
-                .toAbsolutePath()
-                .normalize();
+        // DB에는 실제 PC 경로가 아니라 data 폴더 기준 상대 경로만 저장한다.
+        // 예: rooms/{memberId}/{projectId}/{roomId}
+        String roomPath = buildRoomPath(project, roomId);
+
+        // 파일 저장/조회가 필요할 때만 상대 경로를 실제 서버 경로로 변환한다.
+        // 예: {backend 실행 위치}/data/rooms/{memberId}/{projectId}/{roomId}
+        Path saveDir = resolveRoomDirectory(roomPath);
 
         Files.createDirectories(saveDir);
 
@@ -171,14 +174,15 @@ public class RoomService {
                 .room_id(roomId)
                 .room_proj(projectId)
                 .room_name(roomName)
-                .room_path(saveDir.toString())
+                .room_path(roomPath)
                 .build();
 
         Room savedRoom = roomRepository.save(room);
 
         return new ResponseRoomCreateDTO(
                 savedRoom.getRoom_id(),
-                savedRoom.getRoom_name());
+                savedRoom.getRoom_name()
+        );
     }
 
     public List<ResponseRoomSummaryDTO> getRoomList(
@@ -193,7 +197,8 @@ public class RoomService {
                         room.getRoom_name(),
                         room.getRoom_area(),
                         null,
-                        null))
+                        null
+                ))
                 .toList();
     }
 
@@ -206,7 +211,8 @@ public class RoomService {
         return Map.of(
                 "roomId", room.getRoom_id(),
                 "roomName", room.getRoom_name(),
-                "roomPath", room.getRoom_path());
+                "roomPath", room.getRoom_path()
+        );
     }
 
     public RoomSceneResponse getRoomScene(
@@ -219,14 +225,12 @@ public class RoomService {
             throw new ApiException(
                     500,
                     "ROOM_PATH_NOT_FOUND",
-                    "룸 저장 경로가 없습니다.");
+                    "룸 저장 경로가 없습니다."
+            );
         }
 
         try {
-            Path saveDir = Paths
-                    .get(room.getRoom_path())
-                    .toAbsolutePath()
-                    .normalize();
+            Path saveDir = resolveRoomDirectory(room.getRoom_path());
 
             Path metadataPath = findExistingRoomMetadataPath(saveDir)
                     .toAbsolutePath()
@@ -242,14 +246,16 @@ public class RoomService {
                 throw new ApiException(
                         404,
                         "ROOM_METADATA_NOT_FOUND",
-                        "룸 metadata 파일을 찾을 수 없습니다.");
+                        "룸 metadata 파일을 찾을 수 없습니다."
+                );
             }
 
             if (!Files.exists(modelPath) || !Files.isRegularFile(modelPath)) {
                 throw new ApiException(
                         404,
                         "ROOM_MODEL_NOT_FOUND",
-                        "룸 model 파일을 찾을 수 없습니다.");
+                        "룸 model 파일을 찾을 수 없습니다."
+                );
             }
 
             Object metadata = objectMapper.readValue(metadataPath.toFile(), Object.class);
@@ -258,20 +264,23 @@ public class RoomService {
             RoomSceneModelResponse model = new RoomSceneModelResponse(
                     modelPath.getFileName().toString(),
                     "model/vnd.usdz+zip",
-                    Base64.getEncoder().encodeToString(modelBytes));
+                    Base64.getEncoder().encodeToString(modelBytes)
+            );
 
             return new RoomSceneResponse(
                     room.getRoom_id(),
                     room.getRoom_name(),
                     metadata,
-                    model);
+                    model
+            );
         } catch (ApiException e) {
             throw e;
         } catch (IOException e) {
             throw new ApiException(
                     500,
                     "ROOM_SCENE_READ_FAILED",
-                    "룸 데이터를 불러오지 못했습니다.");
+                    "룸 데이터를 불러오지 못했습니다."
+            );
         }
     }
 
@@ -306,14 +315,16 @@ public class RoomService {
             throw new ApiException(
                     404,
                     "ROOM_NOT_FOUND",
-                    "룸을 찾을 수 없습니다.");
+                    "룸을 찾을 수 없습니다."
+            );
         }
 
         if (metadata == null || metadata.isEmpty()) {
             throw new ApiException(
                     400,
                     "INVALID_ROOM_REQUEST",
-                    "metadata 파일이 필요합니다.");
+                    "metadata 파일이 필요합니다."
+            );
         }
 
         requireFileExtension(metadata, ".json", "metadata");
@@ -322,14 +333,12 @@ public class RoomService {
             throw new ApiException(
                     500,
                     "ROOM_PATH_NOT_FOUND",
-                    "룸 저장 경로가 없습니다.");
+                    "룸 저장 경로가 없습니다."
+            );
         }
 
         try {
-            Path saveDir = Paths
-                    .get(room.getRoom_path())
-                    .toAbsolutePath()
-                    .normalize();
+            Path saveDir = resolveRoomDirectory(room.getRoom_path());
 
             Files.createDirectories(saveDir);
 
@@ -342,7 +351,8 @@ public class RoomService {
             Files.copy(
                     metadata.getInputStream(),
                     metadataPath,
-                    StandardCopyOption.REPLACE_EXISTING);
+                    StandardCopyOption.REPLACE_EXISTING
+            );
 
             updateRoomArea(room, area);
 
@@ -350,7 +360,8 @@ public class RoomService {
             throw new ApiException(
                     500,
                     "ROOM_SAVE_FAILED",
-                    "수정된 룸 저장에 실패했습니다.");
+                    "수정된 룸 저장에 실패했습니다."
+            );
         }
     }
 
@@ -372,20 +383,19 @@ public class RoomService {
             throw new ApiException(
                     404,
                     "ROOM_NOT_FOUND",
-                    "삭제할 룸을 찾을 수 없습니다.");
+                    "삭제할 룸을 찾을 수 없습니다."
+            );
         }
 
         if (room.getRoom_path() == null || room.getRoom_path().isBlank()) {
             throw new ApiException(
                     500,
                     "ROOM_PATH_NOT_FOUND",
-                    "룸 저장 경로가 없습니다.");
+                    "룸 저장 경로가 없습니다."
+            );
         }
 
-        Path roomDir = Paths
-                .get(room.getRoom_path())
-                .toAbsolutePath()
-                .normalize();
+        Path roomDir = resolveRoomDirectory(room.getRoom_path());
 
         roomRepository.delete(room);
         roomRepository.flush();
@@ -404,13 +414,15 @@ public class RoomService {
                 .orElseThrow(() -> new ApiException(
                         404,
                         "PROJECT_NOT_FOUND",
-                        "프로젝트를 찾을 수 없습니다."));
+                        "프로젝트를 찾을 수 없습니다."
+                ));
 
         if (!memId.equals(project.getProj_mem())) {
             throw new ApiException(
                     403,
                     "FORBIDDEN",
-                    "해당 프로젝트에 접근할 권한이 없습니다.");
+                    "해당 프로젝트에 접근할 권한이 없습니다."
+            );
         }
 
         return project;
@@ -427,7 +439,8 @@ public class RoomService {
                 .orElseThrow(() -> new ApiException(
                         404,
                         "ROOM_NOT_FOUND",
-                        "룸을 찾을 수 없습니다."));
+                        "룸을 찾을 수 없습니다."
+                ));
 
         getOwnedProject(memId, room.getRoom_proj());
 
@@ -441,6 +454,29 @@ public class RoomService {
                 .normalize();
     }
 
+    // DB에는 개발자 PC마다 달라지는 절대경로 대신 저장소 루트 기준 상대 key만 보관한다.
+    private String buildRoomPath(Project project, String roomId) {
+        return String.join(
+                "/",
+                project.getProj_mem(),
+                project.getProj_code(),
+                roomId
+        );
+    }
+
+    // 파일을 읽고 쓸 때만 상대 key를 실제 서버 파일 경로로 변환한다.
+    private Path resolveRoomDirectory(String roomPath) {
+        Path root = dataRoot();
+        Path roomDir = root.resolve(roomPath)
+                .toAbsolutePath()
+                .normalize();
+
+        ensureInside(root, roomDir);
+
+        return roomDir;
+    }
+
+    
     private String sanitizedJsonFileName(String metadataUrl) {
         String value = metadataUrl == null ? "" : metadataUrl.trim();
 
@@ -484,7 +520,8 @@ public class RoomService {
             throw new ApiException(
                     400,
                     "INVALID_FILE_TYPE",
-                    label + " 파일은 " + requiredExtension + " 형식만 업로드할 수 있습니다.");
+                    label + " 파일은 " + requiredExtension + " 형식만 업로드할 수 있습니다."
+            );
         }
     }
 
@@ -522,7 +559,8 @@ public class RoomService {
 
             return jsonFiles.stream()
                     .filter(path -> !"metadata.json".equalsIgnoreCase(
-                            path.getFileName().toString()))
+                            path.getFileName().toString()
+                    ))
                     .findFirst()
                     .orElse(jsonFiles.get(0));
         }
@@ -554,14 +592,16 @@ public class RoomService {
             throw new ApiException(
                     400,
                     "INVALID_ROOM_AREA",
-                    "room area 값이 올바르지 않습니다.");
+                    "room area 값이 올바르지 않습니다."
+            );
         }
 
         if (!Double.isFinite(parsedArea) || parsedArea < 0) {
             throw new ApiException(
                     400,
                     "INVALID_ROOM_AREA",
-                    "room area 값이 올바르지 않습니다.");
+                    "room area 값이 올바르지 않습니다."
+            );
         }
 
         room.setRoom_area(String.format(Locale.US, "%.2f", parsedArea));
@@ -578,7 +618,8 @@ public class RoomService {
             throw new ApiException(
                     400,
                     "INVALID_REQUEST",
-                    "저장 경로가 올바르지 않습니다.");
+                    "저장 경로가 올바르지 않습니다."
+            );
         }
     }
 
@@ -593,7 +634,8 @@ public class RoomService {
             throw new ApiException(
                     400,
                     "INVALID_REQUEST",
-                    "삭제할 수 없는 경로입니다.");
+                    "삭제할 수 없는 경로입니다."
+            );
         }
 
         if (!Files.exists(normalizedTargetDir)) {
@@ -609,13 +651,15 @@ public class RoomService {
                         } catch (IOException e) {
                             throw new IllegalStateException(
                                     "룸 폴더 삭제 중 오류가 발생했습니다.",
-                                    e);
+                                    e
+                            );
                         }
                     });
         } catch (IOException e) {
             throw new IllegalStateException(
                     "룸 폴더 삭제 중 오류가 발생했습니다.",
-                    e);
+                    e
+            );
         }
     }
 
@@ -628,7 +672,8 @@ public class RoomService {
             throw new ApiException(
                     400,
                     errorCode,
-                    message);
+                    message
+            );
         }
     }
 }
