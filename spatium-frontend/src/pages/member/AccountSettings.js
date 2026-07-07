@@ -128,7 +128,6 @@ function AccountSettings() {
       if (session) {
         saveLoginSession(session.email, updated.nickname, session.provider, {
           accessToken: session.accessToken,
-          refreshToken: session.refreshToken,
         });
       }
 
