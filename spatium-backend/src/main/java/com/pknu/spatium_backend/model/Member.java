@@ -4,6 +4,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
+import jakarta.persistence.Column;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -51,5 +52,8 @@ public class Member {
 
     // 가입 경로 : "GOOGLE" | "KAKAO" | "LOCAL" 등 (ERD 컬럼명 그대로, mem_ 접두사 없음)
     private String provider;
+
+    @Column(name = "PROVIDER_USER_ID")
+    private String providerUserId;
 
 }
