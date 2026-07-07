@@ -9,18 +9,12 @@ import {
   saveLoginSession,
 } from "../../utils/authSession";
 import {
+  deleteMyAvatar,
   deleteMyInfo,
   getMyInfo,
   patchMyInfo,
+  putMyAvatar,
 } from "../../springApi/MemberSpringBootApi";
-
-// 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
-const USER = {
-  initial: "김",
-  name: "김스파티",
-  email: "spatium@example.com",
-  birth: "1998. 06. 07",
-};
 
 function AccountSettings() {
   const navigate = useNavigate();
@@ -61,6 +55,10 @@ function AccountSettings() {
         setMe(data);
         setNickname(data.nickname || "");
         setBirth(data.birthDate || "");
+        // 서버에 저장된 프로필 사진이 있으면 아바타에 반영
+        if (data.profileImageUrl) {
+          setAvatarUrl(data.profileImageUrl);
+        }
       })
       .catch((err) => {
         console.error("내 정보 조회 실패:", err);
@@ -70,11 +68,16 @@ function AccountSettings() {
     };
   }, []);
 
-  // 프로필 사진 : 컴퓨터에서 선택한 이미지의 미리보기 URL (선택 안 하면 이니셜 표시)
+  // 프로필 사진 : 서버에 저장된 이미지 URL(data URL) (없으면 기본 이니셜 표시)
   const [avatarUrl, setAvatarUrl] = useState(null);
-  // "사진 삭제"를 눌렀는지 여부 : true면 이니셜 대신 빈 이미지를 보여줌
-  const [avatarRemoved, setAvatarRemoved] = useState(false);
   const fileInputRef = useRef(null);
+
+  // 아바타에 표시할 내용 : 프로필 사진이 있으면 이미지, 없으면 기본 이니셜
+  const avatarNode = avatarUrl ? (
+    <img className="as-av-img" src={avatarUrl} alt="" />
+  ) : (
+    displayInitial
+  );
 
   const dangerRef = useRef(null);
 
@@ -83,10 +86,14 @@ function AccountSettings() {
     fileInputRef.current?.click();
   };
 
-  // 파일 선택 완료 → 로컬 미리보기 URL 생성해서 아바타에 반영
-  //  - 추후 백엔드 연동 시에는 이 file 객체를 FormData에 담아 업로드 API로 보내면 됨
-  const handleAvatarFileChange = (e) => {
+  // 프로필 사진 업로드 중 여부 (중복 클릭 방지 + 버튼 표시)
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  // 파일 선택 완료 → 서버에 업로드하고, 저장된 이미지로 아바타를 갱신
+  const handleAvatarFileChange = async (e) => {
     const file = e.target.files?.[0];
+    // 같은 파일을 다시 선택해도 onChange가 발생하도록 초기화
+    e.target.value = "";
     if (!file) return;
 
     if (!file.type.startsWith("image/")) {
@@ -94,22 +101,35 @@ function AccountSettings() {
       return;
     }
 
-    if (avatarUrl) {
-      URL.revokeObjectURL(avatarUrl);
+    setUploadingAvatar(true);
+    try {
+      const data = await putMyAvatar(file);
+      setAvatarUrl(data.profileImageUrl || null);
+      setMe((prev) =>
+        prev ? { ...prev, profileImageUrl: data.profileImageUrl } : prev,
+      );
+    } catch (err) {
+      alert(err.message || "프로필 사진 변경에 실패했습니다. 다시 시도해주세요.");
+    } finally {
+      setUploadingAvatar(false);
     }
-    setAvatarUrl(URL.createObjectURL(file));
-    setAvatarRemoved(false);
-
-    // 같은 파일을 다시 선택해도 onChange가 발생하도록 초기화
-    e.target.value = "";
   };
 
-  const handleAvatarDelete = () => {
-    if (avatarUrl) {
-      URL.revokeObjectURL(avatarUrl);
+  // "사진 삭제" : 서버에서 프로필 사진을 삭제하고 기본(이니셜) 상태로 되돌림
+  const handleAvatarDelete = async () => {
+    // 이미 사진이 없으면 아무 것도 하지 않음
+    if (!avatarUrl) return;
+
+    setUploadingAvatar(true);
+    try {
+      await deleteMyAvatar();
+      setAvatarUrl(null);
+      setMe((prev) => (prev ? { ...prev, profileImageUrl: null } : prev));
+    } catch (err) {
+      alert(err.message || "프로필 사진 삭제에 실패했습니다. 다시 시도해주세요.");
+    } finally {
+      setUploadingAvatar(false);
     }
-    setAvatarUrl(null);
-    setAvatarRemoved(true);
   };
 
   // 저장 중복 클릭 방지
@@ -236,7 +256,7 @@ function AccountSettings() {
           </Link>
           <div className="as-nav-right">
             <div className="as-av-btn">
-              <div className="as-av-circ">{displayInitial}</div>
+              <div className="as-av-circ">{avatarNode}</div>
               <span className="as-av-name">{displayName}</span>
             </div>
           </div>
@@ -302,7 +322,7 @@ function AccountSettings() {
         </Link>
         <div className="as-nav-right">
           <div className="as-av-btn">
-            <div className="as-av-circ">{displayInitial}</div>
+            <div className="as-av-circ">{avatarNode}</div>
             <span className="as-av-name">{displayName}</span>
           </div>
         </div>
@@ -325,17 +345,15 @@ function AccountSettings() {
           <div className="as-section">
             <div className="as-section-title">프로필</div>
             <div className="as-profile-row">
-              <div
-                className={`as-avatar${avatarUrl ? "" : avatarRemoved ? " as-avatar-empty" : ""}`}
-              >
+              <div className="as-avatar">
                 {avatarUrl ? (
                   <img
                     className="as-avatar-img"
                     src={avatarUrl}
                     alt="프로필 사진"
                   />
-                ) : avatarRemoved ? null : (
-                  USER.initial
+                ) : (
+                  displayInitial
                 )}
               </div>
               <input
@@ -350,13 +368,15 @@ function AccountSettings() {
                   type="button"
                   className="as-avatar-btn as-avatar-edit"
                   onClick={handleAvatarEditClick}
+                  disabled={uploadingAvatar}
                 >
-                  사진 변경
+                  {uploadingAvatar ? "업로드 중..." : "사진 변경"}
                 </button>
                 <button
                   type="button"
                   className="as-avatar-btn as-avatar-del"
                   onClick={handleAvatarDelete}
+                  disabled={uploadingAvatar}
                 >
                   사진 삭제
                 </button>

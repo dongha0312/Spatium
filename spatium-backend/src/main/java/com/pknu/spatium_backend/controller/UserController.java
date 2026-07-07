@@ -2,14 +2,18 @@ package com.pknu.spatium_backend.controller;
 
 import java.util.Map;
 
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.pknu.spatium_backend.auth.AuthenticatedMemId;
 import com.pknu.spatium_backend.auth.SignupRateLimiter;
@@ -67,6 +71,25 @@ public class UserController {
                 "statusCode", 200,
                 "message", "내 정보가 수정되었습니다.",
                 "data", memberService.updateMyInfo(memId, nickname, birthDate, password)));
+    }
+
+    // 프로필 사진 변경 : multipart/form-data 로 image 파일을 받아 저장
+    @PutMapping(path = "/me/avatar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> updateAvatar(
+            @AuthenticatedMemId String memId,
+            @RequestPart("image") MultipartFile image) {
+
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "프로필 사진이 변경되었습니다.",
+                "data", memberService.updateAvatar(memId, image)));
+    }
+
+    // 프로필 사진 삭제 : 저장된 이미지를 지우고 기본(이니셜) 상태로 되돌림
+    @DeleteMapping(path = "/me/avatar")
+    public ResponseEntity<?> deleteAvatar(@AuthenticatedMemId String memId) {
+        memberService.deleteAvatar(memId);
+        return ResponseEntity.noContent().build();
     }
 
     // 회원 탈퇴 : 비밀번호(일반) 또는 소셜 idToken(소셜) 재확인 필수

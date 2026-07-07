@@ -1,12 +1,15 @@
 // MemberService.java
 package com.pknu.spatium_backend.service;
 
+import java.io.IOException;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.pknu.spatium_backend.dto.MemberDTO.LoginRequest;
 import com.pknu.spatium_backend.dto.MemberDTO.LoginResponse;
@@ -237,11 +240,81 @@ public class MemberService {
         data.put("nickname", member.getMem_nick());
         data.put("birthDate", member.getMem_bir());
         data.put("gender", member.getMem_sex());
-        data.put("profileImageUrl", null);
+        data.put("profileImageUrl", buildProfileImageUrl(member.getMem_img()));
         data.put("projectCount", 0);
         data.put("placedFurnitureCount", 0);
 
         return data;
+    }
+
+    // 프로필 사진 변경 (PUT /api/users/me/avatar)
+    //  - 별도 파일 스토리지/CDN이 없으므로 이미지 바이트를 회원 레코드(mem_img)에 저장하고,
+    //    조회 시 data URL(base64)로 내려준다. 프론트는 <img src>에 그대로 사용 가능.
+    @Transactional
+    public Map<String, Object> updateAvatar(String memId, MultipartFile image) {
+        if (image == null || image.isEmpty()) {
+            throw new ApiException(400, "INVALID_IMAGE_FILE", "이미지 파일이 올바르지 않습니다.");
+        }
+
+        String contentType = image.getContentType();
+        if (contentType == null || !contentType.startsWith("image/")) {
+            throw new ApiException(400, "INVALID_IMAGE_FILE", "이미지 파일이 올바르지 않습니다.");
+        }
+
+        Member member = memberRepository.findById(memId)
+            .orElseThrow(() -> new ApiException(404, "USER_NOT_FOUND", "회원을 찾을 수 없습니다."));
+
+        byte[] bytes;
+        try {
+            bytes = image.getBytes();
+        } catch (IOException e) {
+            throw new ApiException(400, "INVALID_IMAGE_FILE", "이미지 파일을 읽을 수 없습니다.");
+        }
+
+        member.setMem_img(bytes);
+        memberRepository.save(member);
+
+        Map<String, Object> data = new HashMap<>();
+        data.put("profileImageUrl", buildProfileImageUrl(bytes));
+        return data;
+    }
+
+    // 프로필 사진 삭제 (DELETE /api/users/me/avatar)
+    //  - 저장된 이미지를 비워 기본(이니셜) 상태로 되돌린다.
+    @Transactional
+    public void deleteAvatar(String memId) {
+        Member member = memberRepository.findById(memId)
+            .orElseThrow(() -> new ApiException(404, "USER_NOT_FOUND", "회원을 찾을 수 없습니다."));
+
+        member.setMem_img(null);
+        memberRepository.save(member);
+    }
+
+    // 저장된 이미지 바이트를 data URL(base64)로 변환 (없으면 null)
+    private String buildProfileImageUrl(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            return null;
+        }
+        String mime = detectImageMime(bytes);
+        return "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(bytes);
+    }
+
+    // 이미지 매직넘버로 MIME 타입 추정 (별도 content-type 컬럼이 없으므로 바이트로 판별)
+    private String detectImageMime(byte[] b) {
+        if (b.length >= 3 && (b[0] & 0xFF) == 0xFF && (b[1] & 0xFF) == 0xD8 && (b[2] & 0xFF) == 0xFF) {
+            return "image/jpeg";
+        }
+        if (b.length >= 8 && (b[0] & 0xFF) == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47) {
+            return "image/png";
+        }
+        if (b.length >= 6 && b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46) {
+            return "image/gif";
+        }
+        if (b.length >= 12 && b[0] == 0x52 && b[1] == 0x49 && b[2] == 0x46 && b[3] == 0x46
+                && b[8] == 0x57 && b[9] == 0x45 && b[10] == 0x42 && b[11] == 0x50) {
+            return "image/webp";
+        }
+        return "image/png";
     }
 
     // 내 정보 수정 (PATCH /api/users/me)
