@@ -1,6 +1,7 @@
 package com.pknu.spatium_backend.service;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -54,6 +55,14 @@ public class RoomService {
         }
 
         requireFileExtension(usdzDataFile, ".usdz", "3D 모델");
+        requireUsdzContent(usdzDataFile);
+
+        // metadata 문자열도 실제 JSON인지 검증 후 저장
+        try {
+            objectMapper.readTree(jsonDataFile);
+        } catch (IOException e) {
+            throw new IOException("metadata JSON 형식이 올바르지 않습니다.");
+        }
 
         Path uploadDir = Paths
                 .get(System.getProperty("user.dir"), "uploads", "models")
@@ -90,6 +99,13 @@ public class RoomService {
 
         if (metadataJson == null || metadataJson.isBlank()) {
             throw new IOException("metadata JSON data is empty.");
+        }
+
+        // 실제 JSON인지 검증 후 저장 (임의 콘텐츠 저장 방지)
+        try {
+            objectMapper.readTree(metadataJson);
+        } catch (IOException e) {
+            throw new IOException("metadata JSON 형식이 올바르지 않습니다.");
         }
 
         Path uploadDir = Paths
@@ -140,9 +156,11 @@ public class RoomService {
             );
         }
 
-        // 허용된 확장자만 업로드 가능
+        // 허용된 확장자만 업로드 가능 + 실제 내용(JSON/zip 매직바이트)까지 검증
         requireFileExtension(metadata, ".json", "metadata");
         requireFileExtension(file, ".usdz", "3D 모델");
+        requireJsonContent(metadata);
+        requireUsdzContent(file);
 
         String roomId = UUID.randomUUID().toString();
 
@@ -208,10 +226,10 @@ public class RoomService {
 
         Room room = getOwnedRoom(memId, roomId);
 
+        // 서버 저장 경로(roomPath)는 내부 구현 정보라 응답에 포함하지 않는다.
         return Map.of(
                 "roomId", room.getRoom_id(),
-                "roomName", room.getRoom_name(),
-                "roomPath", room.getRoom_path()
+                "roomName", room.getRoom_name()
         );
     }
 
@@ -328,6 +346,7 @@ public class RoomService {
         }
 
         requireFileExtension(metadata, ".json", "metadata");
+        requireJsonContent(metadata);
 
         if (room.getRoom_path() == null || room.getRoom_path().isBlank()) {
             throw new ApiException(
@@ -506,6 +525,8 @@ public class RoomService {
     }
 
     // 확장자 화이트리스트 검사 (파일명이 없으면 기본 파일명이 사용되므로 통과)
+    //  - 확장자는 위조 가능하므로 이 검사만으로는 부족하다.
+    //    실제 내용 검증은 requireJsonContent/requireUsdzContent가 수행한다.
     private void requireFileExtension(
             MultipartFile file,
             String requiredExtension,
@@ -521,6 +542,48 @@ public class RoomService {
                     400,
                     "INVALID_FILE_TYPE",
                     label + " 파일은 " + requiredExtension + " 형식만 업로드할 수 있습니다."
+            );
+        }
+    }
+
+    // metadata 파일이 실제로 파싱 가능한 JSON인지 내용까지 검증
+    //  - 확장자만 .json으로 위조한 임의 파일이 저장/서빙되는 것을 차단
+    //  - 파일명이 없어서 확장자 검사를 통과한 경우도 여기서 걸러진다.
+    private void requireJsonContent(MultipartFile file) {
+        try (InputStream in = file.getInputStream()) {
+            objectMapper.readTree(in);
+        } catch (IOException e) {
+            throw new ApiException(
+                    400,
+                    "INVALID_FILE_TYPE",
+                    "metadata 파일이 올바른 JSON 형식이 아닙니다."
+            );
+        }
+    }
+
+    // USDZ는 zip 컨테이너 형식 : 파일 시작이 zip 매직 바이트(PK\x03\x04)인지 검증
+    //  - 확장자만 .usdz로 위조한 임의 파일이 저장/서빙되는 것을 차단
+    private void requireUsdzContent(MultipartFile file) {
+        try (InputStream in = file.getInputStream()) {
+            byte[] header = in.readNBytes(4);
+            boolean zipMagic = header.length == 4
+                    && header[0] == 'P'
+                    && header[1] == 'K'
+                    && header[2] == 3
+                    && header[3] == 4;
+
+            if (!zipMagic) {
+                throw new ApiException(
+                        400,
+                        "INVALID_FILE_TYPE",
+                        "3D 모델 파일이 올바른 USDZ 형식이 아닙니다."
+                );
+            }
+        } catch (IOException e) {
+            throw new ApiException(
+                    400,
+                    "INVALID_FILE_TYPE",
+                    "3D 모델 파일을 읽을 수 없습니다."
             );
         }
     }

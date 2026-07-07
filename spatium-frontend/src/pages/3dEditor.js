@@ -10,15 +10,9 @@ import "../styles/3deditor.css";
 import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
 import { getAccessToken, getLoginSession } from "../utils/authSession";
 import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
-import { getRoomSceneData } from "../springApi/RoomSpringBootApi";
+import { getRoomList, getRoomSceneData } from "../springApi/RoomSpringBootApi";
 
 const FURNITURE_CATALOG_URL = "/data/furniture_catalog.json";
-
-const INITIAL_LAYERS = [
-  { id: "room", name: "Room", color: "#C4956A" },
-  { id: "furniture", name: "Furniture", color: "#7B9EC2" },
-  { id: "openings", name: "Doors & windows", color: "#D4A96A" },
-];
 
 const WALL_COLORS = ["#F5F0EA", "#E8DCC8", "#C4956A", "#3A3A3A"];
 
@@ -44,7 +38,6 @@ function ThreeDEditor() {
   const projectId = searchParams.get("projectId");
   const roomId = searchParams.get("roomId");
 
-  const [activeLayerId, setActiveLayerId] = useState(INITIAL_LAYERS[0].id);
   const [roomDropdownOpen, setRoomDropdownOpen] = useState(false);
   const [furnitureCatalog, setFurnitureCatalog] = useState([]);
   const [catalogSearch, setCatalogSearch] = useState("");
@@ -65,12 +58,13 @@ function ThreeDEditor() {
   const [roomScene, setRoomScene] = useState(null);
   const [roomSceneLoading, setRoomSceneLoading] = useState(Boolean(roomId));
   const [roomSceneError, setRoomSceneError] = useState("");
+  const [projectRooms, setProjectRooms] = useState([]);
+  const [projectRoomsLoading, setProjectRoomsLoading] = useState(
+    Boolean(projectId),
+  );
+  const [projectRoomsError, setProjectRoomsError] = useState("");
 
   const [session] = useState(() => getLoginSession());
-
-  const activeLayer =
-    INITIAL_LAYERS.find((layer) => layer.id === activeLayerId) ??
-    INITIAL_LAYERS[0];
 
   const categoryFilters = useMemo(
     () =>
@@ -177,6 +171,40 @@ function ThreeDEditor() {
   }, [projectId, roomId]);
 
   useEffect(() => {
+    let isMounted = true;
+
+    if (!projectId) {
+      setProjectRooms([]);
+      setProjectRoomsError("");
+      setProjectRoomsLoading(false);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    setProjectRoomsLoading(true);
+    setProjectRoomsError("");
+
+    getRoomList(projectId)
+      .then((data) => {
+        if (!isMounted) return;
+        setProjectRooms(Array.isArray(data?.items) ? data.items : []);
+      })
+      .catch((error) => {
+        if (!isMounted) return;
+        setProjectRooms([]);
+        setProjectRoomsError(error.message || "Failed to load rooms.");
+      })
+      .finally(() => {
+        if (isMounted) setProjectRoomsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [projectId]);
+
+  useEffect(() => {
     if (!hasUnsavedChanges) return undefined;
 
     const handleBeforeUnload = (event) => {
@@ -215,9 +243,28 @@ function ThreeDEditor() {
 
   const toggleRoomDropdown = () => setRoomDropdownOpen((prev) => !prev);
 
-  const selectRoom = (layer) => {
-    setActiveLayerId(layer.id);
+  const selectProjectRoom = (room) => {
+    const nextRoomId = room?.roomId;
+    if (!projectId || !nextRoomId || String(nextRoomId) === String(roomId)) {
+      setRoomDropdownOpen(false);
+      return;
+    }
+
+    if (hasUnsavedChanges) {
+      const confirmed = window.confirm(
+        "You have unsaved changes. Switch rooms anyway?",
+      );
+      if (!confirmed) return;
+    }
+
+    const params = new URLSearchParams({
+      projectId: String(projectId),
+      roomId: String(nextRoomId),
+    });
+
     setRoomDropdownOpen(false);
+    setHasUnsavedChanges(false);
+    navigate(`/member/editor?${params.toString()}`);
   };
 
   const selectCategory = (category) => {
@@ -346,7 +393,7 @@ function ThreeDEditor() {
               className={`ed-cat-header${roomDropdownOpen ? " ed-cat-open" : ""}`}
               onClick={toggleRoomDropdown}
             >
-              <span className="ed-cat-room-name">{activeLayer.name}</span>
+              <span className="ed-cat-room-name">{roomLabel}</span>
               <svg
                 viewBox="0 0 24 24"
                 width="16"
@@ -365,18 +412,30 @@ function ThreeDEditor() {
                   className="ed-cat-room-dropdown"
                   onClick={(event) => event.stopPropagation()}
                 >
-                  {INITIAL_LAYERS.map((layer) => (
-                    <button
-                      key={layer.id}
-                      type="button"
-                      className={`ed-cat-room-option${
-                        layer.id === activeLayerId ? " ed-active" : ""
-                      }`}
-                      onClick={() => selectRoom(layer)}
-                    >
-                      {layer.name}
-                    </button>
-                  ))}
+                  {projectRoomsLoading ? (
+                    <div className="ed-cat-empty">Loading rooms...</div>
+                  ) : projectRoomsError ? (
+                    <div className="ed-cat-empty">{projectRoomsError}</div>
+                  ) : projectRooms.length === 0 ? (
+                    <div className="ed-cat-empty">
+                      No rooms in this project.
+                    </div>
+                  ) : (
+                    projectRooms.map((room) => (
+                      <button
+                        key={room.roomId}
+                        type="button"
+                        className={`ed-cat-room-option${
+                          String(room.roomId) === String(roomId)
+                            ? " ed-active"
+                            : ""
+                        }`}
+                        onClick={() => selectProjectRoom(room)}
+                      >
+                        {room.roomName || "Untitled room"}
+                      </button>
+                    ))
+                  )}
                 </div>
               )}
             </div>
@@ -385,13 +444,22 @@ function ThreeDEditor() {
               <input
                 className="ed-cat-search"
                 type="search"
-                placeholder="Search furniture"
+                placeholder="가구 검색하기"
                 value={catalogSearch}
                 onChange={(event) => setCatalogSearch(event.target.value)}
               />
             </div>
 
             <div className="ed-cat-filters">
+              <button
+                type="button"
+                className={`ed-cat-filter ed-cat-filter-more${
+                  activeCategory === null ? " ed-active" : ""
+                }`}
+                onClick={showAllCategories}
+              >
+                All
+              </button>
               {categoryFilters.map((category) => (
                 <button
                   key={category}
@@ -402,15 +470,6 @@ function ThreeDEditor() {
                   {category}
                 </button>
               ))}
-              <button
-                type="button"
-                className={`ed-cat-filter ed-cat-filter-more${
-                  activeCategory === null ? " ed-active" : ""
-                }`}
-                onClick={showAllCategories}
-              >
-                All
-              </button>
             </div>
 
             <div className="ed-cat-products">
@@ -592,7 +651,7 @@ function ThreeDEditor() {
             onClick={handleCancel}
             disabled={isSaving}
           >
-            Cancel
+            마이페이지로 돌아가기
           </button>
           <button
             type="button"
@@ -600,7 +659,7 @@ function ThreeDEditor() {
             onClick={handleSaveRoom}
             disabled={isSaving}
           >
-            {isSaving ? "Saving..." : "Save"}
+            {isSaving ? "저장중..." : "저장하기"}
           </button>
         </div>
       </div>

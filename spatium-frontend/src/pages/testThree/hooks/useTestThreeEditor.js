@@ -181,6 +181,10 @@ function formatSquareMeters(value) {
   return Number.isFinite(value) ? `${value.toFixed(2)} m2` : "-";
 }
 
+function formatPyung(value) {
+  return Number.isFinite(value) ? `${value.toFixed(1)} 평` : "-";
+}
+
 function stableDimensionsForObject(object, fallbackSize) {
   const dimensions = object?.userData.roomItem?.dimensions || {};
   const localObbSize = object?.userData.localObb?.halfSize
@@ -968,7 +972,10 @@ export function useTestThreeEditor({
     root.appendChild(labelRenderer.domElement);
 
     const showCameraAngle = debugConfigBoolean("showCameraAngle", false);
-    const showReferenceLabels = debugConfigBoolean("showReferenceLabels", false);
+    const showReferenceLabels = debugConfigBoolean(
+      "showReferenceLabels",
+      false,
+    );
     const cameraAngleBadge = showCameraAngle
       ? document.createElement("div")
       : null;
@@ -1091,7 +1098,7 @@ export function useTestThreeEditor({
       roomMeasurementLayer.clear();
       roomMeasurementsRef.current = measurements || null;
       if (Number.isFinite(measurements?.area)) {
-        roomAreaBadge.textContent = `Area ${formatSquareMeters(measurements.area)}`;
+        roomAreaBadge.textContent = `방 면적 ${formatSquareMeters(measurements.area)}  ${formatPyung(measurements.area * 0.3025)}`;
         roomAreaBadge.hidden = false;
       } else {
         roomAreaBadge.hidden = true;
@@ -1137,10 +1144,18 @@ export function useTestThreeEditor({
           .addScaledVector(outward, offsetDistance)
           .add(new THREE.Vector3(0, 0.06, 0));
         const tickAxis = new THREE.Vector3(-direction.z, 0, direction.x);
-        const firstTickA = lineStart.clone().addScaledVector(tickAxis, tickLength / 2);
-        const firstTickB = lineStart.clone().addScaledVector(tickAxis, -tickLength / 2);
-        const secondTickA = lineEnd.clone().addScaledVector(tickAxis, tickLength / 2);
-        const secondTickB = lineEnd.clone().addScaledVector(tickAxis, -tickLength / 2);
+        const firstTickA = lineStart
+          .clone()
+          .addScaledVector(tickAxis, tickLength / 2);
+        const firstTickB = lineStart
+          .clone()
+          .addScaledVector(tickAxis, -tickLength / 2);
+        const secondTickA = lineEnd
+          .clone()
+          .addScaledVector(tickAxis, tickLength / 2);
+        const secondTickB = lineEnd
+          .clone()
+          .addScaledVector(tickAxis, -tickLength / 2);
 
         vertices.push(
           lineStart.x,
@@ -1163,7 +1178,9 @@ export function useTestThreeEditor({
           secondTickB.z,
         );
 
-        const label = createRoomDimensionLabel(formatCentimeters(segment.length));
+        const label = createRoomDimensionLabel(
+          formatCentimeters(segment.length),
+        );
         label.position
           .copy(midpoint)
           .addScaledVector(outward, offsetDistance + 0.12)
@@ -1184,10 +1201,18 @@ export function useTestThreeEditor({
         );
         const tickAxis = new THREE.Vector3(1, 0, 0);
         const tickLength = 0.18;
-        const firstTickA = start.clone().addScaledVector(tickAxis, tickLength / 2);
-        const firstTickB = start.clone().addScaledVector(tickAxis, -tickLength / 2);
-        const secondTickA = end.clone().addScaledVector(tickAxis, tickLength / 2);
-        const secondTickB = end.clone().addScaledVector(tickAxis, -tickLength / 2);
+        const firstTickA = start
+          .clone()
+          .addScaledVector(tickAxis, tickLength / 2);
+        const firstTickB = start
+          .clone()
+          .addScaledVector(tickAxis, -tickLength / 2);
+        const secondTickA = end
+          .clone()
+          .addScaledVector(tickAxis, tickLength / 2);
+        const secondTickB = end
+          .clone()
+          .addScaledVector(tickAxis, -tickLength / 2);
 
         vertices.push(
           start.x,
@@ -1210,8 +1235,13 @@ export function useTestThreeEditor({
           secondTickB.z,
         );
 
-        const label = createRoomDimensionLabel(formatCentimeters(measurements.height));
-        label.position.copy(start).lerp(end, 0.5).add(new THREE.Vector3(0.16, 0, 0));
+        const label = createRoomDimensionLabel(
+          formatCentimeters(measurements.height),
+        );
+        label.position
+          .copy(start)
+          .lerp(end, 0.5)
+          .add(new THREE.Vector3(0.16, 0, 0));
         roomMeasurementLayer.add(label);
       }
 
