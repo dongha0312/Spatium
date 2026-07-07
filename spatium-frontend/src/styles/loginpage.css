@@ -288,6 +288,49 @@
   height: 20px;
 }
 
+.lg-google-btn {
+  width: 44px;
+  height: 44px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  border: 1px solid var(--bd);
+  border-radius: 50%;
+  background: #fff;
+  overflow: hidden;
+}
+
+.lg-google-btn > div:not(.lg-google-mark) {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 0;
+  z-index: 2;
+}
+
+.lg-google-mark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.lg-google-mark svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
 @media (max-width: 480px) {
   .lg-auth-wrap {
     padding: 32px 16px;
