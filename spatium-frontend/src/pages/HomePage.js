@@ -80,7 +80,8 @@ function HomePage() {
         <div className="hp-nav-right">
           {session ? (
             <Link to="/member/mypage" className="hp-av-btn">
-              <div className="hp-av-circ">{session.nickname.charAt(0)}</div>
+              {/* 여기만 toUpperCase 안 되어 있어서 수정함. */}
+              <div className="hp-av-circ">{session.nickname.charAt(0).toUpperCase()}</div>
               <span className="hp-av-name">{session.nickname}</span>
             </Link>
           ) : (
