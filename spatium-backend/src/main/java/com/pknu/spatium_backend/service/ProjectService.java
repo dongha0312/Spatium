@@ -78,6 +78,26 @@ public class ProjectService {
                 "projectName", project.getProj_name());
     }
 
+    // 회원 탈퇴 시 정리 : 해당 회원의 모든 룸/프로젝트 DB 레코드와
+    // data/{memId} 폴더(스캔 파일 포함)를 삭제한다.
+    //  - 탈퇴 후 개인정보(방 스캔 데이터)가 서버에 남지 않도록 하기 위함
+    @Transactional
+    public void deleteAllByMember(String memId) {
+        List<Project> projects = projectRepository.getProjectList(memId);
+
+        for (Project project : projects) {
+            roomRepository.deleteByRoomProj(project.getProj_code());
+        }
+        projectRepository.deleteAll(projects);
+        projectRepository.flush();
+
+        Path memberDir = dataRoot()
+                .resolve(memId)
+                .toAbsolutePath()
+                .normalize();
+        deleteDirectory(memberDir);
+    }
+
     @Transactional
     public void deleteProject(String memId, String projectId) {
         Project project = getOwnedProject(memId, projectId);
