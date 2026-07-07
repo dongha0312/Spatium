@@ -43,6 +43,8 @@ public class MemberService {
 
     private final LoginAttemptLimiter loginAttemptLimiter;
 
+    private final ProjectService projectService;
+
 
     // 디폴트 이미지 위치.
     private static final String DEFAULT_PROFILE_IMAGE_URL = "http://localhost:8080/images/default-profile.png";
@@ -242,6 +244,35 @@ public class MemberService {
         return data;
     }
 
+    // 내 정보 수정 (PATCH /api/users/me)
+    //  - 전달된 필드만 수정하고, null이면 기존 값을 유지한다.
+    //  - password는 값이 있을 때만 새 비밀번호로 변경 (소셜 회원은 비밀번호가 없으므로 무시)
+    @Transactional
+    public Map<String, Object> updateMyInfo(String memId, String nickname, String birthDate, String password) {
+        Member member = memberRepository.findById(memId)
+            .orElseThrow(() -> new ApiException(404, "USER_NOT_FOUND", "회원을 찾을 수 없습니다."));
+
+        if (nickname != null && !nickname.trim().isEmpty()) {
+            member.setMem_nick(nickname.trim());
+        }
+
+        if (birthDate != null && !birthDate.trim().isEmpty()) {
+            member.setMem_bir(birthDate.trim());
+        }
+
+        // 일반(LOCAL) 회원만 비밀번호 변경 가능 (소셜 회원은 mem_pass가 null)
+        if (password != null && !password.trim().isEmpty()) {
+            if (member.getMem_pass() == null) {
+                throw new ApiException(400, "PASSWORD_NOT_ALLOWED", "소셜 회원은 비밀번호를 변경할 수 없습니다.");
+            }
+            member.setMem_pass(passwordEncoder.encode(password));
+        }
+
+        memberRepository.save(member);
+
+        return getMyInfo(memId);
+    }
+
     // 회원 탈퇴 (DELETE /api/users/me)
     //  - accessToken 탈취만으로 계정을 삭제할 수 없도록 본인 재확인을 요구한다.
     //  - 일반(LOCAL) 회원 : 현재 비밀번호 확인
@@ -274,6 +305,11 @@ public class MemberService {
         }
 
         refreshTokenService.deleteAll(memId);
+
+        // 회원 소유의 프로젝트/룸 레코드와 data/{memId} 폴더(스캔 파일)까지 정리
+        //  - 탈퇴 후에도 개인정보(방 스캔 데이터)가 서버에 남는 것을 방지
+        projectService.deleteAllByMember(memId);
+
         memberRepository.delete(member);
     }
 }

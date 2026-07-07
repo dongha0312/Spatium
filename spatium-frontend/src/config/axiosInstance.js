@@ -14,7 +14,6 @@ import axios from "axios";
 import {
   clearLoginSession,
   getAccessToken,
-  getRefreshToken,
   updateTokens,
 } from "../utils/authSession";
 
@@ -54,20 +53,17 @@ springApi.interceptors.request.use((config) => {
 // 토큰 재발급 (POST /api/auth/token)
 //  - springApi가 아닌 순수 axios를 사용 : 인터셉터 재귀 호출 방지
 //  - 동시에 여러 요청이 401을 받아도 재발급은 1번만 수행 (refreshPromise 공유)
+//  - refreshToken은 httpOnly 쿠키에 있어서 JS가 읽을 수 없고,
+//    같은 출처(proxy 경유) 요청이라 브라우저가 쿠키를 자동으로 실어 보낸다.
+//    새 refreshToken도 응답의 Set-Cookie로 자동 갱신된다.
 let refreshPromise = null;
 
 const reissueTokens = async () => {
-    const refreshToken = getRefreshToken();
-    if (!refreshToken) {
-        throw new Error("저장된 refreshToken이 없습니다.");
-    }
-
-    const res = await axios.post("/api/auth/token", { refreshToken });
+    const res = await axios.post("/api/auth/token");
     const data = res.data?.data;
 
     updateTokens({
         accessToken: data?.accessToken,
-        refreshToken: data?.refreshToken,
     });
 
     return data?.accessToken;

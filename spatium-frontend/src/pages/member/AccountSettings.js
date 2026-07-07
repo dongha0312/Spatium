@@ -1,17 +1,17 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { GoogleLogin } from "@react-oauth/google";
 import "../../styles/accountsettings.css";
-import { clearLoginSession, getLoginSession } from "../../utils/authSession";
-import { deleteMyInfo } from "../../springApi/MemberSpringBootApi";
-
-// 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
-const USER = {
-  initial: "김",
-  name: "김스파티",
-  email: "spatium@example.com",
-  birth: "1998. 06. 07",
-};
+import {
+  clearLoginSession,
+  getLoginSession,
+  saveLoginSession,
+} from "../../utils/authSession";
+import {
+  deleteMyInfo,
+  getMyInfo,
+  patchMyInfo,
+} from "../../springApi/MemberSpringBootApi";
 
 function AccountSettings() {
   const navigate = useNavigate();
@@ -19,6 +19,14 @@ function AccountSettings() {
   // 소셜(구글) 가입 회원 여부 : 회원가입 때 비밀번호를 입력한 적이 없음 -> 바로 계정설정 페이지로
   const session = getLoginSession();
   const isSocialMember = session?.provider && session.provider !== "LOCAL";
+
+  // 백엔드에서 불러온 내 정보 (GET /api/users/me)
+  const [me, setMe] = useState(null);
+
+  // 상단 우측 프로필에 표시할 이름/이니셜 (내 정보 로드 전에는 세션 닉네임 사용)
+  const displayName = me?.nickname || session?.nickname || "회원";
+  const displayInitial = displayName.charAt(0).toUpperCase();
+  const email = me?.email || session?.email || "";
 
   // 계정설정 화면 진입 전 비밀번호 재확인 게이트
   //  - true가 되기 전까지는 아래 실제 설정 화면 대신 비밀번호 입력 화면을 보여줌
@@ -30,10 +38,28 @@ function AccountSettings() {
   const [verifyPassword, setVerifyPassword] = useState("");
   const [verifyError, setVerifyError] = useState("");
 
-  // 계정설정 폼 상태
-  const [nickname, setNickname] = useState(USER.name);
-  const [birth, setBirth] = useState(USER.birth);
+  // 계정설정 폼 상태 (내 정보 로드 후 채워짐)
+  const [nickname, setNickname] = useState("");
+  const [birth, setBirth] = useState("");
   const [password, setPassword] = useState("");
+
+  // 계정설정 페이지 진입 시 내 정보 조회 → 폼/프로필에 반영
+  useEffect(() => {
+    let active = true;
+    getMyInfo()
+      .then((data) => {
+        if (!active) return;
+        setMe(data);
+        setNickname(data.nickname || "");
+        setBirth(data.birthDate || "");
+      })
+      .catch((err) => {
+        console.error("내 정보 조회 실패:", err);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // 프로필 사진 : 컴퓨터에서 선택한 이미지의 미리보기 URL (선택 안 하면 이니셜 표시)
   const [avatarUrl, setAvatarUrl] = useState(null);
@@ -77,14 +103,45 @@ function AccountSettings() {
     setAvatarRemoved(true);
   };
 
-  const handleSave = (e) => {
+  // 저장 중복 클릭 방지
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async (e) => {
     e.preventDefault();
-    alert(`저장되었습니다.\n닉네임 : ${nickname}\n생년월일 : ${birth}`);
+    if (saving) return;
+
+    setSaving(true);
+    try {
+      const updated = await patchMyInfo({
+        nickname,
+        birthDate: birth,
+        // 비밀번호는 입력했을 때만 변경 (비우면 유지)
+        password: password.trim() ? password : undefined,
+      });
+
+      setMe(updated);
+      setNickname(updated.nickname || "");
+      setBirth(updated.birthDate || "");
+      setPassword("");
+
+      // 상단 우측 닉네임 등 다른 화면에 반영되도록 세션도 갱신
+      if (session) {
+        saveLoginSession(session.email, updated.nickname, session.provider, {
+          accessToken: session.accessToken,
+        });
+      }
+
+      alert("저장되었습니다.");
+    } catch (err) {
+      alert(err.message || "저장 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleCancel = () => {
-    setNickname(USER.name);
-    setBirth(USER.birth);
+    setNickname(me?.nickname || "");
+    setBirth(me?.birthDate || "");
     setPassword("");
   };
 
@@ -171,8 +228,8 @@ function AccountSettings() {
           <span className="as-nav-link">룸 인테리어</span>
           <div className="as-nav-right">
             <div className="as-av-btn">
-              <div className="as-av-circ">{USER.initial}</div>
-              <span className="as-av-name">{USER.name}</span>
+              <div className="as-av-circ">{displayInitial}</div>
+              <span className="as-av-name">{displayName}</span>
             </div>
           </div>
         </div>
@@ -235,8 +292,8 @@ function AccountSettings() {
         <span className="as-nav-link">룸 인테리어</span>
         <div className="as-nav-right">
           <div className="as-av-btn">
-            <div className="as-av-circ">{USER.initial}</div>
-            <span className="as-av-name">{USER.name}</span>
+            <div className="as-av-circ">{displayInitial}</div>
+            <span className="as-av-name">{displayName}</span>
           </div>
         </div>
       </div>
@@ -264,7 +321,7 @@ function AccountSettings() {
                 ) : avatarRemoved ? (
                   null
                 ) : (
-                  USER.initial
+                  displayInitial
                 )}
               </div>
               <input
@@ -297,7 +354,7 @@ function AccountSettings() {
             <div className="as-section-title">기본 정보</div>
             <div className="as-field">
               <label className="as-field-label">이메일</label>
-              <input className="as-field-input" value={USER.email} readOnly />
+              <input className="as-field-input" value={email} readOnly />
             </div>
             <div className="as-field">
               <label className="as-field-label">닉네임</label>
@@ -326,8 +383,8 @@ function AccountSettings() {
               />
             </div>
             <div className="as-save-row">
-              <button type="submit" className="as-save-btn">
-                저장
+              <button type="submit" className="as-save-btn" disabled={saving}>
+                {saving ? "저장 중..." : "저장"}
               </button>
               <button
                 type="button"
