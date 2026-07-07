@@ -1,9 +1,34 @@
 import * as THREE from "three";
-import { wallConfigNumber, wallSweepRotationStep } from "./sceneConfig";
+import { optionalConfigBoolean, wallConfigNumber } from "./sceneConfig";
 
 const WALL_PARALLEL_RELAXATION = 0;
 const WALL_ALIGNMENT_RELAXATION_ANGLE = Math.PI / 4;
 const WALL_SLIDE_CONTACT_DISTANCE = 0.08;
+const WALL_MOVEMENT_MARGIN = 1e-4;
+
+function vectorSummary(vector) {
+  return {
+    x: Number(vector.x.toFixed(4)),
+    y: Number(vector.y.toFixed(4)),
+    z: Number(vector.z.toFixed(4)),
+  };
+}
+
+function wallDebugSummary(wall) {
+  return {
+    wallObject: wall.object?.name || "(unnamed wall)",
+    triangleStart: wall.triangleStart,
+    triangleCount: wall.triangleCount,
+    roomFacingNormal: wall.roomFacingNormal
+      ? vectorSummary(wall.roomFacingNormal)
+      : null,
+    roomFacingProjection: wall.roomFacingProjection,
+  };
+}
+
+function shouldLogWallDiagnostics() {
+  return optionalConfigBoolean(["wallConstraints", "logWallDiagnostics"], true);
+}
 
 export function editableObjectLabel(object) {
   const item = object.userData.roomItem;
@@ -461,290 +486,190 @@ function pushObjectOutOfWalls(object, wallColliders) {
   object.updateWorldMatrix(true, false);
 }
 
-export function applyInterpolatedTransform(object, from, to, t, scratch) {
-  scratch.position.lerpVectors(from.position, to.position, t);
-  scratch.quaternion.slerpQuaternions(from.quaternion, to.quaternion, t);
-  scratch.scale.lerpVectors(from.scale, to.scale, t);
+function wallSolidClearance(objectObb, wall) {
+  const axes = [
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+  ];
+  const halfSizes = [
+    wall.obb.halfSize.x,
+    wall.obb.halfSize.y,
+    wall.obb.halfSize.z,
+  ];
+  const thicknessIndex =
+    halfSizes[0] <= halfSizes[1] && halfSizes[0] <= halfSizes[2]
+      ? 0
+      : halfSizes[1] <= halfSizes[2]
+        ? 1
+        : 2;
 
-  object.position.copy(scratch.position);
-  object.quaternion.copy(scratch.quaternion);
-  object.scale.copy(scratch.scale);
-  object.updateWorldMatrix(true, false);
+  wall.obb.rotation.extractBasis(axes[0], axes[1], axes[2]);
+
+  const axis = axes[thicknessIndex].normalize();
+  const offset = objectObb.center.clone().sub(wall.obb.center);
+  const normal = axis.multiplyScalar(offset.dot(axis) >= 0 ? 1 : -1);
+  const objectRadius = projectionRadiusForObb(objectObb, normal);
+  const clearance =
+    Math.abs(offset.dot(axis)) - halfSizes[thicknessIndex] - objectRadius;
+
+  return { normal, clearance };
 }
 
-export function adjustedMovementForWallSlide(movement, blockingWalls) {
+function adjustedMovementForObbBeforeWallCollision(
+  objectObb,
+  movement,
+  wallColliders,
+  onBlockedWall = null,
+) {
+  if (!objectObb || !wallColliders.length || movement.lengthSq() <= 1e-10) {
+    return movement.clone();
+  }
+
   const adjusted = movement.clone();
 
   for (let pass = 0; pass < 4; pass += 1) {
-    blockingWalls.forEach((wall) => {
-      if (!wall.roomFacingNormal) return;
+    let changed = false;
+
+    wallColliders.forEach((wall) => {
+      if (!wall.roomFacingNormal || !Number.isFinite(wall.roomFacingProjection)) {
+        return;
+      }
+
+      const movedObb = objectObb.clone();
+      movedObb.center.add(adjusted);
+      if (!objectOverlapsWallSpan(movedObb, wall)) return;
 
       const normalDistance = adjusted.dot(wall.roomFacingNormal);
-      if (Math.abs(normalDistance) > 1e-10) {
-        adjusted.addScaledVector(wall.roomFacingNormal, -normalDistance);
+      if (normalDistance >= -1e-10) return;
+
+      const radius = projectionRadiusForObb(objectObb, wall.roomFacingNormal);
+      const innerMostProjection =
+        objectObb.center.dot(wall.roomFacingNormal) - radius;
+      const boundaryProjection =
+        wall.roomFacingProjection -
+        wallBoundaryEpsilonForObjectAngle(objectObb, wall);
+      const clearance = innerMostProjection - boundaryProjection;
+      const allowedInwardDistance = Math.max(
+        0,
+        clearance - WALL_MOVEMENT_MARGIN,
+      );
+      const blockedInwardDistance =
+        -normalDistance - allowedInwardDistance;
+
+      if (blockedInwardDistance > 1e-10) {
+        onBlockedWall?.(wall, {
+          type: "boundary",
+          clearance,
+          requestedInwardDistance: -normalDistance,
+          blockedInwardDistance,
+        });
+        adjusted.addScaledVector(
+          wall.roomFacingNormal,
+          blockedInwardDistance,
+        );
+        changed = true;
       }
     });
+
+    wallColliders.forEach((wall) => {
+      const movedObb = objectObb.clone();
+      movedObb.center.add(adjusted);
+      if (!objectOverlapsWallSpan(movedObb, wall)) return;
+      if (
+        !movedObb.intersectsOBB(
+          wall.obb,
+          wallConfigNumber("collisionEpsilon"),
+        )
+      ) {
+        return;
+      }
+
+      const { normal, clearance } = wallSolidClearance(objectObb, wall);
+      const normalDistance = adjusted.dot(normal);
+      if (normalDistance >= -1e-10) return;
+
+      const allowedInwardDistance = Math.max(
+        0,
+        clearance - WALL_MOVEMENT_MARGIN,
+      );
+      const blockedInwardDistance =
+        -normalDistance - allowedInwardDistance;
+
+      if (blockedInwardDistance > 1e-10) {
+        onBlockedWall?.(wall, {
+          type: "solid",
+          clearance,
+          normal: vectorSummary(normal),
+          requestedInwardDistance: -normalDistance,
+          blockedInwardDistance,
+        });
+        adjusted.addScaledVector(normal, blockedInwardDistance);
+        changed = true;
+      }
+    });
+
+    if (!changed) break;
   }
 
   return adjusted;
 }
 
-export function tryApplyWallSlide(
+export function constrainedMovementBeforeWallCollision(
   object,
-  valid,
-  target,
-  blockingWalls,
+  movement,
   wallColliders,
 ) {
-  if (!blockingWalls.length) return false;
-
-  const movement = target.position.clone().sub(valid.position);
-  if (movement.lengthSq() <= 1e-10) return false;
-
-  object.position.copy(valid.position);
-  object.quaternion.copy(valid.quaternion);
-  object.scale.copy(valid.scale);
-  object.updateWorldMatrix(true, false);
-
-  const validObb = worldObbForObject(object);
-  const contactWalls = blockingWalls.filter((wall) =>
-    objectTouchesWallForSlide(validObb, wall),
-  );
-  if (!contactWalls.length) return false;
-
-  const adjustedMovement = adjustedMovementForWallSlide(
-    movement,
-    contactWalls,
-  );
-  if (adjustedMovement.lengthSq() <= 1e-10) return false;
-
-  object.position.copy(valid.position).add(adjustedMovement);
-  object.quaternion.copy(target.quaternion);
-  object.scale.copy(target.scale);
-  object.updateWorldMatrix(true, false);
-
-  if (!hasWallCollision(object, wallColliders)) {
-    rememberValidTransform(object);
-    return true;
+  if (!object || !wallColliders.length || movement.lengthSq() <= 1e-10) {
+    return movement.clone();
   }
 
-  const best = {
-    position: valid.position.clone(),
-    quaternion: valid.quaternion.clone(),
-    scale: valid.scale.clone(),
-  };
-  let low = 0;
-  let high = 1;
-
-  for (let i = 0; i < wallConfigNumber("clampIterations"); i += 1) {
-    const t = (low + high) / 2;
-    object.position.copy(valid.position).addScaledVector(adjustedMovement, t);
-    object.quaternion.copy(target.quaternion);
-    object.scale.copy(target.scale);
-    object.updateWorldMatrix(true, false);
-
-    if (hasWallCollision(object, wallColliders)) {
-      high = t;
-    } else {
-      low = t;
-      best.position.copy(object.position);
-      best.quaternion.copy(object.quaternion);
-      best.scale.copy(object.scale);
-    }
-  }
-
-  if (low > 1e-4) {
-    object.position.copy(best.position);
-    object.quaternion.copy(best.quaternion);
-    object.scale.copy(best.scale);
-    object.updateWorldMatrix(true, false);
-    rememberValidTransform(object);
-    return true;
-  }
-
-  object.position.copy(valid.position);
-  object.quaternion.copy(valid.quaternion);
-  object.scale.copy(valid.scale);
-  object.updateWorldMatrix(true, false);
-  return false;
-}
-
-export function clampObjectToWallBoundary(object, wallColliders) {
-  if (object?.userData.ignoreWallConstraint && wallColliders.length) {
-    const target = {
-      position: object.position.clone(),
-      quaternion: object.quaternion.clone(),
-      scale: object.scale.clone(),
-    };
-    const targetIntersectsWalls = objectIntersectsWalls(object, wallColliders);
-
-    if (!targetIntersectsWalls) {
-      object.userData.ignoreWallConstraint = false;
-      rememberValidTransform(object);
-      return false;
-    }
-
-    const previous = {
-      position: object.userData.lastValidPosition?.clone(),
-      quaternion: object.userData.lastValidQuaternion?.clone(),
-      scale: object.userData.lastValidScale?.clone(),
-    };
-
-    if (!previous.position || !previous.quaternion || !previous.scale) {
-      rememberValidTransform(object);
-      return false;
-    }
-
-    const targetPenetrations = wallBoundaryPenetrationsForObject(
-      object,
-      wallColliders,
-    );
-
-    object.position.copy(previous.position);
-    object.quaternion.copy(previous.quaternion);
-    object.scale.copy(previous.scale);
-    object.updateWorldMatrix(true, false);
-    const previousPenetrations = wallBoundaryPenetrationsForObject(
-      object,
-      wallColliders,
-    );
-
-    object.position.copy(target.position);
-    object.quaternion.copy(target.quaternion);
-    object.scale.copy(target.scale);
-    object.updateWorldMatrix(true, false);
-
-    if (
-      wallBoundaryPenetrationDidNotIncrease(
-        previousPenetrations,
-        targetPenetrations,
-      )
-    ) {
-      rememberValidTransform(object);
-      return false;
-    }
-
-    object.position.copy(previous.position);
-    object.quaternion.copy(previous.quaternion);
-    object.scale.copy(previous.scale);
-    object.updateWorldMatrix(true, false);
-    return true;
-  }
-
-  if (!shouldConstrainToWalls(object) || !wallColliders.length) {
-    rememberValidTransform(object);
-    return false;
-  }
-
-  const valid = {
-    position: object.userData.lastValidPosition?.clone(),
-    quaternion: object.userData.lastValidQuaternion?.clone(),
-    scale: object.userData.lastValidScale?.clone(),
-  };
-  const target = {
-    position: object.position.clone(),
-    quaternion: object.quaternion.clone(),
-    scale: object.scale.clone(),
-  };
-
-  if (!valid.position || !valid.quaternion || !valid.scale) {
-    if (hasWallCollision(object, wallColliders)) {
-      restoreValidTransform(object);
-      return true;
-    }
-
-    rememberValidTransform(object);
-    return false;
-  }
-
-  object.position.copy(valid.position);
-  object.quaternion.copy(valid.quaternion);
-  object.scale.copy(valid.scale);
-  object.updateWorldMatrix(true, false);
-
-  if (hasWallCollision(object, wallColliders)) {
-    restoreValidTransform(object);
-    return true;
-  }
-
-  const scratch = {
-    position: new THREE.Vector3(),
-    quaternion: new THREE.Quaternion(),
-    scale: new THREE.Vector3(),
-  };
-  const distance = valid.position.distanceTo(target.position);
-  const angle = valid.quaternion.angleTo(target.quaternion);
-  const sweepSteps = Math.min(
-    wallConfigNumber("sweepMaxSteps"),
-    Math.max(
-      1,
-      Math.ceil(distance / wallConfigNumber("sweepStep")),
-      Math.ceil(angle / wallSweepRotationStep()),
+  const totalDistance = movement.length();
+  const stepSize = Math.max(
+    0.005,
+    Math.min(
+      wallConfigNumber("sweepStep"),
+      wallConfigNumber("colliderHalfThickness") * 2,
     ),
   );
-  let low = 0;
-  let high = null;
+  const stepCount = Math.max(1, Math.ceil(totalDistance / stepSize));
+  const requestedStep = movement.clone().multiplyScalar(1 / stepCount);
+  const objectObb = worldObbForObject(object);
+  const constrained = new THREE.Vector3();
+  const blockedWalls = [];
+  const blockedWallSet = new Set();
 
-  for (let i = 1; i <= sweepSteps; i += 1) {
-    const t = i / sweepSteps;
-    applyInterpolatedTransform(object, valid, target, t, scratch);
+  object.userData.blockedWallColliders = blockedWalls;
 
-    if (hasWallCollision(object, wallColliders)) {
-      high = t;
-      break;
+  const rememberBlockedWall = (wall, details) => {
+    if (blockedWallSet.has(wall)) return;
+
+    blockedWallSet.add(wall);
+    blockedWalls.push(wall);
+    if (shouldLogWallDiagnostics()) {
+      console.debug("[testThree] wall movement blocked", {
+        object: editableObjectLabel(object),
+        ...wallDebugSummary(wall),
+        ...details,
+      });
     }
-
-    low = t;
-  }
-
-  if (high === null) {
-    object.position.copy(target.position);
-    object.quaternion.copy(target.quaternion);
-    object.scale.copy(target.scale);
-    object.updateWorldMatrix(true, false);
-    rememberValidTransform(object);
-    return false;
-  }
-
-  applyInterpolatedTransform(object, valid, target, high, scratch);
-  if (
-    tryApplyWallSlide(
-      object,
-      valid,
-      target,
-      getIntersectingWalls(object, wallColliders),
-      wallColliders,
-    )
-  ) {
-    return true;
-  }
-
-  const best = {
-    position: valid.position.clone(),
-    quaternion: valid.quaternion.clone(),
-    scale: valid.scale.clone(),
   };
 
-  for (let i = 0; i < wallConfigNumber("clampIterations"); i += 1) {
-    const t = (low + high) / 2;
-    applyInterpolatedTransform(object, valid, target, t, scratch);
+  for (let step = 0; step < stepCount; step += 1) {
+    const adjustedStep = adjustedMovementForObbBeforeWallCollision(
+      objectObb,
+      requestedStep,
+      wallColliders,
+      rememberBlockedWall,
+    );
 
-    if (hasWallCollision(object, wallColliders)) {
-      high = t;
-    } else {
-      low = t;
-      best.position.copy(object.position);
-      best.quaternion.copy(object.quaternion);
-      best.scale.copy(object.scale);
-    }
+    if (adjustedStep.lengthSq() <= 1e-10) break;
+
+    objectObb.center.add(adjustedStep);
+    constrained.add(adjustedStep);
   }
 
-  object.position.copy(best.position);
-  object.quaternion.copy(best.quaternion);
-  object.scale.copy(best.scale);
-  object.updateWorldMatrix(true, false);
-  rememberValidTransform(object);
-  return true;
+  return constrained;
 }
 
 export function setFurnitureVisualState(object, selectedObject) {
@@ -785,13 +710,22 @@ export function refreshCollisionState(
 ) {
   editableObjects.forEach((object) => {
     object.userData.collisions = [];
+    object.userData.intersectingWallColliders = [];
   });
 
   editableObjects.forEach((object) => {
-    if (
-      shouldCheckFurnitureCollision(object) &&
-      objectIntersectsWalls(object, wallColliders)
-    ) {
+    if (!shouldCheckFurnitureCollision(object)) return;
+
+    const intersectingWalls = getIntersectingWalls(object, wallColliders);
+    object.userData.intersectingWallColliders = intersectingWalls;
+
+    if (intersectingWalls.length) {
+      if (object === selectedObject && shouldLogWallDiagnostics()) {
+        console.debug("[testThree] furniture wall collision", {
+          object: editableObjectLabel(object),
+          walls: intersectingWalls.map(wallDebugSummary),
+        });
+      }
       object.userData.collisions.push("wall");
     }
   });
