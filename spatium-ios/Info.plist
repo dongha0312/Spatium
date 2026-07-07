@@ -22,8 +22,8 @@
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
+		<!-- ATS 전역 해제(NSAllowsArbitraryLoads)는 제거함. -->
+		<!-- 평문 HTTP는 아래 NSExceptionDomains에 명시된 개발 서버로만 허용한다. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 		<key>NSExceptionDomains</key>

@@ -91,8 +91,8 @@ function SignupPage() {
         loginData.user?.nickname || nickname,
         isGoogleSignup ? "GOOGLE" : "LOCAL",
         {
+          // refreshToken은 httpOnly 쿠키로 관리되므로 저장하지 않음
           accessToken: loginData.accessToken,
-          refreshToken: loginData.refreshToken,
         },
       );
       navigate("/");
