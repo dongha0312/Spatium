@@ -385,13 +385,22 @@ function ThreeDEditor() {
               <input
                 className="ed-cat-search"
                 type="search"
-                placeholder="Search furniture"
+                placeholder="가구 검색하기"
                 value={catalogSearch}
                 onChange={(event) => setCatalogSearch(event.target.value)}
               />
             </div>
 
             <div className="ed-cat-filters">
+              <button
+                type="button"
+                className={`ed-cat-filter ed-cat-filter-more${
+                  activeCategory === null ? " ed-active" : ""
+                }`}
+                onClick={showAllCategories}
+              >
+                All
+              </button>
               {categoryFilters.map((category) => (
                 <button
                   key={category}
@@ -402,15 +411,6 @@ function ThreeDEditor() {
                   {category}
                 </button>
               ))}
-              <button
-                type="button"
-                className={`ed-cat-filter ed-cat-filter-more${
-                  activeCategory === null ? " ed-active" : ""
-                }`}
-                onClick={showAllCategories}
-              >
-                All
-              </button>
             </div>
 
             <div className="ed-cat-products">
@@ -592,7 +592,7 @@ function ThreeDEditor() {
             onClick={handleCancel}
             disabled={isSaving}
           >
-            Cancel
+            마이페이지로 돌아가기
           </button>
           <button
             type="button"
@@ -600,7 +600,7 @@ function ThreeDEditor() {
             onClick={handleSaveRoom}
             disabled={isSaving}
           >
-            {isSaving ? "Saving..." : "Save"}
+            {isSaving ? "저장중..." : "저장하기"}
           </button>
         </div>
       </div>
