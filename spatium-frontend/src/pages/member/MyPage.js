@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import "../../styles/mypage.css";
 import { clearLoginSession, getAccessToken } from "../../utils/authSession";
@@ -18,24 +18,14 @@ import { deleteRoom } from "../../springApi/RoomSpringBootApi";
 import Footer from "../../components/Footer";
 
 const DEFAULT_USER = {
-  initial: "",
+  initial: "S",
 
-  name: "",
-  fullName: "",
+  name: "SPATIUM",
+  fullName: "SPATIUM",
   handle: "",
   email: "",
   profileImage: null,
 };
-
-// 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
-// const USER = {
-//   initial: "김",
-//   name: "김스파티",
-//   fullName: "김스파티움",
-//   handle: "@spatium_kim",
-//   email: "spatium@example.com",
-//   birth: "1998. 06. 07",
-// };
 
 function normalizeUser(data) {
   const nickname = data?.nickname || data?.email?.split("@")[0] || "SPATIUM";
@@ -90,6 +80,7 @@ function MyPage() {
   const [modalError, setModalError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState(null);
+  const autoModalHandled = useRef(false);
 
   const loadDashboard = useCallback(async () => {
     if (!getAccessToken()) {
@@ -129,12 +120,24 @@ function MyPage() {
   // 홈에서 "시작하기"로 진입한 경우 새 프로젝트 모달 자동 오픈
   useEffect(() => {
     if (location.state?.openNewProject) {
+      autoModalHandled.current = true;
       openProjectModal("project");
       // 새로고침/뒤로가기 시 모달이 다시 열리지 않도록 state 제거
       navigate(location.pathname, { replace: true, state: {} });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 마이페이지 진입 시 프로젝트가 하나도 없으면 새 프로젝트 모달 자동 오픈
+  useEffect(() => {
+    if (loading || autoModalHandled.current) return;
+
+    autoModalHandled.current = true;
+    if (projects.length === 0) {
+      openProjectModal("project");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, projects]);
 
   const totalRoomCount = projects.reduce((sum, p) => sum + p.rooms.length, 0);
   const totalFurnitureCount = projects.reduce(
@@ -405,6 +408,7 @@ function MyPage() {
               )}
             </div>
             <span className="mp-av-name">{user.name}</span>
+            <span className="mp-av-caret">⌄</span>
           </button>
         </div>
       </div>
