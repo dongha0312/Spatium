@@ -143,6 +143,7 @@
   display: flex;
   min-height: 0;
   position: relative;
+  overflow-x: hidden;
 }
 
 .mp-sidebar {
@@ -570,10 +571,23 @@
   z-index: 10;
   display: flex;
   flex-direction: column;
+  will-change: transform, opacity;
 }
 
 .mp-panel.mp-panel-open {
   transform: translateX(0);
+  animation: mp-panel-slide-in .26s cubic-bezier(.22, 1, .36, 1);
+}
+
+@keyframes mp-panel-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .mp-panel-head {

@@ -11,6 +11,7 @@ import {
 } from "../../springApi/ProjectSpringBootAPi";
 import { getRoomList, patchRoom, postRoom } from "../../springApi/RoomSpringBootApi";
 import { deleteRoom } from "../../springApi/RoomSpringBootApi";
+import Footer from "../../components/Footer";
 
 const DEFAULT_USER = {
   initial: "S",
@@ -542,7 +543,9 @@ function MyPage() {
             </div>
           </div>
 
-          <div className={`mp-panel${panelOpen ? " mp-panel-open" : ""}`}>
+            {/* 내 정보 오른쪽 모달*/}
+          {panelOpen && (
+          <div className="mp-panel mp-panel-open">
             <div className="mp-panel-head">
               <div className="mp-panel-title">내 정보</div>
               <button className="mp-panel-close" onClick={togglePanel}>
@@ -589,6 +592,7 @@ function MyPage() {
               </button>
             </div>
           </div>
+          )}
         </div>
       </div>
 
@@ -676,6 +680,8 @@ function MyPage() {
           </form>
         </div>
       )}
+              <Footer/>
+
     </div>
   );
 }

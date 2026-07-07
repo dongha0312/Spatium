@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../styles/homepage.css";
 import { getLoginSession } from "../utils/authSession";
+import Footer from "../components/Footer";
 
 // 이용 순서 소개 (4단계)
 const STEPS = [
@@ -136,6 +137,7 @@ function HomePage() {
           ))}
         </div>
       </div>
+        <Footer/>
 
       {/* 개발용 바로가기 (배포 전 제거 예정) */}
       <div

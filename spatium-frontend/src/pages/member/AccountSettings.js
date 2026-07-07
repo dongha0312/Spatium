@@ -4,6 +4,7 @@ import { GoogleLogin } from "@react-oauth/google";
 import "../../styles/accountsettings.css";
 import { clearLoginSession, getLoginSession } from "../../utils/authSession";
 import { deleteMyInfo } from "../../springApi/MemberSpringBootApi";
+import Footer from "../../components/Footer";
 
 // 데모용 사용자 정보 (추후 백엔드 연동 시 API 응답으로 대체)
 const USER = {
@@ -23,7 +24,7 @@ function AccountSettings() {
   // 계정설정 화면 진입 전 비밀번호 재확인 게이트
   //  - true가 되기 전까지는 아래 실제 설정 화면 대신 비밀번호 입력 화면을 보여줌
   //  - 소셜 가입 회원은 비밀번호가 없으므로 처음부터 통과 상태로 시작함
-  
+
   //  - TODO: 일반 회원 쪽도 지금은 프론트 UI만 먼저 만든 상태라 실제 검증 없이 통과시킴.
   //          추후 백엔드 비밀번호 검증 API 연동 예정.
   const [verified, setVerified] = useState(isSocialMember);
@@ -177,7 +178,10 @@ function AccountSettings() {
         </div>
 
         <div className="as-body">
-          <div className="as-main" style={{ maxWidth: 420, margin: "60px auto" }}>
+          <div
+            className="as-main"
+            style={{ maxWidth: 420, margin: "60px auto" }}
+          >
             <form className="as-section" onSubmit={handleVerifySubmit}>
               <div className="as-section-title">비밀번호 확인</div>
               <div style={{ marginBottom: 16, color: "#8a8a8a", fontSize: 14 }}>
@@ -256,12 +260,16 @@ function AccountSettings() {
           <div className="as-section">
             <div className="as-section-title">프로필</div>
             <div className="as-profile-row">
-              <div className={`as-avatar${avatarUrl ? "" : avatarRemoved ? " as-avatar-empty" : ""}`}>
+              <div
+                className={`as-avatar${avatarUrl ? "" : avatarRemoved ? " as-avatar-empty" : ""}`}
+              >
                 {avatarUrl ? (
-                  <img className="as-avatar-img" src={avatarUrl} alt="프로필 사진" />
-                ) : avatarRemoved ? (
-                  null
-                ) : (
+                  <img
+                    className="as-avatar-img"
+                    src={avatarUrl}
+                    alt="프로필 사진"
+                  />
+                ) : avatarRemoved ? null : (
                   USER.initial
                 )}
               </div>
@@ -352,7 +360,9 @@ function AccountSettings() {
             </div>
             {socialWithdrawPending && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ marginBottom: 8, color: "#8a8a8a", fontSize: 13 }}>
+                <div
+                  style={{ marginBottom: 8, color: "#8a8a8a", fontSize: 13 }}
+                >
                   본인 확인을 위해 구글 로그인을 한 번 더 진행해주세요.
                 </div>
                 <GoogleLogin
@@ -368,6 +378,7 @@ function AccountSettings() {
           </div>
         </div>
       </div>
+      <Footer />
     </div>
   );
 }
