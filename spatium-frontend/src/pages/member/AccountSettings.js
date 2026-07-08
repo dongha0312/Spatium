@@ -362,6 +362,7 @@ function AccountSettings() {
               initial={displayInitial.toUpperCase()}
               name={displayName}
               onClick={togglePanel}
+              showCaret={false}
             />
           </div>
         </div>
@@ -445,16 +446,18 @@ function AccountSettings() {
                 onChange={(e) => setBirth(e.target.value)}
               />
             </div>
-            <div className="as-field">
-              <label className="as-field-label">비밀번호</label>
-              <input
-                className="as-field-input"
-                type="password"
-                value={password}
-                placeholder="변경 시에만 입력하세요"
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+            {!isSocialMember && (
+              <div className="as-field">
+                <label className="as-field-label">비밀번호</label>
+                <input
+                  className="as-field-input"
+                  type="password"
+                  value={password}
+                  placeholder="변경 시에만 입력하세요"
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            )}
             <div className="as-save-row">
               <button type="submit" className="as-save-btn" disabled={saving}>
                 {saving ? "저장 중..." : "저장"}
@@ -512,7 +515,7 @@ function AccountSettings() {
           name: displayName,
           initial: displayInitial,
           imageUrl: avatarUrl,
-          subtext: email ? `@${email}` : "",
+          subtext: email ? `${email}` : "",
         }}
         statItems={[
           { label: "프로젝트", value: stats.projectCount },

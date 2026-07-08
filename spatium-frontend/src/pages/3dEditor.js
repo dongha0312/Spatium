@@ -11,10 +11,7 @@ import AccountPanel from "../components/AccountPanel";
 import AvatarButton from "../components/AvatarButton";
 import Logo from "../components/Logo";
 import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
-import {
-  getAccessToken,
-  getLoginSession,
-} from "../utils/authSession";
+import { getAccessToken, getLoginSession } from "../utils/authSession";
 import { getMyInfo } from "../springApi/MemberSpringBootApi";
 import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
 import { getRoomList, getRoomSceneData } from "../springApi/RoomSpringBootApi";
@@ -436,6 +433,7 @@ function ThreeDEditor() {
               initial={session.nickname.charAt(0).toUpperCase()}
               name={session.nickname}
               onClick={toggleAccountPanel}
+              showCaret={false}
             />
           </div>
         ) : (
@@ -738,7 +736,7 @@ function ThreeDEditor() {
           name: session?.nickname,
           initial: session?.nickname?.charAt(0).toUpperCase(),
           imageUrl: profileImage,
-          subtext: session?.email ? `@${session.email}` : "",
+          subtext: session?.email ? `${session.email}` : "",
         }}
         statItems={[
           { label: "프로젝트", value: accountStats.projectCount },
