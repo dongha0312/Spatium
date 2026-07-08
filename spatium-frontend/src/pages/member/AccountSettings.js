@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { GoogleLogin } from "@react-oauth/google";
 import "../../styles/accountsettings.css";
+import AccountPanel from "../../components/AccountPanel";
+import AvatarButton from "../../components/AvatarButton";
 import Footer from "../../components/Footer";
 import {
   clearLoginSession,
@@ -395,16 +397,13 @@ function AccountSettings() {
               마이페이지
             </button>
             {/* 닉네임 클릭 : 우측 "내 정보" 패널 열기 */}
-            <button
-              type="button"
-              className="as-av-btn"
+            <AvatarButton
+              prefix="as"
+              imageUrl={avatarUrl}
+              initial={displayInitial}
+              name={displayName}
               onClick={togglePanel}
-              aria-label="내 정보 열기"
-            >
-              <div className="as-av-circ">{avatarNode}</div>
-              <span className="as-av-name">{displayName}</span>
-              <span className="as-av-caret">⌄</span>
-            </button>
+            />
           </div>
         </div>
       </div>
@@ -547,74 +546,24 @@ function AccountSettings() {
       <Footer />
 
       {/* 닉네임 클릭 시 열리는 "내 정보" 우측 패널 */}
-      {panelOpen && (
-        <>
-          <div className="as-scrim" onClick={() => setPanelOpen(false)}></div>
-          <div className="as-panel">
-            <div className="as-panel-head">
-              <div className="as-panel-title">내 정보</div>
-              <button
-                className="as-panel-close"
-                onClick={() => setPanelOpen(false)}
-                aria-label="닫기"
-              >
-                ×
-              </button>
-            </div>
-            <div className="as-panel-body">
-              <span className="as-panel-label">기본정보</span>
-              <button className="as-panel-profile" onClick={handleGoAccount}>
-                <div className="as-panel-avatar">
-                  {avatarUrl ? (
-                    <img
-                      className="as-panel-avatar-img"
-                      src={avatarUrl}
-                      alt=""
-                    />
-                  ) : (
-                    displayInitial
-                  )}
-                </div>
-                <div>
-                  <div className="as-panel-pname">{displayName}</div>
-                  <div className="as-panel-pnick">@{email}</div>
-                </div>
-                <span className="as-panel-arrow">›</span>
-              </button>
-
-              <span className="as-panel-label">이용현황</span>
-              <div className="as-panel-stats">
-                <div className="as-panel-stat">
-                  <span className="as-panel-stat-num">
-                    {stats.projectCount}
-                  </span>
-                  <span className="as-panel-stat-label">프로젝트</span>
-                </div>
-                <div className="as-panel-stat">
-                  <span className="as-panel-stat-num">
-                    {stats.furnitureCount}
-                  </span>
-                  <span className="as-panel-stat-label">배치 가구</span>
-                </div>
-              </div>
-            </div>
-            <div className="as-panel-foot">
-              <button
-                className="as-panel-foot-btn as-panel-sub"
-                onClick={handleLogout}
-              >
-                로그아웃
-              </button>
-              <button
-                className="as-panel-foot-btn as-panel-main"
-                onClick={handleGoAccount}
-              >
-                계정설정
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      <AccountPanel
+        open={panelOpen}
+        prefix="as"
+        profile={{
+          name: displayName,
+          initial: displayInitial,
+          imageUrl: avatarUrl,
+          subtext: email ? `@${email}` : "",
+        }}
+        statItems={[
+          { label: "프로젝트", value: stats.projectCount },
+          { label: "배치 가구", value: stats.furnitureCount },
+        ]}
+        onClose={() => setPanelOpen(false)}
+        onProfileClick={handleGoAccount}
+        onLogout={handleLogout}
+        onAccountClick={handleGoAccount}
+      />
     </div>
   );
 }

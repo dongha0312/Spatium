@@ -7,6 +7,8 @@ import React, {
 } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import "../styles/3deditor.css";
+import AccountPanel from "../components/AccountPanel";
+import AvatarButton from "../components/AvatarButton";
 import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
 import {
   clearLoginSession,
@@ -458,22 +460,13 @@ function ThreeDEditor() {
               마이페이지
             </button>
             {/* 닉네임 클릭 : 우측 "내 정보" 패널 열기 */}
-            <button
-              type="button"
-              className="ed-av-btn"
+            <AvatarButton
+              prefix="ed"
+              imageUrl={profileImage}
+              initial={session.nickname.charAt(0).toUpperCase()}
+              name={session.nickname}
               onClick={toggleAccountPanel}
-              aria-label="내 정보 열기"
-            >
-              <div className="ed-av-circ">
-                {profileImage ? (
-                  <img className="ed-av-img" src={profileImage} alt="" />
-                ) : (
-                  session.nickname.charAt(0).toUpperCase()
-                )}
-              </div>
-              <span className="ed-av-name">{session.nickname}</span>
-              <span className="ed-av-caret">⌄</span>
-            </button>
+            />
           </div>
         ) : (
           <Link to="/member/mypage" className="ed-av-btn">
@@ -768,70 +761,24 @@ function ThreeDEditor() {
       </div>
 
       {/* 닉네임 클릭 시 열리는 "내 정보" 우측 패널 */}
-      {session && panelOpen && (
-        <>
-          <div className="ed-scrim" onClick={() => setPanelOpen(false)}></div>
-          <div className="ed-panel">
-            <div className="ed-panel-head">
-              <div className="ed-panel-title">내 정보</div>
-              <button
-                className="ed-panel-close"
-                onClick={() => setPanelOpen(false)}
-                aria-label="닫기"
-              >
-                ×
-              </button>
-            </div>
-            <div className="ed-panel-body">
-              <span className="ed-panel-label">기본정보</span>
-              <button className="ed-panel-profile" onClick={handleGoAccount}>
-                <div className="ed-panel-avatar">
-                  {profileImage ? (
-                    <img className="ed-panel-avatar-img" src={profileImage} alt="" />
-                  ) : (
-                    session.nickname.charAt(0).toUpperCase()
-                  )}
-                </div>
-                <div>
-                  <div className="ed-panel-pname">{session.nickname}</div>
-                  <div className="ed-panel-pnick">@{session.email}</div>
-                </div>
-                <span className="ed-panel-arrow">›</span>
-              </button>
-
-              <span className="ed-panel-label">이용현황</span>
-              <div className="ed-panel-stats">
-                <div className="ed-panel-stat">
-                  <span className="ed-panel-stat-num">
-                    {accountStats.projectCount}
-                  </span>
-                  <span className="ed-panel-stat-label">프로젝트</span>
-                </div>
-                <div className="ed-panel-stat">
-                  <span className="ed-panel-stat-num">
-                    {accountStats.furnitureCount}
-                  </span>
-                  <span className="ed-panel-stat-label">배치 가구</span>
-                </div>
-              </div>
-            </div>
-            <div className="ed-panel-foot">
-              <button
-                className="ed-panel-foot-btn ed-panel-sub"
-                onClick={handleLogout}
-              >
-                로그아웃
-              </button>
-              <button
-                className="ed-panel-foot-btn ed-panel-main"
-                onClick={handleGoAccount}
-              >
-                계정설정
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      <AccountPanel
+        open={Boolean(session && panelOpen)}
+        prefix="ed"
+        profile={{
+          name: session?.nickname,
+          initial: session?.nickname?.charAt(0).toUpperCase(),
+          imageUrl: profileImage,
+          subtext: session?.email ? `@${session.email}` : "",
+        }}
+        statItems={[
+          { label: "프로젝트", value: accountStats.projectCount },
+          { label: "배치 가구", value: accountStats.furnitureCount },
+        ]}
+        onClose={() => setPanelOpen(false)}
+        onProfileClick={handleGoAccount}
+        onLogout={handleLogout}
+        onAccountClick={handleGoAccount}
+      />
     </div>
   );
 }
