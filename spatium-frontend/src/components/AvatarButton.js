@@ -1,3 +1,4 @@
+// 상단 사용자 아바타 버튼 UI를 페이지별 prefix 스타일로 재사용합니다.
 function AvatarButton({
   prefix,
   imageUrl,

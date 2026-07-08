@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import "../styles/footer.css";
 
+// 쿠키 정책과 개인정보처리방침 링크를 포함한 공통 하단 Footer입니다.
 const Footer = () => {
   return (
     <div className="site-footer">

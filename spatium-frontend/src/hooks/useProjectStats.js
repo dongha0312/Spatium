@@ -6,6 +6,7 @@ const EMPTY_STATS = {
   roomCount: 0,
 };
 
+// API 응답의 count 값을 화면 표시용 숫자로 안전하게 변환합니다.
 function toCount(value) {
   const count = Number(value);
   return Number.isFinite(count) ? count : 0;
@@ -22,6 +23,7 @@ function useProjectStats(enabled) {
 
     let active = true;
 
+    // 계정 패널 통계는 프로젝트 목록의 roomCount 값만 기준으로 계산합니다.
     getProjectList()
       .then((page) => {
         if (!active) return;
