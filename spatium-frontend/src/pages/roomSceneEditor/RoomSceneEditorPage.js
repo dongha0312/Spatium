@@ -30,12 +30,15 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     error,
     selectedItem,
     selectedRotationDegrees,
+    selectedElevationCm,
+    selectedMaxElevationCm,
     isReplacingSelected,
     collisionSummary,
     canSaveJson,
     addFurniture,
     deleteSelectedObject,
     setSelectedRotationDegrees,
+    setSelectedElevationCm,
     saveEditedSceneJson,
     startReplaceSelectedObject,
   } = useRoomSceneEditor({
@@ -50,9 +53,14 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     selectedItem?.sourceType,
   );
   const canDeleteSelected = selectedItem?.sourceType === "object";
+  const canShowElevationControl = selectedItem?.sourceType === "object";
 
   const handleRotationChange = (event) => {
     setSelectedRotationDegrees(snapRotation(Number(event.target.value)));
+  };
+
+  const handleElevationChange = (event) => {
+    setSelectedElevationCm(Number(event.target.value));
   };
 
   useImperativeHandle(
@@ -95,6 +103,12 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
               <dt>Rotation</dt>
               <dd>{selectedRotationDegrees} deg</dd>
             </div>
+            {canShowElevationControl && (
+              <div>
+                <dt>Elevation</dt>
+                <dd>{selectedElevationCm} cm</dd>
+              </div>
+            )}
           </dl>
           {selectedItem.collision?.hasCollision && (
             <div className="room-scene-editor-info-warning">
@@ -131,6 +145,25 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
               </div>
             </div>
           </div>
+          {canShowElevationControl && selectedMaxElevationCm > 0 && (
+            <div className="room-scene-editor-elevation-panel">
+              <div className="room-scene-editor-elevation-value">
+                {selectedElevationCm} cm
+              </div>
+              <div className="room-scene-editor-elevation-track-wrap">
+                <input
+                  type="range"
+                  className="room-scene-editor-elevation-slider"
+                  min="0"
+                  max={selectedMaxElevationCm}
+                  step="1"
+                  value={selectedElevationCm}
+                  onChange={handleElevationChange}
+                  aria-label="Elevation from floor"
+                />
+              </div>
+            </div>
+          )}
           <div className="room-scene-editor-selection-toolbar">
             <button
               type="button"

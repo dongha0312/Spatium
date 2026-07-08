@@ -6,6 +6,9 @@ export function useSelectionState() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedRotationDegrees, setSelectedRotationDegreesState] =
     useState(0);
+  const [selectedElevationCm, setSelectedElevationCmState] = useState(0);
+  const [selectedMaxElevationCm, setSelectedMaxElevationCmState] =
+    useState(0);
   const [isReplacingSelected, setReplacingSelected] = useState(false);
 
   const setReplaceMode = useCallback((active) => {
@@ -20,6 +23,10 @@ export function useSelectionState() {
     setSelectedItem,
     selectedRotationDegrees,
     setSelectedRotationDegreesState,
+    selectedElevationCm,
+    setSelectedElevationCmState,
+    selectedMaxElevationCm,
+    setSelectedMaxElevationCmState,
     isReplacingSelected,
     setReplaceMode,
     canResetSelected: selectedItem?.sourceType === "object",

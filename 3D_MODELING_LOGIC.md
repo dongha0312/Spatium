@@ -273,6 +273,20 @@ constrainedMovementBeforeWallCollision()
 
 이동 가능한 대상은 일반 가구다. 문/창문은 선택 및 교체는 가능하지만 벽 충돌 제약 대상에서는 제외된다.
 
+### 높이(수직) 이동
+
+포인터 드래그는 바닥 평면(X-Z) 이동만 처리하며 `object.position.y`는 드래그 도중 항상 시작 높이로 고정된다. 수직 이동은 별도의 높이 슬라이더(`setSelectedElevationCm`)로만 가능하다.
+
+| 항목 | 설명 |
+| --- | --- |
+| 대상 | `sourceType: "object"`인 일반 가구만 (`canTransformObject()`가 true인 오브젝트) |
+| 값 정의 | 바닥에서 가구 바닥면까지의 간격(cm). 0이면 바닥에 놓인 상태 |
+| 범위 | `0 ~ (천장Y - 바닥Y - 가구높이)`를 cm로 환산한 값. `useRoomSceneEditor`의 `elevationBoundsForObject()`가 매 선택마다 계산 |
+| 충돌 처리 | 높이 변경 후 `hasWallCollision()`이 true이면 이전 위치로 되돌림(회전 슬라이더와 동일 패턴) |
+| UI | `RoomSceneEditorPage.js`의 `room-scene-editor-elevation-panel` 슬라이더, 최대 이동 범위가 0보다 클 때만 표시 |
+
+가구를 벽에 자동으로 붙이거나 끌어당기는 스냅 로직은 없다. 이 높이 슬라이더도 스냅이 아니라 사용자가 직접 값을 지정하는 방식이다.
+
 ### 회전
 
 회전은 두 경로가 있다.
@@ -491,7 +505,7 @@ POST /api/rooms/save
 
 - 방 씬 데이터는 API의 `roomScene`을 우선 사용한다.
 - 저장된 `_spatiumRoom`이 있으면 원본 USD 모델보다 먼저 복원된다.
-- 일반 가구는 추가, 이동, 회전, 삭제, 교체가 가능하다.
+- 일반 가구는 추가, 이동, 회전, 높이(수직) 조정, 삭제, 교체가 가능하다.
 - 문과 창문은 reference object이며, 기존 reference를 같은 계열 모델로 교체하는 방식이다.
 - 충돌 판정은 object OBB와 wall collider 기준이다.
 - 이동은 충돌 후 되돌리는 방식이 아니라, 적용 전 movement vector를 제한하는 방식이다.

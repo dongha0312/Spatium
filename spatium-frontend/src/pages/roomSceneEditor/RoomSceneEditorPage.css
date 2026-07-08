@@ -209,6 +209,41 @@
   background: rgba(255, 255, 255, 0.75);
 }
 
+.room-scene-editor-elevation-panel {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+}
+
+.room-scene-editor-elevation-value {
+  min-width: 38px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: rgba(28, 28, 28, 0.96);
+  color: #fff;
+  font: 800 14px Arial, Helvetica, sans-serif;
+  text-align: center;
+}
+
+.room-scene-editor-elevation-track-wrap {
+  position: relative;
+  width: 320px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  border-radius: 18px;
+  background: rgba(28, 28, 28, 0.96);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.22);
+}
+
+.room-scene-editor-elevation-slider {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  accent-color: #fff;
+}
+
 .room-scene-editor-selection-toolbar {
   display: flex;
   align-items: center;
@@ -337,7 +372,8 @@
     width: calc(100% - 24px);
   }
 
-  .room-scene-editor-rotation-track-wrap {
+  .room-scene-editor-rotation-track-wrap,
+  .room-scene-editor-elevation-track-wrap {
     width: 100%;
     max-width: 320px;
   }
