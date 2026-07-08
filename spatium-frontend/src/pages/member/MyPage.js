@@ -19,6 +19,7 @@ import AccountPanel from "../../components/AccountPanel";
 import AvatarButton from "../../components/AvatarButton";
 import Footer from "../../components/Footer";
 import Logo from "../../components/Logo";
+import MakeRoom from "../../components/MakeRoom";
 import useLogout from "../../hooks/useLogout";
 
 const DEFAULT_USER = {
@@ -52,12 +53,6 @@ function normalizeRoom(room) {
     updatedAt: room.updatedAt || "-",
     furnitureCount: 0,
   };
-}
-
-function formatFileSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function normalizeProject(project, rooms = []) {
@@ -590,187 +585,33 @@ function MyPage() {
         </div>
       </div>
 
-      {modalOpen && (
-        <div className="mp-modal-backdrop" onClick={handleBackdropClick}>
-          <form
-            className="mp-dialog"
-            role="dialog"
-            aria-modal="true"
-            onSubmit={submitProjectModal}
-          >
-            <div className="mp-dialog-head">
-              <div className="mp-dialog-title-group">
-                <div className="mp-dialog-title">
-                  {modalMode === "room" ? "새 룸 만들기" : "새 프로젝트"}
-                </div>
-                {modalMode === "room" && modalTargetProject && (
-                  <div className="mp-dialog-sub">
-                    {modalTargetProject.name} 프로젝트에 추가됩니다
-                  </div>
-                )}
-              </div>
-              <button
-                type="button"
-                className="mp-dialog-close"
-                onClick={closeProjectModal}
-              >
-                ×
-              </button>
-            </div>
-            <div className="mp-modal-field">
-              <label htmlFor="mp-name-input">
-                {modalMode === "room" ? "룸 이름" : "프로젝트명"}
-              </label>
-              <input
-                id="mp-name-input"
-                type="text"
-                placeholder={
-                  modalMode === "room"
-                    ? "룸명을 입력하세요"
-                    : "프로젝트명을 입력하세요"
-                }
-                autoComplete="off"
-                value={nameInput}
-                onChange={(e) => {
-                  setNameInput(e.target.value);
-                  if (modalError) setModalError("");
-                }}
-                autoFocus
-              />
-              {modalMode === "room" && (
-                <>
-                  <label htmlFor="mp-metadata-input">Metadata JSON</label>
-                  <input
-                    ref={metadataFileInputRef}
-                    id="mp-metadata-input"
-                    type="file"
-                    accept="application/json,.json"
-                    className="mp-dz-input"
-                    onChange={(event) =>
-                      setMetadataFile(event.target.files?.[0] || null)
-                    }
-                  />
-                  <label
-                    htmlFor="mp-metadata-input"
-                    className={`mp-dropzone${metadataFile ? " is-filled" : ""}`}
-                  >
-                    <span className="mp-dz-icon">
-                      <svg
-                        width="17"
-                        height="17"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                      >
-                        <path
-                          d="M6 2h9l5 5v15a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z"
-                          stroke="currentColor"
-                          strokeWidth="1.6"
-                        />
-                      </svg>
-                    </span>
-                    <span className="mp-dz-text">
-                      <span className="mp-dz-title">
-                        {metadataFile
-                          ? metadataFile.name
-                          : "클릭하거나 파일을 끌어다 놓으세요"}
-                      </span>
-                      <span className="mp-dz-ext">
-                        {metadataFile
-                          ? formatFileSize(metadataFile.size)
-                          : ".json파일"}
-                      </span>
-                    </span>
-                    <span className="mp-dz-check">✓</span>
-                    {metadataFile && (
-                      <button
-                        type="button"
-                        className="mp-dz-remove"
-                        onClick={handleRemoveMetadataFile}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </label>
-
-                  <label htmlFor="mp-room-file-input">룸 파일 (3D 스캔)</label>
-                  <input
-                    ref={roomFileInputRef}
-                    id="mp-room-file-input"
-                    type="file"
-                    accept=".usdz,model/vnd.usdz+zip,application/octet-stream"
-                    className="mp-dz-input"
-                    onChange={(event) =>
-                      setRoomFile(event.target.files?.[0] || null)
-                    }
-                  />
-                  <label
-                    htmlFor="mp-room-file-input"
-                    className={`mp-dropzone${roomFile ? " is-filled" : ""}`}
-                  >
-                    <span className="mp-dz-icon">
-                      <svg
-                        width="17"
-                        height="17"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                      >
-                        <path
-                          d="M12 2 3 7v10l9 5 9-5V7l-9-5Z"
-                          stroke="currentColor"
-                          strokeWidth="1.6"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    </span>
-                    <span className="mp-dz-text">
-                      <span className="mp-dz-title">
-                        {roomFile
-                          ? roomFile.name
-                          : "클릭하거나 파일을 끌어다놓으세요"}
-                      </span>
-                      <span className="mp-dz-ext">
-                        {roomFile ? formatFileSize(roomFile.size) : ".usdz"}
-                      </span>
-                    </span>
-                    <span className="mp-dz-check">✓</span>
-                    {roomFile && (
-                      <button
-                        type="button"
-                        className="mp-dz-remove"
-                        onClick={handleRemoveRoomFile}
-                      >
-                        ×
-                      </button>
-                    )}
-                  </label>
-                </>
-              )}
-              <div className="mp-modal-help">{modalError}</div>
-            </div>
-            <div className="mp-dialog-actions">
-              <button
-                type="button"
-                className="mp-dialog-btn mp-dialog-btn-sub"
-                onClick={closeProjectModal}
-                disabled={submitting}
-              >
-                취소
-              </button>
-              <button
-                type="submit"
-                className="mp-dialog-btn mp-dialog-btn-main"
-                disabled={submitting}
-              >
-                {submitting
-                  ? "생성 중..."
-                  : modalMode === "room"
-                    ? "룸 만들기"
-                    : "생성"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      <MakeRoom
+        open={modalOpen}
+        mode={modalMode}
+        targetProject={modalTargetProject}
+        nameInput={nameInput}
+        onNameChange={(e) => {
+          setNameInput(e.target.value);
+          if (modalError) setModalError("");
+        }}
+        metadataFile={metadataFile}
+        metadataFileInputRef={metadataFileInputRef}
+        onMetadataFileChange={(event) =>
+          setMetadataFile(event.target.files?.[0] || null)
+        }
+        onRemoveMetadataFile={handleRemoveMetadataFile}
+        roomFile={roomFile}
+        roomFileInputRef={roomFileInputRef}
+        onRoomFileChange={(event) =>
+          setRoomFile(event.target.files?.[0] || null)
+        }
+        onRemoveRoomFile={handleRemoveRoomFile}
+        error={modalError}
+        submitting={submitting}
+        onClose={closeProjectModal}
+        onBackdropClick={handleBackdropClick}
+        onSubmit={submitProjectModal}
+      />
       <Footer />
     </div>
   );

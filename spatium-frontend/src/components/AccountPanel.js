@@ -36,7 +36,10 @@ function AccountPanel({
         </div>
         <div className={`${prefix}-panel-body`}>
           <span className={`${prefix}-panel-label`}>기본정보</span>
-          <button className={`${prefix}-panel-profile`} onClick={onProfileClick}>
+          <button
+            className={`${prefix}-panel-profile`}
+            onClick={onProfileClick}
+          >
             <div className={`${prefix}-panel-avatar`}>
               {profile?.imageUrl ? (
                 <img
@@ -61,9 +64,7 @@ function AccountPanel({
           <div className={`${prefix}-panel-stats`}>
             {statItems.map((item) => (
               <div className={`${prefix}-panel-stat`} key={item.label}>
-                <span className={`${prefix}-panel-stat-num`}>
-                  {item.value}
-                </span>
+                <span className={`${prefix}-panel-stat-num`}>{item.value}</span>
                 <span className={`${prefix}-panel-stat-label`}>
                   {item.label}
                 </span>
