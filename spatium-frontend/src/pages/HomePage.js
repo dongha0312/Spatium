@@ -3,11 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import "../styles/homepage.css";
 import { getLoginSession } from "../utils/authSession";
 import { getMyInfo } from "../springApi/MemberSpringBootApi";
-import { getProjectList } from "../springApi/ProjectSpringBootAPi";
 import Footer from "../components/Footer";
 import AccountPanel from "../components/AccountPanel";
 import AvatarButton from "../components/AvatarButton";
 import useLogout from "../hooks/useLogout";
+import useProjectStats from "../hooks/useProjectStats";
 
 // 이용 순서 소개 (4단계)
 const STEPS = [
@@ -44,16 +44,12 @@ function HomePage() {
   const [panelOpen, setPanelOpen] = useState(false);
 
   // 패널 이용현황에 표시할 통계 (프로젝트 수 / 룸 수)
-  const [stats, setStats] = useState({
-    projectCount: 0,
-    furnitureCount: 0,
-    roomCount: 0,
-  });
+  const stats = useProjectStats(Boolean(session));
 
   // 상단바/패널 아바타에 표시할 프로필 사진 (없으면 이니셜)
   const [profileImage, setProfileImage] = useState(null);
 
-  // 로그인 상태면 내 정보(프로필 사진)와 프로젝트 목록을 불러옴
+  // 로그인 상태면 내 정보(프로필 사진)를 불러옴
   useEffect(() => {
     if (!session) return;
     let active = true;
@@ -66,25 +62,6 @@ function HomePage() {
         console.warn("내 정보 조회 실패:", err);
       });
 
-    getProjectList()
-      .then((page) => {
-        if (!active) return;
-        const items = page?.items || [];
-        // const furnitureCount = items.reduce(
-        //   (sum, p) => sum + (p.furnitureCount || 0),
-        //   0,
-        // );
-        // 모든 방의 총 개수 가져오는 코드
-        const roomCount = items.reduce((sum, p) => sum + (p.roomCount || 0), 0);
-        setStats({
-          projectCount: items.length,
-          furnitureCount : 0,
-          roomCount
-        });
-      })
-      .catch((err) => {
-        console.warn("프로젝트 수 조회 실패:", err);
-      });
     return () => {
       active = false;
     };

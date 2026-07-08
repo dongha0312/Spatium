@@ -17,8 +17,8 @@ import {
   patchMyInfo,
   putMyAvatar,
 } from "../../springApi/MemberSpringBootApi";
-import { getProjectList } from "../../springApi/ProjectSpringBootAPi";
 import useLogout from "../../hooks/useLogout";
+import useProjectStats from "../../hooks/useProjectStats";
 
 function AccountSettings() {
   const navigate = useNavigate();
@@ -75,31 +75,8 @@ function AccountSettings() {
   // 닉네임 클릭 시 열리는 "내 정보" 우측 패널
   const [panelOpen, setPanelOpen] = useState(false);
 
-  // 패널 이용현황에 표시할 통계 (프로젝트 수 / 배치 가구 수)
-  const [stats, setStats] = useState({ projectCount: 0, furnitureCount: 0 });
-
-  // 로그인 상태면 프로젝트 목록을 불러와 이용현황 숫자를 채움
-  useEffect(() => {
-    if (!session) return;
-    let active = true;
-    getProjectList()
-      .then((page) => {
-        if (!active) return;
-        const items = page?.items || [];
-        const furnitureCount = items.reduce(
-          (sum, p) => sum + (p.furnitureCount || 0),
-          0,
-        );
-        setStats({ projectCount: items.length, furnitureCount });
-      })
-      .catch((err) => {
-        console.warn("프로젝트 수 조회 실패:", err);
-      });
-    return () => {
-      active = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // 패널 이용현황에 표시할 통계 (프로젝트 수 / 룸 수)
+  const stats = useProjectStats(Boolean(session));
 
   const togglePanel = () => setPanelOpen((prev) => !prev);
 
@@ -548,7 +525,7 @@ function AccountSettings() {
         }}
         statItems={[
           { label: "프로젝트", value: stats.projectCount },
-          { label: "배치 가구", value: stats.furnitureCount },
+          { label: "룸 개수", value: stats.roomCount },
         ]}
         onClose={() => setPanelOpen(false)}
         onProfileClick={handleGoAccount}
