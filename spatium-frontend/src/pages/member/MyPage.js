@@ -38,7 +38,7 @@ function normalizeUser(data) {
     initial: nickname.charAt(0).toUpperCase(),
     name: nickname,
     fullName: nickname,
-    handle: data?.email ? `@${data.email}` : "",
+    handle: data?.email ? `${data.email}` : "",
     email: data?.email || "",
     profileImage: data?.profileImageUrl || null,
   };
