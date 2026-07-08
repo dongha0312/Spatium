@@ -137,7 +137,7 @@ function HomePage() {
               <AvatarButton
                 prefix="hp"
                 imageUrl={profileImage}
-                initial={session.nickname.charAt(0)}
+                initial={session.nickname.charAt(0).toUpperCase()}
                 name={session.nickname}
                 onClick={togglePanel}
               />
