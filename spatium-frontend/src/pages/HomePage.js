@@ -9,6 +9,8 @@ import {
 import { deleteLogout, getMyInfo } from "../springApi/MemberSpringBootApi";
 import { getProjectList } from "../springApi/ProjectSpringBootAPi";
 import Footer from "../components/Footer";
+import AccountPanel from "../components/AccountPanel";
+import AvatarButton from "../components/AvatarButton";
 
 // 이용 순서 소개 (4단계)
 const STEPS = [
@@ -170,22 +172,13 @@ function HomePage() {
                 마이페이지
               </button>
               {/* 닉네임 클릭 : 우측 "내 정보" 패널 열기 */}
-              <button
-                type="button"
-                className="hp-av-btn"
+              <AvatarButton
+                prefix="hp"
+                imageUrl={profileImage}
+                initial={session.nickname.charAt(0)}
+                name={session.nickname}
                 onClick={togglePanel}
-                aria-label="내 정보 열기"
-              >
-                <div className="hp-av-circ">
-                  {profileImage ? (
-                    <img className="hp-av-img" src={profileImage} alt="" />
-                  ) : (
-                    session.nickname.charAt(0)
-                  )}
-                </div>
-                <span className="hp-av-name">{session.nickname}</span>
-                <span className="hp-av-caret">⌄</span>
-              </button>
+              />
             </div>
           ) : (
             <Link to="/auth/login" className="hp-btn-prim">
@@ -283,72 +276,24 @@ function HomePage() {
       </div>
 
       {/* 닉네임 클릭 시 열리는 "내 정보" 우측 패널 */}
-      {session && panelOpen && (
-        <>
-          <div className="hp-scrim" onClick={() => setPanelOpen(false)}></div>
-          <div className="hp-panel">
-            <div className="hp-panel-head">
-              <div className="hp-panel-title">내 정보</div>
-              <button
-                className="hp-panel-close"
-                onClick={() => setPanelOpen(false)}
-                aria-label="닫기"
-              >
-                ×
-              </button>
-            </div>
-            <div className="hp-panel-body">
-              <span className="hp-panel-label">기본정보</span>
-              <button className="hp-panel-profile" onClick={handleGoAccount}>
-                <div className="hp-panel-avatar">
-                  {profileImage ? (
-                    <img
-                      className="hp-panel-avatar-img"
-                      src={profileImage}
-                      alt=""
-                    />
-                  ) : (
-                    session.nickname.charAt(0)
-                  )}
-                </div>
-                <div>
-                  <div className="hp-panel-pname">{session.nickname}</div>
-                  <div className="hp-panel-pnick">@{session.email}</div>
-                </div>
-                <span className="hp-panel-arrow">›</span>
-              </button>
-
-              <span className="hp-panel-label">이용현황</span>
-              <div className="hp-panel-stats">
-                <div className="hp-panel-stat">
-                  <span className="hp-panel-stat-num">
-                    {stats.projectCount}
-                  </span>
-                  <span className="hp-panel-stat-label">프로젝트</span>
-                </div>
-                <div className="hp-panel-stat">
-                  <span className="hp-panel-stat-num">{stats.roomCount}</span>
-                  <span className="hp-panel-stat-label">룸 개수</span>
-                </div>
-              </div>
-            </div>
-            <div className="hp-panel-foot">
-              <button
-                className="hp-panel-foot-btn hp-panel-sub"
-                onClick={handleLogout}
-              >
-                로그아웃
-              </button>
-              <button
-                className="hp-panel-foot-btn hp-panel-main"
-                onClick={handleGoAccount}
-              >
-                계정설정
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      <AccountPanel
+        open={Boolean(session && panelOpen)}
+        prefix="hp"
+        profile={{
+          name: session?.nickname,
+          initial: session?.nickname?.charAt(0),
+          imageUrl: profileImage,
+          subtext: session?.email ? `@${session.email}` : "",
+        }}
+        statItems={[
+          { label: "프로젝트", value: stats.projectCount },
+          { label: "룸 개수", value: stats.roomCount },
+        ]}
+        onClose={() => setPanelOpen(false)}
+        onProfileClick={handleGoAccount}
+        onLogout={handleLogout}
+        onAccountClick={handleGoAccount}
+      />
     </div>
   );
 }

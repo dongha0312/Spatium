@@ -15,6 +15,8 @@ import {
   postRoom,
 } from "../../springApi/RoomSpringBootApi";
 import { deleteRoom } from "../../springApi/RoomSpringBootApi";
+import AccountPanel from "../../components/AccountPanel";
+import AvatarButton from "../../components/AvatarButton";
 import Footer from "../../components/Footer";
 
 const DEFAULT_USER = {
@@ -396,16 +398,14 @@ function MyPage() {
           SPATIUM
         </Link>
         <div className="mp-nav-right">
-          <button className="mp-av-btn" onClick={togglePanel}>
-            <div className="mp-av-circ">
-              {user.profileImage ? (
-                <img className="mp-av-img" src={user.profileImage} alt="" />
-              ) : (
-                user.initial
-              )}
-            </div>
-            <span className="mp-av-name">{user.name}</span>
-          </button>
+          <AvatarButton
+            prefix="mp"
+            imageUrl={user.profileImage}
+            initial={user.initial}
+            name={user.name}
+            onClick={togglePanel}
+            showCaret={false}
+          />
         </div>
       </div>
 
@@ -557,65 +557,26 @@ function MyPage() {
           </div>
 
           {/* 내 정보 오른쪽 모달*/}
-          {panelOpen && (
-            <div className="mp-panel mp-panel-open">
-              <div className="mp-panel-head">
-                <div className="mp-panel-title">내 정보</div>
-                <button className="mp-panel-close" onClick={togglePanel}>
-                  ×
-                </button>
-              </div>
-              <div className="mp-panel-body">
-                <span className="mp-panel-label">기본정보</span>
-                <button className="mp-panel-profile" onClick={handleGoAccount}>
-                  <div className="mp-panel-avatar">
-                    {user.profileImage ? (
-                      <img
-                        className="mp-panel-avatar-img"
-                        src={user.profileImage}
-                        alt=""
-                      />
-                    ) : (
-                      user.initial
-                    )}
-                  </div>
-                  <div>
-                    <div className="mp-panel-pname">{user.fullName}</div>
-                    <div className="mp-panel-pnick">{user.handle}</div>
-                  </div>
-                  <span className="mp-panel-arrow">›</span>
-                </button>
-
-                <span className="mp-panel-label">이용현황</span>
-                <div className="mp-panel-stats">
-                  <div className="mp-panel-stat">
-                    <span className="mp-panel-stat-num">{projects.length}</span>
-                    <span className="mp-panel-stat-label">프로젝트</span>
-                  </div>
-                  <div className="mp-panel-stat">
-                    <span className="mp-panel-stat-num">
-                      {totalFurnitureCount}
-                    </span>
-                    <span className="mp-panel-stat-label">배치 가구</span>
-                  </div>
-                </div>
-              </div>
-              <div className="mp-panel-foot">
-                <button
-                  className="mp-panel-foot-btn mp-panel-sub"
-                  onClick={handleLogout}
-                >
-                  로그아웃
-                </button>
-                <button
-                  className="mp-panel-foot-btn mp-panel-main"
-                  onClick={handleGoAccount}
-                >
-                  계정설정
-                </button>
-              </div>
-            </div>
-          )}
+          <AccountPanel
+            open={panelOpen}
+            prefix="mp"
+            profile={{
+              name: user.fullName,
+              initial: user.initial,
+              imageUrl: user.profileImage,
+              subtext: user.handle,
+            }}
+            statItems={[
+              { label: "프로젝트", value: projects.length },
+              { label: "배치 가구", value: totalFurnitureCount },
+            ]}
+            onClose={() => setPanelOpen(false)}
+            onProfileClick={handleGoAccount}
+            onLogout={handleLogout}
+            onAccountClick={handleGoAccount}
+            showScrim={false}
+            panelExtraClass="mp-panel-open"
+          />
         </div>
       </div>
 
