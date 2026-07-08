@@ -359,7 +359,7 @@ function AccountSettings() {
             <AvatarButton
               prefix="as"
               imageUrl={avatarUrl}
-              initial={displayInitial}
+              initial={displayInitial.toUpperCase()}
               name={displayName}
               onClick={togglePanel}
             />

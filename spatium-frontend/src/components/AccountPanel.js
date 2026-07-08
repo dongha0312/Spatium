@@ -45,7 +45,7 @@ function AccountPanel({
                   alt=""
                 />
               ) : (
-                displayInitial
+                displayInitial.toUpperCase()
               )}
             </div>
             <div>
