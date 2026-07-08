@@ -688,7 +688,13 @@ export function constrainedMovementBeforeWallCollision(
 
 export function setFurnitureVisualState(object, selectedObject) {
   const isSelected = object === selectedObject;
-  const hasCollision = (object.userData.collisions || []).length > 0;
+  // 꺼져 있으면 충돌 여부와 무관하게 항상 기본/선택 색상만 쓴다(선택 시 노란 박스).
+  const showCollisionHighlight = optionalConfigBoolean(
+    ["wallConstraints", "showCollisionHighlight"],
+    true,
+  );
+  const hasCollision =
+    showCollisionHighlight && (object.userData.collisions || []).length > 0;
   const mesh = object.userData.visualMesh;
   const edge = object.userData.edgeLine;
 

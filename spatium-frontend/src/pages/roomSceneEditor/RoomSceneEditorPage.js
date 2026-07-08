@@ -32,7 +32,6 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     selectedElevationCm,
     selectedMaxElevationCm,
     isReplacingSelected,
-    collisionSummary,
     canSaveJson,
     addFurniture,
     deleteSelectedObject,
@@ -54,7 +53,8 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
   );
   const canDeleteSelected = selectedItem?.sourceType === "object";
   const canDeleteReference =
-    selectedItem?.sourceType === "door" || selectedItem?.sourceType === "window";
+    selectedItem?.sourceType === "door" ||
+    selectedItem?.sourceType === "window";
   const canShowElevationControl = selectedItem?.sourceType === "object";
 
   const handleRotationChange = (event) => {
@@ -84,8 +84,15 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
       addFurniture,
       deleteSelectedObject,
       saveEditedSceneJson,
+      isReplacingSelected,
     }),
-    [addFurniture, canSaveJson, deleteSelectedObject, saveEditedSceneJson],
+    [
+      addFurniture,
+      canSaveJson,
+      deleteSelectedObject,
+      saveEditedSceneJson,
+      isReplacingSelected,
+    ],
   );
 
   return (
@@ -223,12 +230,6 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
               </>
             )}
           </div>
-        </div>
-      )}
-
-      {collisionSummary.hasCollision && (
-        <div className="room-scene-editor-collision-warning">
-          벽이나 방의 경계와 겹치는 오브젝트가 있습니다.
         </div>
       )}
 

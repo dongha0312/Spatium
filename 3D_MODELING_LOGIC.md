@@ -93,10 +93,13 @@ Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하
 
 | 사용자 동작 | 호출 |
 | --- | --- |
-| 가구 클릭 | `editorRef.current.addFurniture(item)` |
+| 가구 클릭 (replace 모드 아님) | `3dEditor.js`가 가로/세로/높이 입력 모달(`ed-size-modal`)을 먼저 띄우고, 확정 시 `editorRef.current.addFurniture(item, customDimensions)` |
+| 가구 클릭 (replace 모드) | 모달 없이 바로 `editorRef.current.addFurniture(item)` |
 | 저장 | `editorRef.current.saveEditedSceneJson({ projectId, roomId })` |
 | 선택 가구 삭제 | `deleteSelectedObject()` |
 | 선택 가구 교체 | `startReplaceSelectedObject()` 후 카탈로그 클릭 |
+
+`addFurniture(catalogItem, customDimensions)`의 `customDimensions`(m 단위 `{x,y,z}`)는 새로 추가되는 가구에만 적용된다. 훅 내부에서 `{ ...catalogItem, dimensions: customDimensions }`로 치환한 뒤 기존 로직(`createFurnitureItemFromCatalog` → `normalizedDimensions`)을 그대로 타므로, 이미 배치된 가구의 크기를 바꾸는 기능은 아니다 — replace나 이동/회전과 달리 배치 후에는 크기를 다시 조정할 수 없다.
 
 저장 시에는 metadata JSON이 `FormData`에 담겨 `POST /api/rooms/save`로 전송된다.
 
@@ -550,6 +553,7 @@ POST /api/rooms/save
 | `wallConstraints.boundarySpanPadding` | 벽 span overlap padding |
 | `wallConstraints.logWallDiagnostics` | 벽 이동 차단/충돌 debug 로그 |
 | `wallConstraints.showColliderDebug` | 벽 콜라이더 시각화 |
+| `wallConstraints.showCollisionHighlight` | 가구가 벽과 충돌했을 때 바운딩 박스를 빨간색으로 표시할지 여부. `false`면 충돌 여부와 무관하게 선택 시 항상 `selectedEdge`(노란색) 박스만 표시된다 (`setFurnitureVisualState()`) |
 
 현재 설정에는 `showWallDiagnostics`, `clampIterations`, `sweepMaxSteps`도 남아 있다. 다만 현재 핵심 이동/충돌 흐름에서는 위 표의 값들이 주로 사용된다.
 

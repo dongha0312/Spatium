@@ -287,21 +287,6 @@
   line-height: 1;
 }
 
-.room-scene-editor-collision-warning {
-  position: absolute;
-  right: 16px;
-  top: 58px;
-  z-index: 9;
-  max-width: 280px;
-  padding: 10px 12px;
-  border: 1px solid #f6c76f;
-  border-radius: 8px;
-  background: rgba(255, 250, 235, 0.96);
-  color: #854d0e;
-  font: 700 12px Arial, Helvetica, sans-serif;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
-}
-
 .room-scene-editor-room-area {
   position: absolute;
   right: 16px;
