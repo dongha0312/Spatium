@@ -11,16 +11,16 @@ import AccountPanel from "../components/AccountPanel";
 import AvatarButton from "../components/AvatarButton";
 import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
 import {
-  clearLoginSession,
   getAccessToken,
   getLoginSession,
 } from "../utils/authSession";
-import { deleteLogout, getMyInfo } from "../springApi/MemberSpringBootApi";
+import { getMyInfo } from "../springApi/MemberSpringBootApi";
 import {
   getProjectInfo,
   getProjectList,
 } from "../springApi/ProjectSpringBootAPi";
 import { getRoomList, getRoomSceneData } from "../springApi/RoomSpringBootApi";
+import useLogout from "../hooks/useLogout";
 
 const FURNITURE_CATALOG_URL = "/data/furniture_catalog.json";
 
@@ -131,19 +131,11 @@ function ThreeDEditor() {
   };
 
   // 로그아웃 : 서버 세션 정리 후 로컬 세션 삭제, 상단바를 로그인 상태에서 되돌림
-  const handleLogout = async () => {
-    try {
-      if (getAccessToken()) {
-        await deleteLogout();
-      }
-    } catch (err) {
-      console.warn("Logout API failed, clearing local session anyway.", err);
-    }
-    clearLoginSession();
+  const handleLogout = useLogout(() => {
     setSession(null);
     setPanelOpen(false);
     navigate("/");
-  };
+  });
 
   const categoryFilters = useMemo(
     () =>

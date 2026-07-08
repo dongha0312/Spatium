@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import "../../styles/mypage.css";
-import { clearLoginSession, getAccessToken } from "../../utils/authSession";
-import { deleteLogout, getMyInfo } from "../../springApi/MemberSpringBootApi";
+import { getAccessToken } from "../../utils/authSession";
+import { getMyInfo } from "../../springApi/MemberSpringBootApi";
 import {
   deleteProject,
   getProjectList,
@@ -18,6 +18,7 @@ import { deleteRoom } from "../../springApi/RoomSpringBootApi";
 import AccountPanel from "../../components/AccountPanel";
 import AvatarButton from "../../components/AvatarButton";
 import Footer from "../../components/Footer";
+import useLogout from "../../hooks/useLogout";
 
 const DEFAULT_USER = {
   initial: "",
@@ -151,18 +152,9 @@ function MyPage() {
     navigate("/member/account");
   };
 
-  const handleLogout = async () => {
-    try {
-      if (getAccessToken()) {
-        await deleteLogout();
-      }
-    } catch (err) {
-      console.warn("Logout API failed, clearing local session anyway.", err);
-    }
-
-    clearLoginSession();
+  const handleLogout = useLogout(() => {
     navigate("/");
-  };
+  });
 
   const handleOpenRoom = (project, room) => {
     const params = new URLSearchParams({
