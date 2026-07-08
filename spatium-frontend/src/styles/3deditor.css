@@ -394,6 +394,136 @@
   background: #FEE2E2;
   color: #991B1B;
 }
+.ed-help-btn {
+  width: 30px;
+  height: 30px;
+  margin-left: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--bd);
+  background: #fff;
+  color: var(--g);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.ed-help-btn:hover {
+  background: var(--bg);
+  border-color: var(--ga);
+}
+
+.ed-manual-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(28, 18, 9, 0.42);
+}
+
+.ed-manual-dialog {
+  width: min(680px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  overflow: hidden;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--sur);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  color: var(--t);
+  display: flex;
+  flex-direction: column;
+}
+
+.ed-manual-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.ed-manual-kicker {
+  margin-bottom: 5px;
+  color: var(--ga);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+
+.ed-manual-head h2 {
+  margin: 0;
+  color: var(--t);
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.ed-manual-close {
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--t2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 20px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.ed-manual-close:hover {
+  border-color: var(--ga);
+  color: var(--g);
+}
+
+.ed-manual-body {
+  overflow-y: auto;
+  padding: 18px 22px 22px;
+}
+
+.ed-manual-section {
+  padding: 0 0 16px;
+}
+
+.ed-manual-section + .ed-manual-section {
+  padding-top: 16px;
+  border-top: 1px solid #EEE5DA;
+}
+
+.ed-manual-section h3 {
+  margin: 0 0 9px;
+  color: var(--t);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.ed-manual-section ol,
+.ed-manual-section ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--t2);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.ed-manual-section li + li {
+  margin-top: 4px;
+}
 
 /* 에디터 본문 래퍼 */
 .ed-wrap {
@@ -1019,6 +1149,9 @@
   .ed-save-state {
     max-width: 120px;
   }
+  .ed-help-btn {
+    margin-left: 8px;
+  }
 
   .ed-av-btn {
     margin-left: 8px;
@@ -1043,5 +1176,16 @@
 
   .ed-canvas {
     min-height: 0;
+  }
+  .ed-manual-backdrop {
+    padding: 14px;
+  }
+
+  .ed-manual-head {
+    padding: 17px 16px 13px;
+  }
+
+  .ed-manual-body {
+    padding: 15px 16px 18px;
   }
 }

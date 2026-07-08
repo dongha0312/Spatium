@@ -11,9 +11,7 @@ function snapRotation(value) {
     Math.abs(stop - value) < Math.abs(closest - value) ? stop : closest,
   );
 
-  return Math.abs(nearest - value) <= ROTATION_SNAP_THRESHOLD
-    ? nearest
-    : value;
+  return Math.abs(nearest - value) <= ROTATION_SNAP_THRESHOLD ? nearest : value;
 }
 
 const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
@@ -99,7 +97,9 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
             </div>
           </dl>
           {selectedItem.collision?.hasCollision && (
-            <div className="room-scene-editor-info-warning">Overlap detected</div>
+            <div className="room-scene-editor-info-warning">
+              Overlap detected
+            </div>
           )}
         </aside>
       )}
@@ -121,7 +121,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
                 onChange={handleRotationChange}
                 aria-label="Rotation degrees"
               />
-              <div className="room-scene-editor-rotation-ticks" aria-hidden="true">
+              <div
+                className="room-scene-editor-rotation-ticks"
+                aria-hidden="true"
+              >
                 {ROTATION_STOPS.map((stop) => (
                   <span key={stop} />
                 ))}
@@ -132,12 +135,15 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
             <button
               type="button"
               className={`room-scene-editor-selection-tool${
-                isReplacingSelected ? " room-scene-editor-selection-tool--active" : ""
+                isReplacingSelected
+                  ? " room-scene-editor-selection-tool--active"
+                  : ""
               }`}
               onClick={startReplaceSelectedObject}
             >
-              <span className="room-scene-editor-selection-tool-icon">Swap</span>
-              Replace
+              <span className="room-scene-editor-selection-tool-icon">
+                교체
+              </span>
             </button>
             {canDeleteSelected && (
               <button
@@ -145,8 +151,9 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
                 className="room-scene-editor-selection-tool room-scene-editor-selection-tool--danger"
                 onClick={deleteSelectedObject}
               >
-                <span className="room-scene-editor-selection-tool-icon">Del</span>
-                Delete
+                <span className="room-scene-editor-selection-tool-icon">
+                  삭제
+                </span>
               </button>
             )}
           </div>
