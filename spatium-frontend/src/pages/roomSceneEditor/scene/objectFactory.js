@@ -2,6 +2,46 @@ import * as THREE from "three";
 import { OBB } from "three/examples/jsm/math/OBB.js";
 import { categoryColor, referenceFallbackThickness, sceneColor } from "./sceneConfig";
 import { decomposeRoomTransform } from "./threeUtils";
+import { measureWallThicknessAtPosition } from "./wallColliders";
+
+const REFERENCE_THICKNESS_MARGIN = 0.01;
+const REFERENCE_THICKNESS_MIN = 0.02;
+const WALL_INFILL_PADDING = 0.06;
+const WALL_INFILL_MIN_THICKNESS = 0.04;
+
+function wallMeshesFromColliders(wallColliders) {
+  return [
+    ...new Set((wallColliders || []).map((collider) => collider.object).filter(Boolean)),
+  ];
+}
+
+// 문/창문이 실제 벽보다 두꺼워서 앞뒤로 튀어나오지 않도록, 속한 벽의 실측 두께에
+// 맞춰 두께를 줄이고 위치를 그 벽의 두께 방향 중심으로 재정렬한다.
+// 근처에 벽을 찾지 못하면(open scene 등) 원래 값을 그대로 반환한다.
+function fitReferenceToWallThickness(targetSize, position, wallColliders) {
+  const wallMeshes = wallMeshesFromColliders(wallColliders);
+  const measurement = measureWallThicknessAtPosition(position, wallMeshes);
+  if (!measurement) {
+    return { targetSize, position };
+  }
+
+  const clampedThickness = Math.max(
+    REFERENCE_THICKNESS_MIN,
+    measurement.thickness - REFERENCE_THICKNESS_MARGIN,
+  );
+  const nextTargetSize = targetSize.clone();
+  nextTargetSize.z = Math.min(targetSize.z, clampedThickness);
+
+  const currentProjection = position.dot(measurement.normal);
+  const nextPosition = position
+    .clone()
+    .addScaledVector(
+      measurement.normal,
+      measurement.centerProjection - currentProjection,
+    );
+
+  return { targetSize: nextTargetSize, position: nextPosition };
+}
 
 function createCenteredLocalObb(size) {
   return new OBB(
@@ -261,11 +301,11 @@ export function createEditableFurnitureModel(modelTemplate, item, index) {
   return { root, pickTargets: [hitBox] };
 }
 
-export function createDoorModel(doorTemplate, item, index) {
+export function createDoorModel(doorTemplate, item, index, wallColliders = []) {
   const doorItem = { ...item, category: "door" };
   const dimensions = item.dimensions || {};
   const fallbackThickness = referenceFallbackThickness("door");
-  const targetSize = new THREE.Vector3(
+  const rawTargetSize = new THREE.Vector3(
     Math.max(dimensions.x || 0.1, 0.04),
     Math.max(dimensions.y || 0.1, 0.04),
     Math.max(dimensions.z || fallbackThickness, fallbackThickness),
@@ -273,9 +313,14 @@ export function createDoorModel(doorTemplate, item, index) {
   const root = new THREE.Group();
   const model = doorTemplate.clone(true);
   const transform = decomposeRoomTransform(item);
+  const { targetSize, position } = fitReferenceToWallThickness(
+    rawTargetSize,
+    transform.position,
+    wallColliders,
+  );
 
   root.name = `door-${index + 1}`;
-  root.position.copy(transform.position);
+  root.position.copy(position);
   root.quaternion.copy(transform.quaternion);
   root.scale.copy(transform.scale);
 
@@ -310,10 +355,10 @@ export function createDoorModel(doorTemplate, item, index) {
     selectedEdgeColor: new THREE.Color(sceneColor("selectedEdge")),
     collisionColor: new THREE.Color(sceneColor("collision")),
     collisions: [],
-    initialPosition: transform.position.clone(),
+    initialPosition: position.clone(),
     initialQuaternion: transform.quaternion.clone(),
     initialScale: transform.scale.clone(),
-    lastValidPosition: transform.position.clone(),
+    lastValidPosition: position.clone(),
     lastValidQuaternion: transform.quaternion.clone(),
     lastValidScale: transform.scale.clone(),
   };
@@ -325,11 +370,16 @@ export function createDoorModel(doorTemplate, item, index) {
   return { root, pickTargets: [hitBox] };
 }
 
-export function createWindowModel(windowTemplate, item, index) {
+export function createWindowModel(
+  windowTemplate,
+  item,
+  index,
+  wallColliders = [],
+) {
   const windowItem = { ...item, category: "window" };
   const dimensions = item.dimensions || {};
   const fallbackThickness = referenceFallbackThickness("window");
-  const targetSize = new THREE.Vector3(
+  const rawTargetSize = new THREE.Vector3(
     Math.max(dimensions.x || 0.1, 0.04),
     Math.max(dimensions.y || 0.1, 0.04),
     Math.max(dimensions.z || fallbackThickness, fallbackThickness),
@@ -337,9 +387,14 @@ export function createWindowModel(windowTemplate, item, index) {
   const root = new THREE.Group();
   const model = windowTemplate.clone(true);
   const transform = decomposeRoomTransform(item);
+  const { targetSize, position } = fitReferenceToWallThickness(
+    rawTargetSize,
+    transform.position,
+    wallColliders,
+  );
 
   root.name = `window-${index + 1}`;
-  root.position.copy(transform.position);
+  root.position.copy(position);
   root.quaternion.copy(transform.quaternion);
   root.scale.copy(transform.scale);
 
@@ -374,10 +429,10 @@ export function createWindowModel(windowTemplate, item, index) {
     selectedEdgeColor: new THREE.Color(sceneColor("selectedEdge")),
     collisionColor: new THREE.Color(sceneColor("collision")),
     collisions: [],
-    initialPosition: transform.position.clone(),
+    initialPosition: position.clone(),
     initialQuaternion: transform.quaternion.clone(),
     initialScale: transform.scale.clone(),
-    lastValidPosition: transform.position.clone(),
+    lastValidPosition: position.clone(),
     lastValidQuaternion: transform.quaternion.clone(),
     lastValidScale: transform.scale.clone(),
   };
@@ -387,4 +442,72 @@ export function createWindowModel(windowTemplate, item, index) {
 
   root.add(model, hitBox, edge);
   return { root, pickTargets: [hitBox] };
+}
+
+// 매칭된 벽 mesh의 material을 그대로 복제해서 쓴다 — 색상뿐 아니라 roughness/metalness,
+// (있다면) 텍스처까지 같이 맞춰져서 메운 자리가 원래 벽과 자연스럽게 이어져 보인다.
+// 매칭된 벽을 못 찾은 경우에만 기본 색상으로 fallback한다.
+function materialForWallInfill(wallObject) {
+  const source = Array.isArray(wallObject?.material)
+    ? wallObject.material[0]
+    : wallObject?.material;
+
+  if (source?.clone) {
+    const cloned = source.clone();
+    cloned.userData = {};
+    cloned.transparent = false;
+    cloned.opacity = 1;
+    cloned.needsUpdate = true;
+    return cloned;
+  }
+
+  return new THREE.MeshStandardMaterial({
+    color: sceneColor("roomMaterialDefault"),
+    roughness: 0.9,
+  });
+}
+
+// 문/창문을 "벽으로 메우기"로 삭제할 때 그 자리를 채우는 mesh를 만든다. reference의
+// 실제 크기(localObb)와 속한 벽의 실측 두께/중심을 기준으로 박스를 만들고,
+// userData.isUsdWallMesh를 직접 표시해서 이후 벽 콜라이더 생성과 저장(_spatiumRoom)에서
+// 일반 벽 mesh와 동일하게 취급되게 한다.
+// 이름은 "Door"/"Window"로 시작하지 않아야 한다 — isUsdReplacedMesh()가 그 패턴을
+// 원본 스캔 문/창문 mesh로 오인해 저장에서 제외시키기 때문이다.
+export function createWallInfillMesh(referenceRoot, wallColliders, index = 0) {
+  const halfSize = referenceRoot.userData.localObb?.halfSize;
+  const width = (halfSize ? halfSize.x * 2 : 0.9) + WALL_INFILL_PADDING;
+  const height = (halfSize ? halfSize.y * 2 : 2.0) + WALL_INFILL_PADDING;
+
+  const wallMeshes = wallMeshesFromColliders(wallColliders);
+  const measurement = measureWallThicknessAtPosition(
+    referenceRoot.position,
+    wallMeshes,
+  );
+  const thickness = Math.max(
+    measurement?.thickness || (halfSize ? halfSize.z * 2 : 0),
+    WALL_INFILL_MIN_THICKNESS,
+  );
+
+  const geometry = new THREE.BoxGeometry(width, height, thickness);
+  const material = materialForWallInfill(measurement?.object);
+  const mesh = new THREE.Mesh(geometry, material);
+
+  mesh.name = `Infill_${referenceRoot.userData.sourceType || "opening"}_${index}`;
+  mesh.position.copy(referenceRoot.position);
+  mesh.quaternion.copy(referenceRoot.quaternion);
+
+  if (measurement) {
+    const currentProjection = mesh.position.dot(measurement.normal);
+    mesh.position.addScaledVector(
+      measurement.normal,
+      measurement.centerProjection - currentProjection,
+    );
+  }
+
+  mesh.updateMatrixWorld(true);
+  mesh.castShadow = false;
+  mesh.receiveShadow = true;
+  mesh.userData.isUsdWallMesh = true;
+
+  return mesh;
 }
