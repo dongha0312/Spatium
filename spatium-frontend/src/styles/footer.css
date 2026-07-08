@@ -1,0 +1,33 @@
+/* 공통 Footer 컴포넌트 전용 스타일입니다. */
+.site-footer {
+  flex-shrink: 0;
+  padding: 16px 24px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--t3, #A08878);
+  border-top: 1px solid var(--bd, #DDD3C6);
+  background: var(--sur, #FAF7F3);
+}
+
+.site-footer-brand {
+  font-weight: 700;
+  color: var(--t2, #5A4535);
+}
+
+.site-footer-sep {
+  margin: 0 6px;
+}
+
+.site-footer a {
+  color: var(--t3, #A08878);
+  text-decoration: underline;
+}
+
+.site-footer a:hover {
+  color: var(--g, #5C3D2E);
+}
+
+.site-footer-copy {
+  margin-top: 4px;
+  color: var(--t3, #A08878);
+}

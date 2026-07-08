@@ -55,22 +55,25 @@ public class MemberService {
     // 일반 회원가입 (POST /api/users)
     @Transactional
     public Map<String, Object> postUserSignup(MemberSignupDTO memDTO) {
+        String email = normalizeEmail(memDTO.getEmail());
 
-        if (memberRepository.existsByMemEmail(memDTO.getEmail())) {
-            throw new IllegalArgumentException("이미 가입된 이메일입니다.");
-        }
+        memberRepository.findByMemEmail(email)
+            .ifPresent(existing -> {
+                throw duplicateEmailException(existing);
+            });
 
         log.info("service");
 
         Member member = Member.builder()
             .mem_id(UUID.randomUUID().toString())
-            .mem_email(memDTO.getEmail())
+            .mem_email(email)
             .mem_nick(memDTO.getNickname())
             // 평문 저장 금지 : BCrypt 해시로 저장
             .mem_pass(passwordEncoder.encode(memDTO.getPassword()))
             .mem_bir(memDTO.getBirthDate())
             .mem_sex(memDTO.getGender())
             .provider("LOCAL")
+            .providerUserId(email)
             .build();
 
         Member savedMember = memberRepository.save(member);
@@ -86,11 +89,12 @@ public class MemberService {
     // 일반 로그인 (POST /api/auth/sessions)
     //  - brute-force 방어 : 같은 (이메일+IP) 조합이 5회 연속 실패하면 5분간 잠금(429)
     public LoginResponse login(LoginRequest dto, String clientIp) {
-        String attemptKey = normalizeEmail(dto.getEmail()) + "|" + clientIp;
+        String email = normalizeEmail(dto.getEmail());
+        String attemptKey = email + "|" + clientIp;
         loginAttemptLimiter.checkNotBlocked(attemptKey);
 
         // 입력한 이메일로 DB에서 회원 조회
-        Member member = memberRepository.findByMemEmail(dto.getEmail())
+        Member member = memberRepository.findByProviderAndProviderUserId("LOCAL", email)
             .orElseThrow(() -> {
                 loginAttemptLimiter.recordFailure(attemptKey);
                 return new ApiException(401, "INVALID_CREDENTIALS", "이메일 또는 비밀번호가 일치하지 않습니다.");
@@ -113,18 +117,29 @@ public class MemberService {
         return email == null ? "" : email.trim().toLowerCase();
     }
 
+    private ApiException duplicateEmailException(Member existingMember) {
+        return new ApiException(
+            409,
+            "EMAIL_ALREADY_REGISTERED",
+            "이미 " + displayProvider(existingMember.getProvider()) + " 계정으로 가입된 이메일입니다."
+        );
+    }
+
+    private String displayProvider(String provider) {
+        return provider == null || provider.isBlank() ? "기존" : provider.trim().toUpperCase();
+    }
+
     // 소셜 로그인 (POST /api/auth/social-sessions)
     //  - 클라이언트가 보낸 값을 신뢰하지 않고, ID Token을 서버가 직접 검증(서명/iss/aud)한다.
-    //  - 검증된 sub(providerUserId)가 mem_id로 저장되어 있으므로 그것으로 회원을 찾는다.
+    //  - 검증된 sub(providerUserId)는 providerUserId 컬럼에 저장되며, mem_id는 내부 UUID로만 사용한다.
     //  - 일반 로그인과 동일하게 JWT 토큰을 발급해서 LoginResponse 형태로 반환
     public LoginResponse socialLogin(MemberSocialLoginDTO memDTO) {
         VerifiedSocialUser verified =
             socialIdTokenVerifier.verify(memDTO.getProvider(), memDTO.getIdToken());
 
-        // 검증된 sub와 DB의 mem_id(=providerUserId), provider가 모두 일치해야 로그인 허용
+        // 검증된 provider + sub(providerUserId)가 일치하는 회원만 로그인 허용
         Member member = memberRepository
-            .findById(verified.providerUserId())
-            .filter(found -> verified.provider().equalsIgnoreCase(found.getProvider()))
+            .findByProviderAndProviderUserId(verified.provider(), verified.providerUserId())
             .orElseThrow(() -> new ApiException(404, "SOCIAL_USER_NOT_FOUND", "가입되지 않은 소셜 계정입니다. 회원가입이 필요합니다."));
 
         return issueLoginResponse(member);
@@ -197,24 +212,30 @@ public class MemberService {
 
         VerifiedSocialUser verified =
             socialIdTokenVerifier.verify(memDTO.getProvider(), memDTO.getIdToken());
+        String email = normalizeEmail(verified.email());
 
-        if (verified.email() == null || verified.email().isBlank()) {
+        if (email.isBlank()) {
             throw new ApiException(400, "SOCIAL_EMAIL_REQUIRED", "소셜 계정에서 이메일을 확인할 수 없습니다.");
         }
 
         // 같은 소셜 계정(sub) 또는 같은 이메일로 이미 가입되어 있으면 중복 처리
-        if (memberRepository.existsById(verified.providerUserId())
-                || memberRepository.existsByMemEmail(verified.email())) {
-            throw new ApiException(409, "SOCIAL_USER_ALREADY_EXISTS", "이미 가입된 계정입니다.");
+        if (memberRepository.findByProviderAndProviderUserId(verified.provider(), verified.providerUserId()).isPresent()) {
+            throw new ApiException(409, "SOCIAL_USER_ALREADY_EXISTS", "?대? 媛?낅맂 怨꾩젙?낅땲??");
         }
 
+        memberRepository.findByMemEmail(email)
+            .ifPresent(existing -> {
+                throw duplicateEmailException(existing);
+            });
+
         Member member = Member.builder()
-            .mem_id(verified.providerUserId())
-            .mem_email(verified.email())
+            .mem_id(UUID.randomUUID().toString())
+            .mem_email(email)
             .mem_nick(memDTO.getNickname())
             .mem_bir(memDTO.getBirthDate())
             .mem_sex(memDTO.getGender())
             .provider(verified.provider())
+            .providerUserId(verified.providerUserId())
             // mem_pass는 의도적으로 비워둠(null) -> 소셜 계정은 비밀번호가 없음
             .build();
 
@@ -370,8 +391,9 @@ public class MemberService {
             VerifiedSocialUser verified =
                 socialIdTokenVerifier.verify(member.getProvider(), idToken);
 
-            // 다른 소셜 계정의 토큰으로 탈퇴하는 것을 방지 (sub == mem_id 확인)
-            if (!verified.providerUserId().equals(member.getMem_id())) {
+            // 다른 소셜 계정의 토큰으로 탈퇴하는 것을 방지 (provider + sub 확인)
+            if (!verified.provider().equalsIgnoreCase(member.getProvider())
+                    || !verified.providerUserId().equals(member.getProviderUserId())) {
                 throw new ApiException(400, "SOCIAL_VERIFICATION_FAILED",
                     "소셜 계정 본인 확인에 실패했습니다.");
             }

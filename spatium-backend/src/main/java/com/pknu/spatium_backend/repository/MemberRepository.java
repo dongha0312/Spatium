@@ -14,8 +14,12 @@ public interface MemberRepository extends JpaRepository<Member, String> {
     boolean existsByMemEmail(@Param("memEmail") String memEmail);
 
     // 이메일로 회원 조회
-    //  - ERD엔 소셜 제공자쪽 고유ID(providerUserId)를 저장할 컬럼이 없어서,
-    //    일반/소셜 회원 모두 이메일을 공통 식별 키로 사용함
+    // 이메일은 가입 중복 확인과 일반 회원 조회 보조 키로 사용한다.
     @Query("SELECT m FROM Member m WHERE m.mem_email = :memEmail")
     Optional<Member> findByMemEmail(@Param("memEmail") String memEmail);
+
+    @Query("SELECT m FROM Member m WHERE m.provider = :provider AND m.providerUserId = :providerUserId")
+    Optional<Member> findByProviderAndProviderUserId(
+            @Param("provider") String provider,
+            @Param("providerUserId") String providerUserId);
 }
