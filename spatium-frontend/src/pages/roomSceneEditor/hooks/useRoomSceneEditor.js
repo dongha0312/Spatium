@@ -112,6 +112,10 @@ export function useRoomSceneEditor({
     setSelectedItem,
     selectedRotationDegrees,
     setSelectedRotationDegreesState,
+    selectedElevationCm,
+    setSelectedElevationCmState,
+    selectedMaxElevationCm,
+    setSelectedMaxElevationCmState,
     isReplacingSelected,
     setReplaceMode,
     canResetSelected,
@@ -173,7 +177,7 @@ export function useRoomSceneEditor({
 
   async function addFurniture(catalogItem) {
     if (!sceneActionsRef.current) {
-      setError("3D ?몄쭛湲곌? ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??");
+      setError("3D 편집기가 아직 준비되지 않았습니다.");
       return false;
     }
 
@@ -189,7 +193,7 @@ export function useRoomSceneEditor({
 
   function deleteSelectedObject() {
     if (!sceneActionsRef.current) {
-      setError("3D ?몄쭛湲곌? ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??");
+      setError("3D 편집기가 아직 준비되지 않았습니다.");
       return false;
     }
 
@@ -198,7 +202,7 @@ export function useRoomSceneEditor({
 
   function rotateSelectedObject() {
     if (!sceneActionsRef.current) {
-      setError("3D ?몄쭛湲곌? ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??");
+      setError("3D 편집기가 아직 준비되지 않았습니다.");
       return false;
     }
 
@@ -207,11 +211,20 @@ export function useRoomSceneEditor({
 
   function setSelectedRotationDegrees(degrees) {
     if (!sceneActionsRef.current?.setSelectedRotationDegrees) {
-      setError("3D ?몄쭛湲곌? ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??");
+      setError("3D 편집기가 아직 준비되지 않았습니다.");
       return false;
     }
 
     return sceneActionsRef.current.setSelectedRotationDegrees(degrees);
+  }
+
+  function setSelectedElevationCm(elevationCm) {
+    if (!sceneActionsRef.current?.setSelectedElevationCm) {
+      setError("3D 편집기가 아직 준비되지 않았습니다.");
+      return false;
+    }
+
+    return sceneActionsRef.current.setSelectedElevationCm(elevationCm);
   }
 
   function startReplaceSelectedObject() {
@@ -219,14 +232,14 @@ export function useRoomSceneEditor({
 
     setReplaceMode(true);
     setError("");
-    setStatus("?쇱そ 紐⑸줉?먯꽌 援먯껜??媛援щ? ?좏깮?섏꽭??");
+    setStatus("왼쪽 목록에서 교체할 가구를 선택하세요.");
     return true;
   }
 
   async function saveEditedSceneJson(saveContext = {}) {
     if (!sourceMetadataRef.current || !roomModelRef.current) {
       setStatus("");
-      setError("??ν븷 3D ?몄쭛 ?곗씠?곌? ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??");
+      setError("저장할 3D 편집 데이터가 아직 준비되지 않았습니다.");
       return false;
     }
 
@@ -245,7 +258,7 @@ export function useRoomSceneEditor({
         area: roomMeasurementsRef.current?.area,
       });
       sourceMetadataRef.current = replayableMetadata;
-      setStatus("저장완료");
+      setStatus("저장완료!!!!!!");
       window.setTimeout(() => setStatus(""), 1200);
       return true;
     } catch (caughtError) {
@@ -268,6 +281,8 @@ export function useRoomSceneEditor({
 
     let frameId = 0;
     let nextObjectIndex = 0;
+    let floorY = 0;
+    let ceilingY = 0;
     const editableRoots = [];
     const referenceRoots = [];
     const pickTargets = [];
@@ -280,6 +295,8 @@ export function useRoomSceneEditor({
     setError("");
     setSelectedItem(null);
     setSelectedRotationDegreesState(0);
+    setSelectedElevationCmState(0);
+    setSelectedMaxElevationCmState(0);
     setEditedItems([]);
     setCollisionSummary({ hasCollision: false, with: [] });
     setStatus("Loading room model...");
@@ -845,6 +862,21 @@ export function useRoomSceneEditor({
       });
     }
 
+    function elevationBoundsForObject(object) {
+      if (!object || !canTransformObject(object)) {
+        return { currentCm: 0, maxCm: 0 };
+      }
+
+      const halfHeight = object.userData.localObb?.halfSize?.y ?? 0;
+      const restY = floorY + halfHeight;
+      const maxY = Math.max(restY, ceilingY - halfHeight);
+
+      return {
+        currentCm: Math.round((object.position.y - restY) * 100),
+        maxCm: Math.round((maxY - restY) * 100),
+      };
+    }
+
     function syncSceneState(selectedObject = selectedObjectRef.current) {
       const collisions = refreshCollisionState(
         editableRoots,
@@ -862,6 +894,9 @@ export function useRoomSceneEditor({
       setSelectedRotationDegreesState(
         rotationDegreesFromObject(selectedObject),
       );
+      const elevationBounds = elevationBoundsForObject(selectedObject);
+      setSelectedElevationCmState(elevationBounds.currentCm);
+      setSelectedMaxElevationCmState(elevationBounds.maxCm);
       setCollisionSummary({
         hasCollision: collisions.length > 0,
         with: collisions,
@@ -1015,10 +1050,10 @@ export function useRoomSceneEditor({
         prepareRoomModel(roomModel);
         worldGroup.add(roomModel);
         addRoomMeasurements(calculateRoomMeasurements(roomModel));
-        const roomCenter = new THREE.Box3()
-          .setFromObject(roomModel)
-          .getCenter(new THREE.Vector3());
-        const floorY = estimateFloorY(metadata.objects, roomModel);
+        const roomBoundsBox = new THREE.Box3().setFromObject(roomModel);
+        const roomCenter = roomBoundsBox.getCenter(new THREE.Vector3());
+        floorY = estimateFloorY(metadata.objects, roomModel);
+        ceilingY = roomBoundsBox.isEmpty() ? floorY : roomBoundsBox.max.y;
         wallColliders.push(...createWallColliders(roomModel));
         applyRoomWallColor(wallColliders, wallColorRef.current);
         if (wallConfigBoolean("showColliderDebug")) {
@@ -1147,7 +1182,7 @@ export function useRoomSceneEditor({
             if (REFERENCE_CATEGORIES.has(catalogItem.category)) {
               setStatus("");
               setError(
-                "臾멸낵 李쎈Ц? 湲곗〈 臾?李쎈Ц???좏깮????援먯껜濡??곸슜?섏꽭??",
+                "문과 창문은 기존 문/창문을 선택한 후 교체로만 적용하세요.",
               );
               return false;
             }
@@ -1204,7 +1239,7 @@ export function useRoomSceneEditor({
             ) {
               setStatus("");
               setError(
-                "臾?李쎈Ц 紐⑤뜽? 湲곗〈 臾?李쎈Ц???좏깮????援먯껜?섏꽭??",
+                "문/창문 모델은 기존 문/창문을 선택한 후 교체하세요.",
               );
               return false;
             }
@@ -1214,7 +1249,7 @@ export function useRoomSceneEditor({
             ) {
               setStatus("");
               setError(
-                "臾멸낵 李쎈Ц? 臾?李쎈Ц 紐⑤뜽濡쒕쭔 援먯껜?????덉뒿?덈떎.",
+                "문과 창문은 문/창문 모델로만 교체할 수 있습니다.",
               );
               return false;
             }
@@ -1327,6 +1362,31 @@ export function useRoomSceneEditor({
             object.updateWorldMatrix(true, false);
             if (hasWallCollision(object, wallColliders)) {
               object.quaternion.copy(previousQuaternion);
+              object.updateWorldMatrix(true, false);
+              syncSceneState(object);
+              return false;
+            }
+            rememberValidTransform(object);
+            syncSceneState(object);
+            markSceneChanged();
+            return true;
+          },
+          setSelectedElevationCm: (elevationCm) => {
+            const object = selectedObjectRef.current;
+            if (!canTransformObject(object)) return false;
+
+            const bounds = elevationBoundsForObject(object);
+            const clampedCm = THREE.MathUtils.clamp(
+              Number(elevationCm) || 0,
+              0,
+              bounds.maxCm,
+            );
+            const halfHeight = object.userData.localObb?.halfSize?.y ?? 0;
+            const previousY = object.position.y;
+            object.position.y = floorY + halfHeight + clampedCm / 100;
+            object.updateWorldMatrix(true, false);
+            if (hasWallCollision(object, wallColliders)) {
+              object.position.y = previousY;
               object.updateWorldMatrix(true, false);
               syncSceneState(object);
               return false;
@@ -1489,6 +1549,8 @@ export function useRoomSceneEditor({
     setReplaceMode,
     setSelectedItem,
     setSelectedRotationDegreesState,
+    setSelectedElevationCmState,
+    setSelectedMaxElevationCmState,
     setStatus,
   ]);
 
@@ -1498,6 +1560,8 @@ export function useRoomSceneEditor({
     error,
     selectedItem,
     selectedRotationDegrees,
+    selectedElevationCm,
+    selectedMaxElevationCm,
     editedItems,
     isReplacingSelected,
     collisionSummary,
@@ -1508,6 +1572,7 @@ export function useRoomSceneEditor({
     deleteSelectedObject,
     rotateSelectedObject,
     setSelectedRotationDegrees,
+    setSelectedElevationCm,
     resetSelectedObject,
     saveEditedSceneJson,
     startReplaceSelectedObject,
