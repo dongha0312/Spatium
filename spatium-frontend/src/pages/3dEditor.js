@@ -436,6 +436,7 @@ function ThreeDEditor() {
               initial={session.nickname.charAt(0).toUpperCase()}
               name={session.nickname}
               onClick={toggleAccountPanel}
+              showCaret={false}
             />
           </div>
         ) : (
@@ -738,7 +739,7 @@ function ThreeDEditor() {
           name: session?.nickname,
           initial: session?.nickname?.charAt(0).toUpperCase(),
           imageUrl: profileImage,
-          subtext: session?.email ? `@${session.email}` : "",
+          subtext: session?.email ? `${session.email}` : "",
         }}
         statItems={[
           { label: "프로젝트", value: accountStats.projectCount },

@@ -137,9 +137,10 @@ function HomePage() {
               <AvatarButton
                 prefix="hp"
                 imageUrl={profileImage}
-                initial={session.nickname.charAt(0)}
+                initial={session.nickname.charAt(0).toUpperCase()}
                 name={session.nickname}
                 onClick={togglePanel}
+                showCaret={false}
               />
             </div>
           ) : (
@@ -242,7 +243,7 @@ function HomePage() {
           name: session?.nickname,
           initial: session?.nickname?.charAt(0),
           imageUrl: profileImage,
-          subtext: session?.email ? `@${session.email}` : "",
+          subtext: session?.email ? `${session.email}` : "",
         }}
         statItems={[
           { label: "프로젝트", value: stats.projectCount },

@@ -38,7 +38,7 @@ function normalizeUser(data) {
     initial: nickname.charAt(0).toUpperCase(),
     name: nickname,
     fullName: nickname,
-    handle: data?.email ? `@${data.email}` : "",
+    handle: data?.email ? `${data.email}` : "",
     email: data?.email || "",
     profileImage: data?.profileImageUrl || null,
   };
@@ -121,18 +121,15 @@ function MyPage() {
     loadDashboard();
   }, [loadDashboard]);
 
-  // 홈에서 "시작하기"로 진입한 경우 새 프로젝트 모달 자동 오픈
+  // 홈에서 "시작하기"로 진입한 경우, 새로고침/뒤로가기 시 모달이 다시 열리지 않도록 state 제거
   useEffect(() => {
     if (location.state?.openNewProject) {
-      autoModalHandled.current = true;
-      openProjectModal("project");
-      // 새로고침/뒤로가기 시 모달이 다시 열리지 않도록 state 제거
       navigate(location.pathname, { replace: true, state: {} });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 마이페이지 진입 시 프로젝트가 하나도 없으면 새 프로젝트 모달 자동 오픈
+  // 마이페이지 진입 시 프로젝트가 하나도 없으면 새 프로젝트 모달 자동 오픈 (있으면 열지 않음)
   useEffect(() => {
     if (loading || autoModalHandled.current) return;
 
@@ -387,7 +384,7 @@ function MyPage() {
           <AvatarButton
             prefix="mp"
             imageUrl={user.profileImage}
-            initial={user.initial}
+            initial={user.initial.toUpperCase()}
             name={user.name}
             onClick={togglePanel}
             showCaret={false}
