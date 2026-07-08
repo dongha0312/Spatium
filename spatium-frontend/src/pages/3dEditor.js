@@ -10,7 +10,7 @@ import "../styles/3deditor.css";
 import AccountPanel from "../components/AccountPanel";
 import AvatarButton from "../components/AvatarButton";
 import Logo from "../components/Logo";
-import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
+import RoomSceneEditorPage from "./roomSceneEditor/RoomSceneEditorPage";
 import {
   getAccessToken,
   getLoginSession,
@@ -583,7 +583,7 @@ function ThreeDEditor() {
               ) : roomSceneError ? (
                 <div className="ed-cat-empty">{roomSceneError}</div>
               ) : (
-                <TestThreeStagingPage
+                <RoomSceneEditorPage
                   ref={editorRef}
                   isSkyview={isSkyview}
                   showMeasurements={showMeasurements}
