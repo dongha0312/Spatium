@@ -7,12 +7,10 @@ import AvatarButton from "../../components/AvatarButton";
 import Footer from "../../components/Footer";
 import {
   clearLoginSession,
-  getAccessToken,
   getLoginSession,
   saveLoginSession,
 } from "../../utils/authSession";
 import {
-  deleteLogout,
   deleteMyAvatar,
   deleteMyInfo,
   getMyInfo,
@@ -20,6 +18,7 @@ import {
   putMyAvatar,
 } from "../../springApi/MemberSpringBootApi";
 import { getProjectList } from "../../springApi/ProjectSpringBootAPi";
+import useLogout from "../../hooks/useLogout";
 
 function AccountSettings() {
   const navigate = useNavigate();
@@ -114,18 +113,10 @@ function AccountSettings() {
   };
 
   // 로그아웃 : 서버 세션 정리 후 로컬 세션 삭제하고 메인으로
-  const handleLogout = async () => {
-    try {
-      if (getAccessToken()) {
-        await deleteLogout();
-      }
-    } catch (err) {
-      console.warn("Logout API failed, clearing local session anyway.", err);
-    }
-    clearLoginSession();
+  const handleLogout = useLogout(() => {
     setPanelOpen(false);
     navigate("/");
-  };
+  });
 
   // 프로필 사진 : 서버에 저장된 이미지 URL(data URL) (없으면 기본 이니셜 표시)
   const [avatarUrl, setAvatarUrl] = useState(null);

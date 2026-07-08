@@ -1,16 +1,13 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../styles/homepage.css";
-import {
-  clearLoginSession,
-  getAccessToken,
-  getLoginSession,
-} from "../utils/authSession";
-import { deleteLogout, getMyInfo } from "../springApi/MemberSpringBootApi";
+import { getLoginSession } from "../utils/authSession";
+import { getMyInfo } from "../springApi/MemberSpringBootApi";
 import { getProjectList } from "../springApi/ProjectSpringBootAPi";
 import Footer from "../components/Footer";
 import AccountPanel from "../components/AccountPanel";
 import AvatarButton from "../components/AvatarButton";
+import useLogout from "../hooks/useLogout";
 
 // 이용 순서 소개 (4단계)
 const STEPS = [
@@ -105,18 +102,10 @@ function HomePage() {
   };
 
   // 로그아웃 : 서버 세션 정리 후 로컬 세션 삭제, 상단바를 로그인 버튼 상태로 되돌림
-  const handleLogout = async () => {
-    try {
-      if (getAccessToken()) {
-        await deleteLogout();
-      }
-    } catch (err) {
-      console.warn("Logout API failed, clearing local session anyway.", err);
-    }
-    clearLoginSession();
+  const handleLogout = useLogout(() => {
     setSession(null);
     setPanelOpen(false);
-  };
+  });
 
   // 이용 순서 카드가 스크롤로 화면에 들어오면 순차적으로 페이드인 + 슬라이드업
   useEffect(() => {
