@@ -6,6 +6,7 @@ const ROTATION_STOPS = [-180, -90, 0, 90, 180];
 const ROTATION_SNAP_THRESHOLD = 4;
 const REPLACEABLE_TYPES = new Set(["object", "door", "window"]);
 
+// 슬라이더 값이 90도 단위 지점(-180/-90/0/90/180) 근처(±4도)면 그 값으로 스냅시킨다.
 function snapRotation(value) {
   const nearest = ROTATION_STOPS.reduce((closest, stop) =>
     Math.abs(stop - value) < Math.abs(closest - value) ? stop : closest,
@@ -14,6 +15,9 @@ function snapRotation(value) {
   return Math.abs(nearest - value) <= ROTATION_SNAP_THRESHOLD ? nearest : value;
 }
 
+// Three.js 씬(useRoomSceneEditor)을 렌더링하는 뷰포트 + 선택된 오브젝트의 정보 패널/
+// 회전·높이 슬라이더/교체·삭제 툴바를 그리는 컴포넌트. 상위(3dEditor.js)는 ref를 통해
+// addFurniture/저장/삭제 같은 액션을 호출한다.
 const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
   {
     isSkyview = false,
@@ -48,6 +52,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     onSceneChanged,
   });
 
+  // 선택된 오브젝트 종류에 따라 어떤 컨트롤을 보여줄지 결정한다.
   const canShowSelectionControls = REPLACEABLE_TYPES.has(
     selectedItem?.sourceType,
   );
@@ -77,6 +82,8 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     deleteSelectedReference(true);
   };
 
+  // 상위 컴포넌트(3dEditor.js)가 editorRef.current.xxx() 형태로 호출할 수 있게
+  // 내부 액션 일부를 ref로 노출한다.
   useImperativeHandle(
     ref,
     () => ({
@@ -99,6 +106,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     <div className="room-scene-editor-page">
       <div ref={containerRef} className="room-scene-editor-viewport" />
 
+      {/* 선택된 오브젝트의 치수/회전/높이 정보 패널 */}
       {canShowSelectionControls && (
         <aside className="room-scene-editor-info-drawer">
           <div className="room-scene-editor-info-title">
@@ -134,6 +142,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
         </aside>
       )}
 
+      {/* 회전/높이 슬라이더 + 교체·삭제 툴바 */}
       {canShowSelectionControls && (
         <div className="room-scene-editor-selection-controls">
           <div className="room-scene-editor-rotation-panel">

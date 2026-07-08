@@ -1,16 +1,19 @@
 import * as THREE from "three";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 
+// JSON으로 안전하게 깊은 복사한다 (metadata 원본을 수정하지 않고 편집본을 만들 때 사용).
 export function cloneJsonValue(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
 }
 
+// 저장된 4x4 행렬(컬럼 4개 배열)을 THREE.Matrix4로 복원한다.
 export function matrixFromColumns(columns) {
   const matrix = new THREE.Matrix4();
   matrix.fromArray(columns.flat());
   return matrix;
 }
 
+// THREE.Matrix4를 저장용 컬럼 4개 배열로 변환한다 (matrixFromColumns의 역변환).
 export function columnsFromMatrix(matrix) {
   const values = matrix.toArray();
   return [
@@ -21,6 +24,7 @@ export function columnsFromMatrix(matrix) {
   ];
 }
 
+// 치수/디버그 라벨용 CSS2DObject(HTML div를 3D 씬 좌표에 붙이는 라벨)를 만든다.
 export function createLabel(text, className = "furniture-label") {
   const div = document.createElement("div");
   div.className = className;
@@ -28,6 +32,7 @@ export function createLabel(text, className = "furniture-label") {
   return new CSS2DObject(div);
 }
 
+// material에 딸린 텍스처 등 하위 리소스까지 전부 dispose한다.
 export function disposeMaterial(material) {
   Object.values(material).forEach((value) => {
     if (
@@ -41,6 +46,8 @@ export function disposeMaterial(material) {
   material.dispose();
 }
 
+// object3D 트리를 순회하며 geometry/material(및 CSS2D label element)을 전부 정리한다.
+// 오브젝트 교체/삭제 시 GPU 메모리 누수를 막기 위해 반드시 호출해야 한다.
 export function disposeScene(scene) {
   scene.traverse((object) => {
     object.element?.remove?.();
@@ -55,6 +62,8 @@ export function disposeScene(scene) {
   });
 }
 
+// 카메라를 대상 오브젝트 전체가 한눈에 보이는 위치로 이동시킨다 (초기 로딩 후 방 전체를
+// 보여줄 때 사용).
 export function frameObject(camera, controls, object) {
   const bounds = new THREE.Box3().setFromObject(object);
   if (bounds.isEmpty()) return;
@@ -76,6 +85,7 @@ export function frameObject(camera, controls, object) {
   controls.update();
 }
 
+// metadata의 item(가구/문/창문)에 저장된 transform 행렬을 position/quaternion/scale로 분해한다.
 export function decomposeRoomTransform(item) {
   const position = new THREE.Vector3();
   const quaternion = new THREE.Quaternion();

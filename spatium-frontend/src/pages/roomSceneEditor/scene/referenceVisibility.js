@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { yawDegreesFromDirection } from "./editorTransforms";
 
+// 문/창문 옆에 방향 정보(법선/카메라 각도)를 보여주는 디버그 라벨 (showReferenceLabels일 때만 사용).
 export function createReferenceDebugLabel() {
   const element = document.createElement("div");
   element.className = "reference-debug-label";
@@ -10,6 +11,8 @@ export function createReferenceDebugLabel() {
   return label;
 }
 
+// 카메라 시야를 가리는 문/창문을 반투명하게 만든다(hidden=true). 원래 상태(opacity 등)는
+// 처음 호출될 때 material.userData에 저장해두고, hidden=false가 되면 그 값으로 복원한다.
 export function applyReferencePreviewVisibility(reference, hidden) {
   const debugLabel = reference.userData.debugLabel;
 
@@ -56,6 +59,8 @@ export function applyReferencePreviewVisibility(reference, hidden) {
   });
 }
 
+// 카메라가 문/창문의 roomFacingNormal 반대편(바깥쪽)에 있으면 hidden:true를 반환한다.
+// roomFacingNormal이 없으면(초기화 안 됐으면) 항상 hidden:false — 즉 절대 흐려지지 않는다.
 export function referenceVisibilityState(reference, camera) {
   const normal = reference.userData.roomFacingNormal?.clone().setY(0);
   if (!normal || normal.lengthSq() < 1e-8) {
@@ -93,6 +98,7 @@ function formatDebugValue(value, suffix = "") {
   return value == null ? "--" : `${value}${suffix}`;
 }
 
+// 디버그 라벨 텍스트를 현재 상태(법선/카메라 각도/숨김 여부)로 갱신한다.
 export function updateReferenceDebugLabel(reference, state) {
   const element = reference.userData.debugLabel?.element;
   if (!element) return;
@@ -114,6 +120,8 @@ export function updateReferenceDebugLabel(reference, state) {
   )} ${state.hidden ? "hide" : "show"}`;
 }
 
+// 문/창문 localObb에서 가장 얇은 수평 축(=두께 방향)을 찾아 월드 좌표계의 법선 벡터로 변환한다.
+// 이 축이 곧 "문/창문 패널이 바라보는 방향"이 된다.
 export function referencePlaneNormal(reference) {
   const localObb = reference.userData.localObb;
   if (!localObb) return null;
@@ -144,6 +152,9 @@ export function referencePlaneNormal(reference) {
     .normalize();
 }
 
+// 문/창문의 roomFacingNormal(방 안쪽을 향하는 법선)을 계산해서 userData에 저장한다.
+// referencePlaneNormal()로 얇은 축을 구한 뒤, 방 중심을 향하는 쪽으로 부호를 맞춘다.
+// 초기 로딩과 교체(replace) 양쪽에서 반드시 호출해야 카메라 각도에 따른 흐려짐이 동작한다.
 export function initializeReferenceFacingNormal(reference, roomCenter) {
   const localNormal = referencePlaneNormal(reference);
 
