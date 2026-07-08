@@ -1,6 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import "../styles/cookiepolicy.css";
+import Logo from "../components/Logo";
 
 function CookiePolicy() {
     return (
@@ -8,10 +9,7 @@ function CookiePolicy() {
 
             {/* 상단 네비게이션 */}
             <div className="cp-nav">
-                <Link to="/" className="cp-logo">
-                    <div className="cp-logo-sq"><div className="cp-logo-sq-i"></div></div>
-                    SPATIUM
-                </Link>
+                <Logo prefix="cp" />
                 <div className="cp-nav-right">
                     <Link to="/" className="cp-btn-out">홈으로</Link>
                 </div>

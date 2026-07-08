@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import "../../styles/mypage.css";
 import { getAccessToken } from "../../utils/authSession";
 import { getMyInfo } from "../../springApi/MemberSpringBootApi";
@@ -18,6 +18,7 @@ import { deleteRoom } from "../../springApi/RoomSpringBootApi";
 import AccountPanel from "../../components/AccountPanel";
 import AvatarButton from "../../components/AvatarButton";
 import Footer from "../../components/Footer";
+import Logo from "../../components/Logo";
 import useLogout from "../../hooks/useLogout";
 
 const DEFAULT_USER = {
@@ -378,12 +379,7 @@ function MyPage() {
   return (
     <div className="mp-root">
       <div className="mp-nav">
-        <Link to="/" className="mp-logo">
-          <div className="mp-logo-sq">
-            <div className="mp-logo-sq-i"></div>
-          </div>
-          SPATIUM
-        </Link>
+        <Logo prefix="mp" />
         <div className="mp-nav-right">
           <AvatarButton
             prefix="mp"

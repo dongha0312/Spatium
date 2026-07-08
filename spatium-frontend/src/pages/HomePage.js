@@ -6,6 +6,7 @@ import { getMyInfo } from "../springApi/MemberSpringBootApi";
 import Footer from "../components/Footer";
 import AccountPanel from "../components/AccountPanel";
 import AvatarButton from "../components/AvatarButton";
+import Logo from "../components/Logo";
 import useLogout from "../hooks/useLogout";
 import useProjectStats from "../hooks/useProjectStats";
 
@@ -120,12 +121,7 @@ function HomePage() {
     <div className="hp-root">
       {/* 상단 네비게이션 */}
       <div className="hp-nav">
-        <Link to="/" className="hp-logo">
-          <div className="hp-logo-sq">
-            <div className="hp-logo-sq-i"></div>
-          </div>
-          SPATIUM
-        </Link>
+        <Logo prefix="hp" />
         <div className="hp-nav-right">
           {session ? (
             <div className="hp-nav-account">

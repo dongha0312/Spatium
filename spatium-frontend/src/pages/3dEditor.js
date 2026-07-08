@@ -9,6 +9,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import "../styles/3deditor.css";
 import AccountPanel from "../components/AccountPanel";
 import AvatarButton from "../components/AvatarButton";
+import Logo from "../components/Logo";
 import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
 import {
   getAccessToken,
@@ -404,12 +405,7 @@ function ThreeDEditor() {
   return (
     <div className="ed-root">
       <div className="ed-nav">
-        <Link to="/" className="ed-logo">
-          <div className="ed-logo-sq">
-            <div className="ed-logo-sq-i" />
-          </div>
-          SPATIUM
-        </Link>
+        <Logo prefix="ed" />
         <div className="ed-nav-center">{roomLabel}</div>
         <div className="ed-nav-status">
           {isSaving && <span className="ed-save-state">Saving...</span>}

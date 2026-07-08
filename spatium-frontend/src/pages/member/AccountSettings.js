@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { GoogleLogin } from "@react-oauth/google";
 import "../../styles/accountsettings.css";
 import AccountPanel from "../../components/AccountPanel";
 import AvatarButton from "../../components/AvatarButton";
 import Footer from "../../components/Footer";
+import Logo from "../../components/Logo";
 import {
   clearLoginSession,
   getLoginSession,
@@ -282,12 +283,7 @@ function AccountSettings() {
       <div className="as-root">
         {/* 상단 네비게이션 */}
         <div className="as-nav">
-          <Link to="/" className="as-logo">
-            <div className="as-logo-sq">
-              <div className="as-logo-sq-i"></div>
-            </div>
-            SPATIUM
-          </Link>
+          <Logo prefix="as" />
           <div className="as-nav-right">
             <div className="as-av-btn">
               <div className="as-av-circ">{avatarNode}</div>
@@ -348,12 +344,7 @@ function AccountSettings() {
     <div className="as-root">
       {/* 상단 네비게이션 */}
       <div className="as-nav">
-        <Link to="/" className="as-logo">
-          <div className="as-logo-sq">
-            <div className="as-logo-sq-i"></div>
-          </div>
-          SPATIUM
-        </Link>
+        <Logo prefix="as" />
         <div className="as-nav-right">
           <div className="as-nav-account">
             {/* 닉네임 왼쪽 : 마이페이지로 바로 이동하는 외곽선 버튼 */}
