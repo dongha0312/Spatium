@@ -11,10 +11,7 @@ import AccountPanel from "../components/AccountPanel";
 import AvatarButton from "../components/AvatarButton";
 import Logo from "../components/Logo";
 import RoomSceneEditorPage from "./roomSceneEditor/RoomSceneEditorPage";
-import {
-  getAccessToken,
-  getLoginSession,
-} from "../utils/authSession";
+import { getAccessToken, getLoginSession } from "../utils/authSession";
 import { getMyInfo } from "../springApi/MemberSpringBootApi";
 import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
 import { getRoomList, getRoomSceneData } from "../springApi/RoomSpringBootApi";
