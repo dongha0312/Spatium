@@ -313,12 +313,14 @@ export function createReplayableMetadataJson(metadata, editedItems, roomModel) {
     };
   });
 
-  nextMetadata.doors = doorEdits.length
-    ? doorEdits.map((edit) => applyReferenceEdit(edit, originalDoors))
-    : originalDoors;
-  nextMetadata.windows = windowEdits.length
-    ? windowEdits.map((edit) => applyReferenceEdit(edit, originalWindows))
-    : originalWindows;
+  // editedItems는 현재 씬의 전체 상태를 반영하므로(문/창문을 모두 지운 경우 포함),
+  // 비어 있다고 originalDoors/originalWindows로 되돌리면 삭제가 저장에서 사라진다.
+  nextMetadata.doors = doorEdits.map((edit) =>
+    applyReferenceEdit(edit, originalDoors),
+  );
+  nextMetadata.windows = windowEdits.map((edit) =>
+    applyReferenceEdit(edit, originalWindows),
+  );
   nextMetadata._spatiumRoom =
     serializeRoomModelToJson(
       roomModel,

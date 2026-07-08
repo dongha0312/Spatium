@@ -29,6 +29,7 @@ import {
   hasWallCollision,
   initializeWallConstraints,
   objectIntersectsWalls,
+  referenceCollidersFromRoots,
   refreshCollisionState,
   rememberValidTransform,
 } from "../scene/collision";
@@ -36,6 +37,7 @@ import {
   createDoorModel,
   createEditableFurniture,
   createEditableFurnitureModel,
+  createWallInfillMesh,
   createWindowModel,
 } from "../scene/objectFactory";
 import {
@@ -103,7 +105,7 @@ export function useRoomSceneEditor({
   const showMeasurementsRef = useRef(showMeasurements);
   const wallColorRef = useRef(wallColor);
   const onSceneChangedRef = useRef(onSceneChanged);
-  const { isSceneConfigReady, status, setStatus, error, setError } =
+  const { isSceneConfigReady, setStatus, error, setError } =
     useSceneConfigStatus();
   const {
     selectedObjectRef,
@@ -200,6 +202,15 @@ export function useRoomSceneEditor({
     return sceneActionsRef.current.deleteSelectedObject();
   }
 
+  function deleteSelectedReference(fillWithWall) {
+    if (!sceneActionsRef.current) {
+      setError("3D 편집기가 아직 준비되지 않았습니다.");
+      return false;
+    }
+
+    return sceneActionsRef.current.deleteSelectedReference(fillWithWall);
+  }
+
   function rotateSelectedObject() {
     if (!sceneActionsRef.current) {
       setError("3D 편집기가 아직 준비되지 않았습니다.");
@@ -258,7 +269,7 @@ export function useRoomSceneEditor({
         area: roomMeasurementsRef.current?.area,
       });
       sourceMetadataRef.current = replayableMetadata;
-      setStatus("저장완료!!!!!!");
+      setStatus("저장완료.");
       window.setTimeout(() => setStatus(""), 1200);
       return true;
     } catch (caughtError) {
@@ -288,6 +299,12 @@ export function useRoomSceneEditor({
     const pickTargets = [];
     const wallColliders = [];
     const root = containerRef.current;
+
+    // 가구 이동/회전/충돌 판정에서는 벽뿐 아니라 문/창문도 장애물로 취급한다.
+    function activeColliders() {
+      return wallColliders.concat(referenceCollidersFromRoots(referenceRoots));
+    }
+
     const width = root.clientWidth || window.innerWidth;
     const height = root.clientHeight || window.innerHeight;
 
@@ -299,7 +316,7 @@ export function useRoomSceneEditor({
     setSelectedMaxElevationCmState(0);
     setEditedItems([]);
     setCollisionSummary({ hasCollision: false, with: [] });
-    setStatus("Loading room model...");
+    setStatus("방 불러오는 중...");
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(sceneColor("sceneBackground"));
@@ -779,7 +796,7 @@ export function useRoomSceneEditor({
         const adjustedMovement = constrainedMovementBeforeWallCollision(
           object,
           movement,
-          wallColliders,
+          activeColliders(),
         );
         object.position.add(adjustedMovement);
         object.position.y = activeInteraction.y;
@@ -792,7 +809,7 @@ export function useRoomSceneEditor({
           .copy(activeInteraction.startQuaternion)
           .premultiply(new THREE.Quaternion().setFromAxisAngle(upAxis, delta));
         object.updateWorldMatrix(true, false);
-        if (hasWallCollision(object, wallColliders)) {
+        if (hasWallCollision(object, activeColliders())) {
           object.quaternion.copy(previousQuaternion);
         }
       }
@@ -881,7 +898,7 @@ export function useRoomSceneEditor({
       const collisions = refreshCollisionState(
         editableRoots,
         selectedObject,
-        wallColliders,
+        activeColliders(),
       );
       const exportedItems = [...editableRoots, ...referenceRoots].map(
         objectToEditableJson,
@@ -956,7 +973,7 @@ export function useRoomSceneEditor({
       if (canTransformObject(object)) {
         if (
           object.userData.startsInWallCollision &&
-          objectIntersectsWalls(object, wallColliders)
+          objectIntersectsWalls(object, activeColliders())
         ) {
           object.userData.ignoreWallConstraint = true;
         }
@@ -1098,8 +1115,18 @@ export function useRoomSceneEditor({
             createFallbackReferenceTemplate(sourceType);
 
           return sourceType === "door"
-            ? createDoorModel(modelTemplate, referenceItem, index)
-            : createWindowModel(modelTemplate, referenceItem, index);
+            ? createDoorModel(
+                modelTemplate,
+                referenceItem,
+                index,
+                wallColliders,
+              )
+            : createWindowModel(
+                modelTemplate,
+                referenceItem,
+                index,
+                wallColliders,
+              );
         }
 
         const furnitureItems = await Promise.all(
@@ -1128,7 +1155,7 @@ export function useRoomSceneEditor({
           furnitureLayer.add(furniture.root);
           editableRoots.splice(insertAt, 0, furniture.root);
           pickTargets.push(...furniture.pickTargets);
-          initializeWallConstraints([furniture.root], wallColliders);
+          initializeWallConstraints([furniture.root], activeColliders());
           selectObject(furniture.root);
         }
 
@@ -1238,9 +1265,7 @@ export function useRoomSceneEditor({
               REFERENCE_CATEGORIES.has(catalogItem.category)
             ) {
               setStatus("");
-              setError(
-                "문/창문 모델은 기존 문/창문을 선택한 후 교체하세요.",
-              );
+              setError("문/창문 모델은 기존 문/창문을 선택한 후 교체하세요.");
               return false;
             }
             if (
@@ -1248,9 +1273,7 @@ export function useRoomSceneEditor({
               !REFERENCE_CATEGORIES.has(catalogItem.category)
             ) {
               setStatus("");
-              setError(
-                "문과 창문은 문/창문 모델로만 교체할 수 있습니다.",
-              );
+              setError("문과 창문은 문/창문 모델로만 교체할 수 있습니다.");
               return false;
             }
 
@@ -1338,7 +1361,7 @@ export function useRoomSceneEditor({
               new THREE.Quaternion().setFromAxisAngle(upAxis, Math.PI / 2),
             );
             object.updateWorldMatrix(true, false);
-            if (hasWallCollision(object, wallColliders)) {
+            if (hasWallCollision(object, activeColliders())) {
               object.quaternion.copy(previousQuaternion);
               object.updateWorldMatrix(true, false);
               syncSceneState(object);
@@ -1360,7 +1383,7 @@ export function useRoomSceneEditor({
               THREE.MathUtils.degToRad(normalized),
             );
             object.updateWorldMatrix(true, false);
-            if (hasWallCollision(object, wallColliders)) {
+            if (hasWallCollision(object, activeColliders())) {
               object.quaternion.copy(previousQuaternion);
               object.updateWorldMatrix(true, false);
               syncSceneState(object);
@@ -1385,7 +1408,7 @@ export function useRoomSceneEditor({
             const previousY = object.position.y;
             object.position.y = floorY + halfHeight + clampedCm / 100;
             object.updateWorldMatrix(true, false);
-            if (hasWallCollision(object, wallColliders)) {
+            if (hasWallCollision(object, activeColliders())) {
               object.position.y = previousY;
               object.updateWorldMatrix(true, false);
               syncSceneState(object);
@@ -1411,6 +1434,34 @@ export function useRoomSceneEditor({
             syncSceneState(null);
             markSceneChanged();
             setStatus("Deleted furniture.");
+            window.setTimeout(() => setStatus(""), 900);
+            return true;
+          },
+          deleteSelectedReference: (fillWithWall) => {
+            const object = selectedObjectRef.current;
+            if (!object || !REFERENCE_CATEGORIES.has(object.userData.sourceType)) {
+              return false;
+            }
+
+            if (fillWithWall) {
+              const infill = createWallInfillMesh(
+                object,
+                wallColliders,
+                object.userData.sourceIndex ?? 0,
+              );
+              roomModel.add(infill);
+              wallColliders.length = 0;
+              wallColliders.push(...createWallColliders(roomModel));
+              applyRoomWallColor(wallColliders, wallColorRef.current);
+              initializeWallConstraints(editableRoots, activeColliders());
+            }
+
+            removeReferenceObject(object);
+            selectedObjectRef.current = null;
+            setReplaceMode(false);
+            syncSceneState(null);
+            markSceneChanged();
+            setStatus(fillWithWall ? "벽으로 메웠습니다." : "개구부로 남겼습니다.");
             window.setTimeout(() => setStatus(""), 900);
             return true;
           },
@@ -1451,7 +1502,7 @@ export function useRoomSceneEditor({
           pickTargets.push(...item.pickTargets);
         });
 
-        initializeWallConstraints(editableRoots, wallColliders);
+        initializeWallConstraints(editableRoots, activeColliders());
 
         if (editableRoots[0]) selectObject(editableRoots[0]);
         if (!editableRoots.length) syncSceneState(null);
@@ -1556,7 +1607,6 @@ export function useRoomSceneEditor({
 
   return {
     containerRef,
-    status,
     error,
     selectedItem,
     selectedRotationDegrees,
@@ -1570,6 +1620,7 @@ export function useRoomSceneEditor({
     canSaveJson,
     addFurniture,
     deleteSelectedObject,
+    deleteSelectedReference,
     rotateSelectedObject,
     setSelectedRotationDegrees,
     setSelectedElevationCm,

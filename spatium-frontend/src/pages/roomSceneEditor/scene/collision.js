@@ -45,6 +45,20 @@ export function worldObbForObject(object) {
   return object.userData.localObb.clone().applyMatrix4(object.matrixWorld);
 }
 
+// 문/창문을 가구 이동 시 부딪히는 고정 장애물로 취급하기 위한 콜라이더.
+// spanAxes/roomFacingNormal이 없으므로 wallBlocksObjectObb는 OBB 교차 여부만으로 판정한다.
+export function referenceCollidersFromRoots(referenceRoots) {
+  return (referenceRoots || [])
+    .filter((root) => root?.userData?.localObb)
+    .map((root) => ({
+      object: root,
+      obb: worldObbForObject(root),
+      spanAxes: null,
+      roomFacingNormal: null,
+      roomFacingProjection: null,
+    }));
+}
+
 export function rememberValidTransform(object) {
   if (!object) return;
 

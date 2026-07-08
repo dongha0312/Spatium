@@ -576,6 +576,95 @@ export function worldWallFaceCollidersFromGeometry(
   return colliders;
 }
 
+// position에서 가장 가까운 벽 mesh를 찾는다. 문/창문은 벽에 뚫린 개구부(hole) 위에
+// 있어서 벽 mesh의 삼각형(triangle) 자체와는 겹치지 않으므로, 벽의 world bounding box까지의
+// 거리(안에 있으면 0)로 판정한다. per-triangle face collider를 쓰지 않는 이유는, 문/창문
+// 개구부 주변에는 문틀 옆면(reveal)처럼 진짜 두께 방향과 무관한(벽 길이 방향을 향하는)
+// 삼각형도 섞여 있어서, 그런 삼각형을 기준으로 삼으면 두께 축을 잘못 잡기 때문이다.
+function nearestWallMesh(position, wallMeshes, maxDistance) {
+  let best = null;
+  let bestDistance = Infinity;
+  const box = new THREE.Box3();
+
+  (wallMeshes || []).forEach((object) => {
+    if (!object?.geometry) return;
+
+    object.updateWorldMatrix(true, false);
+    box.setFromObject(object);
+    const distance = box.distanceToPoint(position);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = object;
+    }
+  });
+
+  return best && bestDistance <= maxDistance
+    ? { object: best, distance: bestDistance }
+    : null;
+}
+
+// mesh 하나의 로컬 bounding box에서 가장 짧은 축을 두께 방향으로 본다. 벽 mesh는
+// 길이/높이에 비해 두께가 훨씬 얇은 박스 형태로 스캔되므로 이 축이 실제 두께 방향과 일치한다.
+function localThicknessAxis(object) {
+  const position = object.geometry?.attributes?.position;
+  if (!position) return null;
+
+  const localBounds = new THREE.Box3();
+  const vertex = new THREE.Vector3();
+  for (let index = 0; index < position.count; index += 1) {
+    vertex.fromBufferAttribute(position, index);
+    localBounds.expandByPoint(vertex);
+  }
+
+  const size = localBounds.getSize(new THREE.Vector3());
+  const sizes = [size.x, size.y, size.z];
+  let thinnestIndex = 0;
+  if (sizes[1] < sizes[thinnestIndex]) thinnestIndex = 1;
+  if (sizes[2] < sizes[thinnestIndex]) thinnestIndex = 2;
+
+  const localAxis = new THREE.Vector3(
+    thinnestIndex === 0 ? 1 : 0,
+    thinnestIndex === 1 ? 1 : 0,
+    thinnestIndex === 2 ? 1 : 0,
+  );
+  const quaternion = new THREE.Quaternion();
+  object.matrixWorld.decompose(
+    new THREE.Vector3(),
+    quaternion,
+    new THREE.Vector3(),
+  );
+
+  return localAxis.applyQuaternion(quaternion).normalize();
+}
+
+// 문/창문이 속한 벽의 실제 두께와 두께 방향 중심 위치를 잰다. wallMeshes는 벽 mesh
+// object 배열이다(wallColliders의 collider가 아니라 원본 mesh). 가까이에 벽을 찾지
+// 못하면(거리 maxDistance 초과) null을 반환한다.
+export function measureWallThicknessAtPosition(
+  position,
+  wallMeshes,
+  maxDistance = 0.5,
+) {
+  const nearest = nearestWallMesh(position, wallMeshes, maxDistance);
+  if (!nearest) return null;
+
+  const normal = localThicknessAxis(nearest.object);
+  if (!normal) return null;
+
+  const range = geometryProjectionRange(nearest.object, normal);
+  if (!range) return null;
+
+  const thickness = range.max - range.min;
+  if (!Number.isFinite(thickness) || thickness <= 0.01) return null;
+
+  return {
+    thickness,
+    normal,
+    centerProjection: (range.min + range.max) / 2,
+    object: nearest.object,
+  };
+}
+
 export function geometryProjectionRange(object, direction) {
   const position = object.geometry?.attributes?.position;
   if (!position) return null;

@@ -26,7 +26,6 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
 ) {
   const {
     containerRef,
-    status,
     error,
     selectedItem,
     selectedRotationDegrees,
@@ -37,6 +36,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     canSaveJson,
     addFurniture,
     deleteSelectedObject,
+    deleteSelectedReference,
     setSelectedRotationDegrees,
     setSelectedElevationCm,
     saveEditedSceneJson,
@@ -53,6 +53,8 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     selectedItem?.sourceType,
   );
   const canDeleteSelected = selectedItem?.sourceType === "object";
+  const canDeleteReference =
+    selectedItem?.sourceType === "door" || selectedItem?.sourceType === "window";
   const canShowElevationControl = selectedItem?.sourceType === "object";
 
   const handleRotationChange = (event) => {
@@ -61,6 +63,18 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
 
   const handleElevationChange = (event) => {
     setSelectedElevationCm(Number(event.target.value));
+  };
+
+  const handleDeleteAsOpening = () => {
+    deleteSelectedReference(false);
+  };
+
+  const handleDeleteFillWithWall = () => {
+    const confirmed = window.confirm(
+      "선택한 문/창문을 삭제하고 벽으로 메우시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+    );
+    if (!confirmed) return;
+    deleteSelectedReference(true);
   };
 
   useImperativeHandle(
@@ -88,33 +102,28 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
           </div>
           <dl className="room-scene-editor-info-list">
             <div>
-              <dt>Width</dt>
+              <dt>가로</dt>
               <dd>{selectedItem.dimensionsCm?.width ?? "-"} cm</dd>
             </div>
             <div>
-              <dt>Depth</dt>
+              <dt>세로</dt>
               <dd>{selectedItem.dimensionsCm?.depth ?? "-"} cm</dd>
             </div>
             <div>
-              <dt>Height</dt>
+              <dt>높이</dt>
               <dd>{selectedItem.dimensionsCm?.height ?? "-"} cm</dd>
             </div>
             <div>
-              <dt>Rotation</dt>
-              <dd>{selectedRotationDegrees} deg</dd>
+              <dt>각도</dt>
+              <dd>{selectedRotationDegrees} 도</dd>
             </div>
             {canShowElevationControl && (
               <div>
-                <dt>Elevation</dt>
+                <dt>바닥과 높이 차이</dt>
                 <dd>{selectedElevationCm} cm</dd>
               </div>
             )}
           </dl>
-          {selectedItem.collision?.hasCollision && (
-            <div className="room-scene-editor-info-warning">
-              Overlap detected
-            </div>
-          )}
         </aside>
       )}
 
@@ -189,17 +198,40 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
                 </span>
               </button>
             )}
+            {canDeleteReference && (
+              <>
+                <button
+                  type="button"
+                  className="room-scene-editor-selection-tool"
+                  onClick={handleDeleteAsOpening}
+                  title="문/창문만 지우고 개구부는 남깁니다"
+                >
+                  <span className="room-scene-editor-selection-tool-icon">
+                    개구부로 삭제
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="room-scene-editor-selection-tool room-scene-editor-selection-tool--danger"
+                  onClick={handleDeleteFillWithWall}
+                  title="문/창문을 지우고 그 자리를 벽으로 메웁니다"
+                >
+                  <span className="room-scene-editor-selection-tool-icon">
+                    벽으로 메우기
+                  </span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}
 
       {collisionSummary.hasCollision && (
         <div className="room-scene-editor-collision-warning">
-          Some items overlap with walls or room boundaries.
+          벽이나 방의 경계와 겹치는 오브젝트가 있습니다.
         </div>
       )}
 
-      {status && <div className="room-scene-editor-status">{status}</div>}
       {error && <pre className="room-scene-editor-error">{error}</pre>}
     </div>
   );
