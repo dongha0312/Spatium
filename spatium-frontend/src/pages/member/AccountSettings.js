@@ -1,23 +1,25 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { GoogleLogin } from "@react-oauth/google";
 import "../../styles/accountsettings.css";
+import AccountPanel from "../../components/AccountPanel";
+import AvatarButton from "../../components/AvatarButton";
 import Footer from "../../components/Footer";
+import Logo from "../../components/Logo";
 import {
   clearLoginSession,
-  getAccessToken,
   getLoginSession,
   saveLoginSession,
 } from "../../utils/authSession";
 import {
-  deleteLogout,
   deleteMyAvatar,
   deleteMyInfo,
   getMyInfo,
   patchMyInfo,
   putMyAvatar,
 } from "../../springApi/MemberSpringBootApi";
-import { getProjectList } from "../../springApi/ProjectSpringBootAPi";
+import useLogout from "../../hooks/useLogout";
+import useProjectStats from "../../hooks/useProjectStats";
 
 function AccountSettings() {
   const navigate = useNavigate();
@@ -74,31 +76,8 @@ function AccountSettings() {
   // 닉네임 클릭 시 열리는 "내 정보" 우측 패널
   const [panelOpen, setPanelOpen] = useState(false);
 
-  // 패널 이용현황에 표시할 통계 (프로젝트 수 / 배치 가구 수)
-  const [stats, setStats] = useState({ projectCount: 0, furnitureCount: 0 });
-
-  // 로그인 상태면 프로젝트 목록을 불러와 이용현황 숫자를 채움
-  useEffect(() => {
-    if (!session) return;
-    let active = true;
-    getProjectList()
-      .then((page) => {
-        if (!active) return;
-        const items = page?.items || [];
-        const furnitureCount = items.reduce(
-          (sum, p) => sum + (p.furnitureCount || 0),
-          0,
-        );
-        setStats({ projectCount: items.length, furnitureCount });
-      })
-      .catch((err) => {
-        console.warn("프로젝트 수 조회 실패:", err);
-      });
-    return () => {
-      active = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // 패널 이용현황에 표시할 통계 (프로젝트 수 / 룸 수)
+  const stats = useProjectStats(Boolean(session));
 
   const togglePanel = () => setPanelOpen((prev) => !prev);
 
@@ -112,18 +91,10 @@ function AccountSettings() {
   };
 
   // 로그아웃 : 서버 세션 정리 후 로컬 세션 삭제하고 메인으로
-  const handleLogout = async () => {
-    try {
-      if (getAccessToken()) {
-        await deleteLogout();
-      }
-    } catch (err) {
-      console.warn("Logout API failed, clearing local session anyway.", err);
-    }
-    clearLoginSession();
+  const handleLogout = useLogout(() => {
     setPanelOpen(false);
     navigate("/");
-  };
+  });
 
   // 프로필 사진 : 서버에 저장된 이미지 URL(data URL) (없으면 기본 이니셜 표시)
   const [avatarUrl, setAvatarUrl] = useState(null);
@@ -312,12 +283,7 @@ function AccountSettings() {
       <div className="as-root">
         {/* 상단 네비게이션 */}
         <div className="as-nav">
-          <Link to="/" className="as-logo">
-            <div className="as-logo-sq">
-              <div className="as-logo-sq-i"></div>
-            </div>
-            SPATIUM
-          </Link>
+          <Logo prefix="as" />
           <div className="as-nav-right">
             <div className="as-av-btn">
               <div className="as-av-circ">{avatarNode}</div>
@@ -378,12 +344,7 @@ function AccountSettings() {
     <div className="as-root">
       {/* 상단 네비게이션 */}
       <div className="as-nav">
-        <Link to="/" className="as-logo">
-          <div className="as-logo-sq">
-            <div className="as-logo-sq-i"></div>
-          </div>
-          SPATIUM
-        </Link>
+        <Logo prefix="as" />
         <div className="as-nav-right">
           <div className="as-nav-account">
             {/* 닉네임 왼쪽 : 마이페이지로 바로 이동하는 외곽선 버튼 */}
@@ -395,16 +356,13 @@ function AccountSettings() {
               마이페이지
             </button>
             {/* 닉네임 클릭 : 우측 "내 정보" 패널 열기 */}
-            <button
-              type="button"
-              className="as-av-btn"
+            <AvatarButton
+              prefix="as"
+              imageUrl={avatarUrl}
+              initial={displayInitial}
+              name={displayName}
               onClick={togglePanel}
-              aria-label="내 정보 열기"
-            >
-              <div className="as-av-circ">{avatarNode}</div>
-              <span className="as-av-name">{displayName}</span>
-              <span className="as-av-caret">⌄</span>
-            </button>
+            />
           </div>
         </div>
       </div>
@@ -547,74 +505,24 @@ function AccountSettings() {
       <Footer />
 
       {/* 닉네임 클릭 시 열리는 "내 정보" 우측 패널 */}
-      {panelOpen && (
-        <>
-          <div className="as-scrim" onClick={() => setPanelOpen(false)}></div>
-          <div className="as-panel">
-            <div className="as-panel-head">
-              <div className="as-panel-title">내 정보</div>
-              <button
-                className="as-panel-close"
-                onClick={() => setPanelOpen(false)}
-                aria-label="닫기"
-              >
-                ×
-              </button>
-            </div>
-            <div className="as-panel-body">
-              <span className="as-panel-label">기본정보</span>
-              <button className="as-panel-profile" onClick={handleGoAccount}>
-                <div className="as-panel-avatar">
-                  {avatarUrl ? (
-                    <img
-                      className="as-panel-avatar-img"
-                      src={avatarUrl}
-                      alt=""
-                    />
-                  ) : (
-                    displayInitial
-                  )}
-                </div>
-                <div>
-                  <div className="as-panel-pname">{displayName}</div>
-                  <div className="as-panel-pnick">@{email}</div>
-                </div>
-                <span className="as-panel-arrow">›</span>
-              </button>
-
-              <span className="as-panel-label">이용현황</span>
-              <div className="as-panel-stats">
-                <div className="as-panel-stat">
-                  <span className="as-panel-stat-num">
-                    {stats.projectCount}
-                  </span>
-                  <span className="as-panel-stat-label">프로젝트</span>
-                </div>
-                <div className="as-panel-stat">
-                  <span className="as-panel-stat-num">
-                    {stats.furnitureCount}
-                  </span>
-                  <span className="as-panel-stat-label">배치 가구</span>
-                </div>
-              </div>
-            </div>
-            <div className="as-panel-foot">
-              <button
-                className="as-panel-foot-btn as-panel-sub"
-                onClick={handleLogout}
-              >
-                로그아웃
-              </button>
-              <button
-                className="as-panel-foot-btn as-panel-main"
-                onClick={handleGoAccount}
-              >
-                계정설정
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      <AccountPanel
+        open={panelOpen}
+        prefix="as"
+        profile={{
+          name: displayName,
+          initial: displayInitial,
+          imageUrl: avatarUrl,
+          subtext: email ? `@${email}` : "",
+        }}
+        statItems={[
+          { label: "프로젝트", value: stats.projectCount },
+          { label: "룸 개수", value: stats.roomCount },
+        ]}
+        onClose={() => setPanelOpen(false)}
+        onProfileClick={handleGoAccount}
+        onLogout={handleLogout}
+        onAccountClick={handleGoAccount}
+      />
     </div>
   );
 }
