@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 // 모델링 설정 파일
-export const SCENE_CONFIG_URL = "/config/test-three-scene-config.json";
+export const SCENE_CONFIG_URL = "/config/room-scene-config.json";
 let sceneConfig = null;
 
 export function hasSceneConfig() {

@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle } from "react";
-import { useTestThreeEditor } from "./hooks/useTestThreeEditor";
-import "./TestThreeStagingPage.css";
+import { useRoomSceneEditor } from "./hooks/useRoomSceneEditor";
+import "./RoomSceneEditorPage.css";
 
 const ROTATION_STOPS = [-180, -90, 0, 90, 180];
 const ROTATION_SNAP_THRESHOLD = 4;
@@ -16,7 +16,7 @@ function snapRotation(value) {
     : value;
 }
 
-const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
+const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
   {
     isSkyview = false,
     showMeasurements = false,
@@ -40,7 +40,7 @@ const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
     setSelectedRotationDegrees,
     saveEditedSceneJson,
     startReplaceSelectedObject,
-  } = useTestThreeEditor({
+  } = useRoomSceneEditor({
     isSkyview,
     showMeasurements,
     wallColor,
@@ -69,18 +69,18 @@ const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
   );
 
   return (
-    <div className="test-three-page">
-      <div ref={containerRef} className="test-three-viewport" />
+    <div className="room-scene-editor-page">
+      <div ref={containerRef} className="room-scene-editor-viewport" />
 
       {canShowSelectionControls && (
-        <aside className="test-three-info-drawer">
-          <div className="test-three-info-title">
+        <aside className="room-scene-editor-info-drawer">
+          <div className="room-scene-editor-info-title">
             {selectedItem.name || selectedItem.category || "Selected item"}
           </div>
-          <div className="test-three-info-subtitle">
+          <div className="room-scene-editor-info-subtitle">
             {selectedItem.category || selectedItem.sourceType}
           </div>
-          <dl className="test-three-info-list">
+          <dl className="room-scene-editor-info-list">
             <div>
               <dt>Width</dt>
               <dd>{selectedItem.dimensionsCm?.width ?? "-"} cm</dd>
@@ -99,21 +99,21 @@ const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
             </div>
           </dl>
           {selectedItem.collision?.hasCollision && (
-            <div className="test-three-info-warning">Overlap detected</div>
+            <div className="room-scene-editor-info-warning">Overlap detected</div>
           )}
         </aside>
       )}
 
       {canShowSelectionControls && (
-        <div className="test-three-selection-controls">
-          <div className="test-three-rotation-panel">
-            <div className="test-three-rotation-value">
+        <div className="room-scene-editor-selection-controls">
+          <div className="room-scene-editor-rotation-panel">
+            <div className="room-scene-editor-rotation-value">
               {selectedRotationDegrees}
             </div>
-            <div className="test-three-rotation-track-wrap">
+            <div className="room-scene-editor-rotation-track-wrap">
               <input
                 type="range"
-                className="test-three-rotation-slider"
+                className="room-scene-editor-rotation-slider"
                 min="-180"
                 max="180"
                 step="1"
@@ -121,31 +121,31 @@ const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
                 onChange={handleRotationChange}
                 aria-label="Rotation degrees"
               />
-              <div className="test-three-rotation-ticks" aria-hidden="true">
+              <div className="room-scene-editor-rotation-ticks" aria-hidden="true">
                 {ROTATION_STOPS.map((stop) => (
                   <span key={stop} />
                 ))}
               </div>
             </div>
           </div>
-          <div className="test-three-selection-toolbar">
+          <div className="room-scene-editor-selection-toolbar">
             <button
               type="button"
-              className={`test-three-selection-tool${
-                isReplacingSelected ? " test-three-selection-tool--active" : ""
+              className={`room-scene-editor-selection-tool${
+                isReplacingSelected ? " room-scene-editor-selection-tool--active" : ""
               }`}
               onClick={startReplaceSelectedObject}
             >
-              <span className="test-three-selection-tool-icon">Swap</span>
+              <span className="room-scene-editor-selection-tool-icon">Swap</span>
               Replace
             </button>
             {canDeleteSelected && (
               <button
                 type="button"
-                className="test-three-selection-tool test-three-selection-tool--danger"
+                className="room-scene-editor-selection-tool room-scene-editor-selection-tool--danger"
                 onClick={deleteSelectedObject}
               >
-                <span className="test-three-selection-tool-icon">Del</span>
+                <span className="room-scene-editor-selection-tool-icon">Del</span>
                 Delete
               </button>
             )}
@@ -154,15 +154,15 @@ const TestThreeStagingPage = forwardRef(function TestThreeStagingPage(
       )}
 
       {collisionSummary.hasCollision && (
-        <div className="test-three-collision-warning">
+        <div className="room-scene-editor-collision-warning">
           Some items overlap with walls or room boundaries.
         </div>
       )}
 
-      {status && <div className="test-three-status">{status}</div>}
-      {error && <pre className="test-three-error">{error}</pre>}
+      {status && <div className="room-scene-editor-status">{status}</div>}
+      {error && <pre className="room-scene-editor-error">{error}</pre>}
     </div>
   );
 });
 
-export default TestThreeStagingPage;
+export default RoomSceneEditorPage;

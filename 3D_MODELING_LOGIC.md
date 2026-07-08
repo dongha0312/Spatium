@@ -1,11 +1,11 @@
 # Spatium 3D Editor Logic
 
 > 현재 코드 기준 3D 에디터 로직 정리  
-> 대상: `spatium-frontend/src/pages/3dEditor.js`, `spatium-frontend/src/pages/testThree`
+> 대상: `spatium-frontend/src/pages/3dEditor.js`, `spatium-frontend/src/pages/roomSceneEditor`
 
 Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하고, 사용자가 **가구를 배치/이동/회전/교체/삭제**한 뒤 다시 로드 가능한 metadata JSON으로 저장하는 구조다.
 
-핵심은 `useTestThreeEditor.js` 훅이다. 이 훅이 방 모델, 벽 콜라이더, 가구 오브젝트, 선택 상태, 포인터 입력, 충돌 판정, 저장 데이터를 하나의 편집 세션으로 연결한다.
+핵심은 `useRoomSceneEditor.js` 훅이다. 이 훅이 방 모델, 벽 콜라이더, 가구 오브젝트, 포인터 입력, 충돌 판정, 저장 데이터를 하나의 편집 세션으로 연결한다. 선택 상태, 씬 설정 로딩, Skyview 전환, 벽/문/창문 표시, 치수 라벨, transform 계산은 별도 모듈과 훅으로 분리되어 있다.
 
 ---
 
@@ -32,22 +32,31 @@ Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하
   ├─ 프로젝트/방 정보 로딩
   ├─ 가구 카탈로그 로딩
   ├─ 저장/취소/방 전환 UI
-  └─ TestThreeStagingPage
-       └─ useTestThreeEditor
+  └─ RoomSceneEditorPage
+       └─ useRoomSceneEditor
             ├─ Three.js scene / camera / renderer / controls
             ├─ room model 로딩 및 복원
             ├─ wall collider 생성
             ├─ furniture / door / window 생성
             ├─ pointer 기반 선택/이동/회전
             ├─ OBB 기반 벽 충돌 판정
+            ├─ scene helper 모듈 기반 표시/계산 처리
+            ├─ editor state hook 기반 상태 관리
             └─ metadata JSON 저장
 ```
 
 | 계층 | 파일 | 책임 |
 | --- | --- | --- |
 | 화면 | `spatium-frontend/src/pages/3dEditor.js` | 프로젝트/방 로딩, 카탈로그, 툴바, 저장 버튼 |
-| Three.js 래퍼 | `pages/testThree/TestThreeStagingPage.js` | 뷰포트, 선택 정보 패널, 회전 슬라이더, ref 액션 노출 |
-| 에디터 코어 | `hooks/useTestThreeEditor.js` | 씬 생성, 입력 처리, 오브젝트 편집, 충돌, 저장 orchestration |
+| Three.js 래퍼 | `pages/roomSceneEditor/RoomSceneEditorPage.js` | 뷰포트, 선택 정보 패널, 회전 슬라이더, ref 액션 노출 |
+| 에디터 코어 | `hooks/useRoomSceneEditor.js` | 씬 생성, 입력 처리, 오브젝트 편집, 충돌, 저장 orchestration |
+| 선택 상태 훅 | `hooks/useSelectionState.js` | 선택 오브젝트 ref, 선택 정보, 회전값, replace mode, 삭제/초기화 가능 여부 |
+| 설정 로딩 훅 | `hooks/useSceneConfigStatus.js` | scene config 로딩, status/error 상태 관리 |
+| Skyview 훅 | `hooks/useSkyviewMode.js` | Skyview 카메라 전환, 기본 카메라 view 캡처/복구 |
+| transform 유틸 | `scene/editorTransforms.js` | base64 URL 변환, dimensions 정규화, transform 직렬화, 회전 계산, fallback reference 생성 |
+| 벽 표시 유틸 | `scene/wallVisibility.js` | 카메라 방향 기준 벽 투명화, 벽 색상 적용 |
+| reference 표시 유틸 | `scene/referenceVisibility.js` | 문/창문 reference visibility, debug label, room-facing normal |
+| 측정 label 유틸 | `scene/measurementLabels.js` | CSS2D 치수 라벨 생성, cm/m2/py 포맷, 안정 dimension 계산 |
 | 오브젝트 생성 | `scene/objectFactory.js` | 가구/문/창문 모델 생성, GLB 크기 보정, OBB/pick box 생성 |
 | 벽 콜라이더 | `scene/wallColliders.js` | 방 mesh에서 벽/바닥 판별, 벽 면 단위 collider 생성 |
 | 충돌 | `scene/collision.js` | OBB 기반 벽 충돌, 이동 제한, 시각 상태 갱신 |
@@ -80,7 +89,7 @@ Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하
 
 ### 2. 에디터 액션
 
-상위 화면은 `TestThreeStagingPage`에 ref를 연결해 내부 에디터 액션을 호출한다.
+상위 화면은 `RoomSceneEditorPage`에 ref를 연결해 내부 에디터 액션을 호출한다.
 
 | 사용자 동작 | 호출 |
 | --- | --- |
@@ -98,7 +107,7 @@ Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하
 ### 중심 함수
 
 ```js
-useTestThreeEditor({
+useRoomSceneEditor({
   isSkyview,
   showMeasurements,
   wallColor,
@@ -450,7 +459,7 @@ POST /api/rooms/save
 
 ## 설정 파일
 
-위치: `spatium-frontend/public/config/test-three-scene-config.json`
+위치: `spatium-frontend/public/config/room-scene-config.json`
 
 | 키 | 의미 |
 | --- | --- |
@@ -497,11 +506,18 @@ POST /api/rooms/save
 | 하고 싶은 일 | 먼저 볼 파일 |
 | --- | --- |
 | 에디터 UI 수정 | `spatium-frontend/src/pages/3dEditor.js` |
-| 선택 패널/회전 슬라이더 수정 | `spatium-frontend/src/pages/testThree/TestThreeStagingPage.js` |
-| 포인터 이동/회전 로직 수정 | `spatium-frontend/src/pages/testThree/hooks/useTestThreeEditor.js` |
-| 가구 모델 생성 방식 수정 | `spatium-frontend/src/pages/testThree/scene/objectFactory.js` |
-| 벽 충돌 판정 수정 | `spatium-frontend/src/pages/testThree/scene/collision.js` |
-| 벽 콜라이더 생성 수정 | `spatium-frontend/src/pages/testThree/scene/wallColliders.js` |
-| 저장 JSON 구조 수정 | `spatium-frontend/src/pages/testThree/scene/roomMetadata.js` |
-| 방 면적/치수 계산 수정 | `spatium-frontend/src/pages/testThree/scene/roomMeasurements.js` |
-| 모델 URL/색상/제약값 수정 | `spatium-frontend/public/config/test-three-scene-config.json` |
+| 선택 패널/회전 슬라이더 수정 | `spatium-frontend/src/pages/roomSceneEditor/RoomSceneEditorPage.js` |
+| 포인터 이동/회전 로직 수정 | `spatium-frontend/src/pages/roomSceneEditor/hooks/useRoomSceneEditor.js` |
+| 선택/replace 상태 수정 | `spatium-frontend/src/pages/roomSceneEditor/hooks/useSelectionState.js` |
+| 씬 config 로딩 상태 수정 | `spatium-frontend/src/pages/roomSceneEditor/hooks/useSceneConfigStatus.js` |
+| Skyview 카메라 전환 수정 | `spatium-frontend/src/pages/roomSceneEditor/hooks/useSkyviewMode.js` |
+| transform/dimensions/회전 계산 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/editorTransforms.js` |
+| 벽 투명화/벽 색상 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/wallVisibility.js` |
+| 문/창문 reference 표시 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/referenceVisibility.js` |
+| 치수 label/단위 포맷 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/measurementLabels.js` |
+| 가구 모델 생성 방식 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/objectFactory.js` |
+| 벽 충돌 판정 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/collision.js` |
+| 벽 콜라이더 생성 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/wallColliders.js` |
+| 저장 JSON 구조 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/roomMetadata.js` |
+| 방 면적/치수 계산 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/roomMeasurements.js` |
+| 모델 URL/색상/제약값 수정 | `spatium-frontend/public/config/room-scene-config.json` |
