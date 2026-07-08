@@ -44,8 +44,12 @@ function HomePage() {
   // 닉네임 클릭 시 열리는 "내 정보" 우측 패널
   const [panelOpen, setPanelOpen] = useState(false);
 
-  // 패널 이용현황에 표시할 통계 (프로젝트 수 / 배치 가구 수)
-  const [stats, setStats] = useState({ projectCount: 0, furnitureCount: 0 });
+  // 패널 이용현황에 표시할 통계 (프로젝트 수 / 룸 수)
+  const [stats, setStats] = useState({
+    projectCount: 0,
+    furnitureCount: 0,
+    roomCount: 0,
+  });
 
   // 상단바/패널 아바타에 표시할 프로필 사진 (없으면 이니셜)
   const [profileImage, setProfileImage] = useState(null);
@@ -67,11 +71,17 @@ function HomePage() {
       .then((page) => {
         if (!active) return;
         const items = page?.items || [];
-        const furnitureCount = items.reduce(
-          (sum, p) => sum + (p.furnitureCount || 0),
-          0,
-        );
-        setStats({ projectCount: items.length, furnitureCount });
+        // const furnitureCount = items.reduce(
+        //   (sum, p) => sum + (p.furnitureCount || 0),
+        //   0,
+        // );
+        // 모든 방의 총 개수 가져오는 코드
+        const roomCount = items.reduce((sum, p) => sum + (p.roomCount || 0), 0);
+        setStats({
+          projectCount: items.length,
+          furnitureCount : 0,
+          roomCount
+        });
       })
       .catch((err) => {
         console.warn("프로젝트 수 조회 실패:", err);
@@ -231,7 +241,7 @@ function HomePage() {
           ))}
         </div>
       </div>
-        <Footer/>
+      <Footer />
 
       {/* 개발용 바로가기 (배포 전 제거 예정) */}
       <div
@@ -292,7 +302,11 @@ function HomePage() {
               <button className="hp-panel-profile" onClick={handleGoAccount}>
                 <div className="hp-panel-avatar">
                   {profileImage ? (
-                    <img className="hp-panel-avatar-img" src={profileImage} alt="" />
+                    <img
+                      className="hp-panel-avatar-img"
+                      src={profileImage}
+                      alt=""
+                    />
                   ) : (
                     session.nickname.charAt(0)
                   )}
@@ -313,10 +327,8 @@ function HomePage() {
                   <span className="hp-panel-stat-label">프로젝트</span>
                 </div>
                 <div className="hp-panel-stat">
-                  <span className="hp-panel-stat-num">
-                    {stats.furnitureCount}
-                  </span>
-                  <span className="hp-panel-stat-label">배치 가구</span>
+                  <span className="hp-panel-stat-num">{stats.roomCount}</span>
+                  <span className="hp-panel-stat-label">룸 개수</span>
                 </div>
               </div>
             </div>
