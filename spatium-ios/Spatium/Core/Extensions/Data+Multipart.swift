@@ -26,4 +26,11 @@ extension Data {
         append(try Data(contentsOf: fileURL))
         append("\r\n")
     }
+
+    mutating func appendMultipartTextField(name: String, value: String, boundary: String) {
+        append("--\(boundary)\r\n")
+        append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n")
+        append(value)
+        append("\r\n")
+    }
 }
