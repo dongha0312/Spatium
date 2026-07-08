@@ -387,7 +387,7 @@ function MyPage() {
           <AvatarButton
             prefix="mp"
             imageUrl={user.profileImage}
-            initial={user.initial}
+            initial={user.initial.toUpperCase()}
             name={user.name}
             onClick={togglePanel}
             showCaret={false}

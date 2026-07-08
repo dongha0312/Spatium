@@ -22,7 +22,7 @@ function AvatarButton({
         )}
       </div>
       <span className={`${prefix}-av-name`}>{name}</span>
-      {showCaret && <span className={`${prefix}-av-caret`}>⌄</span>}
+      {showCaret && <span className={`${prefix}-av-caret`}></span>}
     </button>
   );
 }
