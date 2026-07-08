@@ -1026,7 +1026,7 @@ export function useTestThreeEditor({
     wallDiagnosticLayer.name = "WallDiagnosticLayer";
     const roomMeasurementLayer = new THREE.Group();
     roomMeasurementLayer.name = "RoomMeasurementLayer";
-    roomMeasurementLayer.visible = true;
+    roomMeasurementLayer.visible = showMeasurementsRef.current;
     worldGroup.add(
       furnitureLayer,
       referenceLayer,
@@ -1095,7 +1095,10 @@ export function useTestThreeEditor({
     controlPickTargets.push(selectionHandle);
 
     function syncRoomMeasurementLayerVisibility() {
-      roomMeasurementLayer.visible = true;
+      const isVisible = showMeasurementsRef.current;
+      roomMeasurementLayer.visible = isVisible;
+      roomAreaBadge.hidden =
+        !isVisible || !Number.isFinite(roomMeasurementsRef.current?.area);
     }
 
     function addRoomMeasurements(measurements) {
@@ -1103,7 +1106,7 @@ export function useTestThreeEditor({
       roomMeasurementsRef.current = measurements || null;
       if (Number.isFinite(measurements?.area)) {
         roomAreaBadge.textContent = `방 면적 ${formatSquareMeters(measurements.area)}  ${formatPyung(measurements.area * 0.3025)}`;
-        roomAreaBadge.hidden = false;
+        roomAreaBadge.hidden = !showMeasurementsRef.current;
       } else {
         roomAreaBadge.hidden = true;
       }

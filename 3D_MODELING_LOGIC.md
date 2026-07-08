@@ -1,454 +1,507 @@
-# Spatium 3D 모델링 로직 정리
+# Spatium 3D Editor Logic
 
-이 문서는 `spatium-frontend/src/pages/testThree` 기준으로 방, 벽, 가구, 이동/회전, 충돌, 저장 로직이 어떤 함수로 구현되어 있고 어떤 역할을 하는지 정리한다.
+> 현재 코드 기준 3D 에디터 로직 정리  
+> 대상: `spatium-frontend/src/pages/3dEditor.js`, `spatium-frontend/src/pages/testThree`
 
-## 전체 구조
+Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하고, 사용자가 **가구를 배치/이동/회전/교체/삭제**한 뒤 다시 로드 가능한 metadata JSON으로 저장하는 구조다.
 
-3D 에디터의 중심은 `useTestThreeEditor.js` 훅이다. 이 훅이 Three.js 씬, 카메라, 컨트롤, 방 모델, 벽 콜라이더, 가구 오브젝트, 선택 오버레이, 포인터 이벤트, 저장 상태를 연결한다.
+핵심은 `useTestThreeEditor.js` 훅이다. 이 훅이 방 모델, 벽 콜라이더, 가구 오브젝트, 선택 상태, 포인터 입력, 충돌 판정, 저장 데이터를 하나의 편집 세션으로 연결한다.
 
-주요 파일은 다음과 같다.
+---
 
-| 파일                          | 역할                                                                |
-| ----------------------------- | ------------------------------------------------------------------- |
-| `hooks/useTestThreeEditor.js` | 3D 에디터 전체 orchestration, 입력 이벤트, 선택/이동/회전/저장 처리 |
-| `scene/objectFactory.js`      | 가구, 문, 창문 3D 오브젝트 생성 및 OBB 생성                         |
-| `scene/wallColliders.js`      | USD 방 모델에서 벽/바닥을 판별하고 벽 충돌체 생성                   |
-| `scene/collision.js`          | 가구 OBB와 벽 충돌/경계 판정, 이동 제한, 충돌 시각 상태             |
-| `scene/roomMetadata.js`       | 편집된 오브젝트와 방 모델을 JSON으로 직렬화/복원                    |
-| `scene/roomMeasurements.js`   | 방 바닥 면적, 외곽선, 폭/깊이/높이 측정                             |
-| `scene/sceneLoaders.js`       | USD/GLB/JSON 로딩 및 메타데이터 저장 API 호출                       |
-| `scene/sceneConfig.js`        | 설정값, 색상, 모델 URL, 벽 제약 파라미터 조회                       |
-| `scene/threeUtils.js`         | 행렬 변환, 라벨 생성, 리소스 dispose, 카메라 framing 유틸           |
+## 목차
 
-## 방 모델 로딩 및 준비
+1. [한눈에 보는 구조](#한눈에-보는-구조)
+2. [화면과 데이터 흐름](#화면과-데이터-흐름)
+3. [씬 초기화](#씬-초기화)
+4. [방 모델과 벽 콜라이더](#방-모델과-벽-콜라이더)
+5. [가구, 문, 창문 오브젝트](#가구-문-창문-오브젝트)
+6. [선택, 이동, 회전](#선택-이동-회전)
+7. [벽 충돌과 이동 제한](#벽-충돌과-이동-제한)
+8. [벽 표시와 측정 표시](#벽-표시와-측정-표시)
+9. [저장과 복원](#저장과-복원)
+10. [설정 파일](#설정-파일)
+11. [현재 구현 특징](#현재-구현-특징)
+
+---
+
+## 한눈에 보는 구조
+
+```text
+3dEditor.js
+  ├─ 프로젝트/방 정보 로딩
+  ├─ 가구 카탈로그 로딩
+  ├─ 저장/취소/방 전환 UI
+  └─ TestThreeStagingPage
+       └─ useTestThreeEditor
+            ├─ Three.js scene / camera / renderer / controls
+            ├─ room model 로딩 및 복원
+            ├─ wall collider 생성
+            ├─ furniture / door / window 생성
+            ├─ pointer 기반 선택/이동/회전
+            ├─ OBB 기반 벽 충돌 판정
+            └─ metadata JSON 저장
+```
+
+| 계층 | 파일 | 책임 |
+| --- | --- | --- |
+| 화면 | `spatium-frontend/src/pages/3dEditor.js` | 프로젝트/방 로딩, 카탈로그, 툴바, 저장 버튼 |
+| Three.js 래퍼 | `pages/testThree/TestThreeStagingPage.js` | 뷰포트, 선택 정보 패널, 회전 슬라이더, ref 액션 노출 |
+| 에디터 코어 | `hooks/useTestThreeEditor.js` | 씬 생성, 입력 처리, 오브젝트 편집, 충돌, 저장 orchestration |
+| 오브젝트 생성 | `scene/objectFactory.js` | 가구/문/창문 모델 생성, GLB 크기 보정, OBB/pick box 생성 |
+| 벽 콜라이더 | `scene/wallColliders.js` | 방 mesh에서 벽/바닥 판별, 벽 면 단위 collider 생성 |
+| 충돌 | `scene/collision.js` | OBB 기반 벽 충돌, 이동 제한, 시각 상태 갱신 |
+| 저장 데이터 | `scene/roomMetadata.js` | 편집 상태와 방 mesh를 JSON으로 직렬화/복원 |
+| 방 측정 | `scene/roomMeasurements.js` | 바닥 면적, 외곽선, 폭/깊이/높이 계산 |
+| 로더 | `scene/sceneLoaders.js` | USD/GLB/JSON 로딩, metadata 저장 API 호출 |
+| 설정 | `scene/sceneConfig.js` | 모델 URL, 색상, 벽 제약 파라미터 조회 |
+| 유틸 | `scene/threeUtils.js` | 행렬 변환, 라벨, dispose, 카메라 framing |
+
+---
+
+## 화면과 데이터 흐름
+
+### 1. 라우트 진입
+
+`3dEditor.js`는 URL query의 `projectId`, `roomId`를 기준으로 편집 대상 방을 결정한다.
+
+```text
+/member/editor?projectId=...&roomId=...
+```
+
+로드되는 데이터는 다음과 같다.
+
+| 데이터 | 호출 | 사용처 |
+| --- | --- | --- |
+| 프로젝트 이름 | `getProjectInfo(projectId)` | 상단 프로젝트 라벨 |
+| 방 씬 데이터 | `getRoomSceneData(roomId)` | Three.js 방 모델과 metadata |
+| 프로젝트의 방 목록 | `getRoomList(projectId)` | 좌측 방 드롭다운 |
+| 가구 카탈로그 | `/data/furniture_catalog.json` | 좌측 가구 목록 |
+
+### 2. 에디터 액션
+
+상위 화면은 `TestThreeStagingPage`에 ref를 연결해 내부 에디터 액션을 호출한다.
+
+| 사용자 동작 | 호출 |
+| --- | --- |
+| 가구 클릭 | `editorRef.current.addFurniture(item)` |
+| 저장 | `editorRef.current.saveEditedSceneJson({ projectId, roomId })` |
+| 선택 가구 삭제 | `deleteSelectedObject()` |
+| 선택 가구 교체 | `startReplaceSelectedObject()` 후 카탈로그 클릭 |
+
+저장 시에는 metadata JSON이 `FormData`에 담겨 `POST /api/rooms/save`로 전송된다.
+
+---
+
+## 씬 초기화
+
+### 중심 함수
+
+```js
+useTestThreeEditor({
+  isSkyview,
+  showMeasurements,
+  wallColor,
+  roomScene,
+  onSceneChanged,
+})
+```
+
+### 초기화 순서
+
+```text
+loadSceneConfig()
+  ↓
+renderer / CSS2DRenderer / scene / camera / OrbitControls 생성
+  ↓
+roomScene.model.dataBase64 또는 config의 room.modelUrl 선택
+  ↓
+roomScene.metadata 또는 config의 room.metadataUrl 선택
+  ↓
+USD 방 모델 로드
+  ↓
+metadata._spatiumRoom이 있으면 JSON 방 모델 우선 복원
+  ↓
+prepareRoomModel()
+  ↓
+createWallColliders()
+  ↓
+metadata.objects / doors / windows 복원
+  ↓
+initializeWallConstraints()
+  ↓
+첫 가구 선택 및 frameObject()
+```
+
+### 방 모델 선택 우선순위
+
+1. API에서 받은 `roomScene.model.dataBase64`
+2. 설정 파일의 `room.modelUrl`
+3. metadata에 저장된 `_spatiumRoom` JSON 복원 결과
+
+실제 렌더링에서는 `_spatiumRoom`이 있으면 이를 우선 사용한다. 따라서 저장된 편집 결과는 원본 USD 모델 없이도 다시 열 수 있다.
+
+---
+
+## 방 모델과 벽 콜라이더
 
 ### `loadUsdRoomModel(url)`
 
 위치: `scene/sceneLoaders.js`
 
-USDZ/USD 방 모델을 `USDLoader`로 로드한다. 캐시 방지를 위해 URL에 timestamp query를 붙인다. 로딩 실패 시 에러를 던지지 않고 `null`을 반환하도록 처리한다.
-
-### `fetchJson(url, label)`
-
-위치: `scene/sceneLoaders.js`
-
-RoomPlan 메타데이터 JSON 또는 저장된 편집 JSON을 가져온다. `cache: "no-store"`와 timestamp query를 사용해 최신 데이터를 가져오도록 한다.
+USD/USDZ 방 모델을 `USDLoader`로 로드한다. 일반 URL에는 timestamp query를 붙여 캐시를 피하고, `blob:` URL은 그대로 사용한다. 로드 실패 시 에러를 던지지 않고 `null`을 반환한다.
 
 ### `prepareRoomModel(model)`
 
 위치: `scene/wallColliders.js`
 
-로드된 방 모델을 traverse하면서 벽, 바닥, 교체된 오브젝트 여부를 userData로 표시한다. 이후 벽 콜라이더 생성, 벽 숨김 처리, 바닥 측정에서 같은 판별 정보를 재사용한다.
+방 모델을 순회하며 각 mesh가 벽인지, 바닥인지, 저장 직렬화에서 제외할 mesh인지 userData에 표시한다. 이 정보는 벽 충돌체 생성, 방 측정, `_spatiumRoom` 저장에서 공통으로 사용된다.
 
-### `isUsdWallMesh(object)`
+### 벽/바닥 판별
 
-위치: `scene/wallColliders.js`
+| 함수 | 역할 |
+| --- | --- |
+| `isUsdWallMesh(object)` | USD/JSON 방 mesh가 벽인지 판별 |
+| `isUsdFloorMesh(object)` | USD/JSON 방 mesh가 바닥인지 판별 |
+| `isUsdReplacedMesh(object)` | 저장 직렬화에서 제외할 교체 mesh 판별 |
 
-USD 방 모델에서 벽 mesh인지 판별한다. `Wall_#_grp`, `Wall#` 계층 이름을 기준으로 탐색하고, 문/창문 이름을 가진 노드는 벽에서 제외한다.
-
-### `isUsdFloorMesh(object)`
-
-위치: `scene/wallColliders.js`
-
-바닥 mesh인지 판별한다. 이름에 `Floor`, `Ground`, `Slab` 등이 포함된 계층을 바닥으로 본다. 문/창문 계층은 제외한다.
-
-## 벽 콜라이더 생성
+판별에는 USD 계층 이름 패턴과 `userData.isUsdWallMesh`, `userData.isUsdFloorMesh`가 함께 사용된다.
 
 ### `createWallColliders(roomModel)`
 
 위치: `scene/wallColliders.js`
 
-방 모델 전체에서 벽 충돌체 배열을 만든다.
+방 모델에서 벽 충돌체 배열을 만든다.
 
-구현 흐름:
+```text
+roomModel
+  └─ wall mesh
+       ├─ 실제 벽 face 단위 collider 생성 시도
+       └─ 실패 시 geometry bounds 기반 OBB fallback 생성
+```
 
-1. `roomModel.updateWorldMatrix(true, true)`로 월드 행렬 갱신
-2. `Box3().setFromObject(roomModel)`로 방 중심 계산
-3. `collectFloorTriangles(roomModel)`로 바닥 삼각형 수집
-4. 각 벽 mesh를 순회
-5. 우선 `worldWallFaceCollidersFromGeometry()`로 벽의 실제 면 단위 콜라이더 생성 시도
-6. 실패하면 geometry boundingBox 기반으로 `worldObbFromLocalBox()` fallback 콜라이더 생성
-7. 각 벽 콜라이더에 `obb`, `spanAxes`, `roomFacingNormal`, `roomFacingProjection` 등을 저장
+각 wall collider에는 다음 정보가 들어간다.
 
-### `worldWallFaceCollidersFromGeometry(object, roomCenter, floorTriangles)`
+| 필드 | 의미 |
+| --- | --- |
+| `obb` | 벽 실체 또는 벽 면을 나타내는 OBB |
+| `spanAxes` | 벽 길이/높이 방향 overlap 판정 축 |
+| `spanPolygon` | 벽 face를 2D 투영한 span polygon |
+| `roomFacingNormal` | 방 안쪽을 향하는 normal |
+| `roomFacingProjection` | 방 내부 경계 projection |
+| `triangleStart`, `triangleCount` | 벽 face preview용 triangle 범위 |
+| `object` | 원본 wall mesh |
 
-위치: `scene/wallColliders.js`
+`roomFacingNormal`이 있는 벽은 단순 OBB 교차가 아니라 **방 내부 경계선을 침범했는지**를 기준으로 더 자연스럽게 충돌을 판정한다.
 
-벽 mesh의 triangle들을 분석해 실제 벽면 단위 OBB 콜라이더를 만든다. 수직에 가까운 면만 벽 후보로 보고, normal/projection 기준으로 같은 평면의 삼각형들을 묶는다.
+---
 
-### `createWallColliderFromFaceGroup(object, group, roomCenter, floorTriangles)`
+## 가구, 문, 창문 오브젝트
 
-위치: `scene/wallColliders.js`
+### 일반 가구
 
-동일 평면으로 묶인 벽 face group 하나를 OBB 콜라이더로 변환한다.
+일반 가구는 `sourceType: "object"`이며, 추가/이동/회전/삭제/교체가 가능하다.
 
-핵심 구현:
+| 함수 | 상황 | 결과 |
+| --- | --- | --- |
+| `createEditableFurniture(item, index)` | GLB 템플릿이 없을 때 | dimensions 기반 fallback box |
+| `createEditableFurnitureModel(modelTemplate, item, index)` | GLB 템플릿이 있을 때 | 실제 모델 clone 및 크기 보정 |
 
-- `group.normal`을 벽 normal로 사용
-- `roomSideFromFloorSamples()`로 벽의 어느 쪽이 방 내부인지 샘플링
-- 내부 방향을 `roomFacingNormal`로 저장
-- 벽의 길이/높이 축을 계산해 `OBB(center, halfSize, rotation)` 생성
-- 벽 span 검사용 `spanAxes`, `spanPolygon` 저장
+`createEditableFurnitureModel()`의 주요 작업:
 
-### `roomSideFromFloorSamples(points, normal, floorTriangles)`
+1. GLB scene clone
+2. `fitModelToTargetSize()`로 metadata dimensions에 맞게 스케일 조정
+3. `getBaseGeometryBounds()`로 mesh bounds 계산
+4. bounds에서 `localObb` 생성
+5. 보이지 않는 pick hit box 생성
+6. 선택/충돌 표시용 edge line 생성
+7. root group의 `userData`에 편집 상태 저장
 
-위치: `scene/wallColliders.js`
+### 문과 창문
 
-벽 중심에서 normal 양쪽으로 작은 offset을 두고 바닥 polygon 위에 있는지 검사한다. 한쪽만 바닥 위라면 그 방향을 방 내부 방향으로 판단한다. 양쪽 모두 내부이거나 둘 다 외부면 방향을 확정하지 않는다.
+문과 창문은 reference object로 관리된다.
 
-### `worldObbFromLocalBox(box, matrixWorld)`
+| 타입 | 함수 | 특징 |
+| --- | --- | --- |
+| 문 | `createDoorModel()` | `sourceType: "door"`, `editable: false` |
+| 창문 | `createWindowModel()` | `sourceType: "window"`, `editable: false` |
 
-위치: `scene/wallColliders.js`
+현재 UI에서는 새 문/창문을 직접 추가하지 않는다. 기존 문/창문을 선택한 뒤 Replace로 같은 reference 계열 모델만 교체한다.
 
-geometry의 local `Box3`를 월드 OBB로 변환한다. local AABB의 중심/크기를 가져온 뒤 월드 행렬의 rotation/scale을 반영해 `OBB`를 만든다.
+---
 
-### `createWallColliderVisuals(wallColliders)`
+## 선택, 이동, 회전
 
-위치: `scene/wallColliders.js`
+### 선택
 
-디버그용 벽 콜라이더 시각화 mesh/line group을 생성한다. 각 벽 OBB edge, 내부 경계 outline, baseline 등을 만든다.
+pointer down에서 pick target을 raycast하고, hit된 mesh의 `userData.editableRoot`를 선택한다. 선택된 오브젝트는 `objectToEditableJson()` 결과로 React state에 반영된다.
 
-## 가구, 문, 창문 생성
+선택 시 갱신되는 UI:
 
-### `createEditableFurniture(item, index)`
+- 우측 선택 정보 패널
+- 회전 슬라이더 값
+- 선택 edge line
+- 치수 label
+- 충돌 경고
 
-위치: `scene/objectFactory.js`
+### 이동
 
-메타데이터 dimensions만으로 기본 box 가구를 만든다. 실제 GLB 모델이 없을 때 fallback처럼 사용할 수 있다.
+이동은 floor plane 위에서 계산된다.
 
-구현 내용:
+```text
+pointer ray
+  ↓
+floor plane 교차점
+  ↓
+target position 계산
+  ↓
+movement vector 계산
+  ↓
+constrainedMovementBeforeWallCollision()
+  ↓
+벽을 넘지 않는 movement만 적용
+```
 
-- `item.dimensions`를 기준으로 `BoxGeometry` 생성
-- `createCenteredLocalObb()`로 centered OBB 생성
-- root group에 위치/회전/스케일 적용
-- `root.userData.localObb`, `lastValidPosition`, 색상, 충돌 상태 등을 저장
+이동 가능한 대상은 일반 가구다. 문/창문은 선택 및 교체는 가능하지만 벽 충돌 제약 대상에서는 제외된다.
 
-### `createEditableFurnitureModel(modelTemplate, item, index)`
+### 회전
 
-위치: `scene/objectFactory.js`
+회전은 두 경로가 있다.
 
-GLB 템플릿을 복제해 실제 가구 모델을 생성한다.
+| 경로 | 설명 |
+| --- | --- |
+| 드래그 회전 | pointer angle delta를 Y축 quaternion에 반영 |
+| 슬라이더 회전 | `setSelectedRotationDegrees(degrees)`로 Y축 각도를 직접 지정 |
 
-구현 흐름:
+회전 적용 후 `hasWallCollision()`이 true이면 이전 quaternion으로 되돌린다. 성공하면 마지막 유효 transform을 저장하고 변경 상태를 표시한다.
 
-1. catalog/metadata dimensions를 target size로 계산
-2. GLB scene clone
-3. mesh shadow, picking root userData 설정
-4. `fitModelToTargetSize(model, targetSize)`로 모델 크기를 목표 dimensions에 맞춤
-5. `getBaseGeometryBounds(model)`로 모델 bounds 계산
-6. `createLocalObbFromBounds()`로 가구 충돌 기준 `localObb` 생성
-7. 보이지 않는 pick hit box와 충돌 edge line 생성
-8. root group에 모델, hitBox, edge를 추가
+---
 
-### `createDoorModel(doorTemplate, item, index)`
+## 벽 충돌과 이동 제한
 
-위치: `scene/objectFactory.js`
+### 충돌 기준
 
-문 reference object를 생성한다. 가구와 비슷하게 GLB template을 target size에 맞추고 `localObb`를 만든다. userData에는 `sourceType: "door"`와 reference 색상, 충돌 edge 등을 저장한다.
+가구와 벽 충돌은 `Box3` AABB가 아니라 **OBB** 기준이다.
 
-### `createWindowModel(windowTemplate, item, index)`
+```text
+object.userData.localObb
+  + object.matrixWorld
+  = world OBB
+```
 
-위치: `scene/objectFactory.js`
+UI 치수 표시는 metadata 또는 bounds 기반이지만, 실제 충돌 판정은 `localObb`를 월드 좌표로 변환한 OBB로 수행한다.
 
-창문 reference object를 생성한다. 문과 같은 방식으로 모델 크기 보정, OBB 생성, hit box/edge 생성, userData 설정을 수행한다.
+### 핵심 함수
 
-### `getBaseGeometryBounds(object)`
+| 함수 | 역할 |
+| --- | --- |
+| `worldObbForObject(object)` | local OBB를 world OBB로 변환 |
+| `shouldConstrainToWalls(object)` | 벽 제약 대상인지 판단 |
+| `wallBlocksObjectObb(objectObb, wall)` | 벽이 object OBB를 막는지 판정 |
+| `objectOverlapsWallSpan(objectObb, wall)` | object가 벽의 길이/높이 범위와 겹치는지 판정 |
+| `constrainedMovementBeforeWallCollision()` | 이동 vector를 벽을 넘지 않는 값으로 제한 |
+| `initializeWallConstraints()` | 초기 로딩 시 벽 침범 가구 보정 |
+| `refreshCollisionState()` | 충돌 상태와 시각 표시 갱신 |
 
-위치: `scene/objectFactory.js`
+### 이동 제한 방식
 
-모델의 모든 mesh vertex를 월드 좌표로 변환해 `Box3` bounds를 만든다. 이 bounds는 모델 크기 보정과 `localObb` 생성에 사용된다.
+큰 movement를 한 번에 적용하지 않고 작은 step으로 나눠 검사한다.
 
-### `fitModelToTargetSize(model, targetSize)`
+```text
+requested movement
+  ↓
+sweepStep 기준으로 분할
+  ↓
+각 step에서 벽 내부로 들어가는 성분 제거
+  ↓
+허용된 step만 누적
+  ↓
+최종 constrained movement 반환
+```
 
-위치: `scene/objectFactory.js`
+이 방식은 빠르게 드래그할 때 가구가 벽을 순간적으로 통과하는 문제를 줄인다.
 
-모델의 현재 bounds size를 target size와 비교해 x/y/z 축별 scale을 곱한다. 이후 모델 중심을 원점 쪽으로 보정해 root group 기준 배치가 자연스럽게 되도록 한다.
+### 충돌 표시
 
-### `createLocalObbFromBounds(bounds, fallbackSize)`
+`refreshCollisionState()`는 충돌한 가구에 다음 상태를 기록한다.
 
-위치: `scene/objectFactory.js`
+```js
+object.userData.collisions = ["wall"]
+```
 
-`Box3` bounds의 center와 size를 사용해 local OBB를 만든다. bounds가 비어 있거나 size가 유효하지 않으면 fallback size 기준 centered OBB를 만든다.
+이후 `setFurnitureVisualState()`가 edge와 fallback mesh 색상을 충돌 색상으로 바꾼다.
 
-## 가구 이동 및 회전
+---
 
-### `beginMoveInteraction(event, object)`
+## 벽 표시와 측정 표시
 
-위치: `hooks/useTestThreeEditor.js`
+### 카메라 기준 벽 투명화
 
-가구 이동 드래그를 시작한다. pointer ray와 가구 y 위치의 floor plane 교차점을 구하고, object position과 hit point의 offset을 저장한다.
+`updateViewFacingWalls(wallColliders, camera, referenceRoots)`는 매 frame 실행된다.
 
-### `beginRotateInteraction(event, object)`
+카메라 위치를 기준으로 시야를 가리는 벽 face를 투명하게 만들어 방 내부를 보기 쉽게 한다.
 
-위치: `hooks/useTestThreeEditor.js`
+| 상황 | 처리 |
+| --- | --- |
+| face triangle 정보가 있음 | geometry group material index를 바꿔 해당 face만 투명화 |
+| face 정보가 부족함 | wall object material opacity를 낮춤 |
+| 문/창문 reference가 시야를 가림 | reference material opacity를 낮춤 |
 
-회전 드래그를 시작한다. 현재 object position을 회전 중심으로 잡고, floor plane 위에서 pointer가 만드는 시작 각도와 시작 quaternion을 저장한다.
+### 벽 색상 변경
 
-### `updateActiveInteraction(event)`
+`applyRoomWallColor(wallColliders, color)`는 상위 화면에서 선택한 벽 색상을 모든 wall material에 적용한다. preview 복원 시에도 색상이 유지되도록 original material state에도 반영한다.
 
-위치: `hooks/useTestThreeEditor.js`
+### 방 측정
 
-드래그 중 매 pointer move마다 이동 또는 회전을 적용한다.
+`calculateRoomMeasurements(roomModel)`은 바닥 mesh의 삼각형을 분석해 방 치수를 계산한다.
 
-이동 구현:
+| 값 | 의미 |
+| --- | --- |
+| `width` | 방 폭 |
+| `depth` | 방 깊이 |
+| `height` | 방 높이 |
+| `area` | 바닥 면적 |
+| `areaSource` | `floor` 또는 `bounds` |
+| `outlineSegments` | 바닥 외곽선 |
+| `heightSegment` | 높이 측정선 |
 
-1. pointer ray와 floor plane의 교차점 계산
-2. target position 계산
-3. 현재 position에서 target까지의 movement vector 계산
-4. `constrainedMovementBeforeWallCollision()`로 벽을 넘지 않는 movement로 보정
-5. 보정된 movement를 object position에 더함
-6. y 위치는 기존 activeInteraction y로 유지
+`showMeasurements`가 true이면 외곽선, 높이선, 면적 badge, CSS2D label이 표시된다.
 
-회전 구현:
+---
 
-1. 현재 pointer angle 계산
-2. 시작 angle과의 delta 계산
-3. 시작 quaternion에 Y축 회전 quaternion을 premultiply
+## 저장과 복원
 
-### `rotateSelectedObject()`
+### 저장 데이터 생성
 
-위치: `hooks/useTestThreeEditor.js`
+저장은 `objectToEditableJson()`과 `createReplayableMetadataJson()`이 중심이다.
 
-선택된 오브젝트를 Y축 기준 90도 회전한다.
-
-### `setSelectedRotationDegrees(degrees)`
-
-위치: `hooks/useTestThreeEditor.js`
-
-선택된 오브젝트의 Y축 회전각을 직접 지정한다. `normalizeRotationDegrees()`로 0~360도 범위로 정규화한 뒤 quaternion을 새로 설정한다. 벽 충돌 체크 없이 적용한다.
-
-## 이동 제한 및 충돌 로직
-
-### `worldObbForObject(object)`
-
-위치: `scene/collision.js`
-
-가구 root의 `userData.localObb`를 clone한 뒤 object의 `matrixWorld`를 적용해 월드 OBB를 만든다. 실제 충돌 판정의 기준이 된다.
-
-### `objectIntersectsWalls(object, wallColliders)`
-
-위치: `scene/collision.js`
-
-가구의 월드 OBB가 벽 콜라이더 중 하나라도 막는지 검사한다. 내부적으로 `wallBlocksObjectObb()`를 사용한다.
-
-### `wallBlocksObjectObb(objectObb, wall)`
-
-위치: `scene/collision.js`
-
-벽이 가구 OBB를 막는지 판정한다.
-
-구현 기준:
-
-- `roomFacingNormal`과 `roomFacingProjection`이 있으면 `objectObbViolatesWallBoundary()`로 벽 내부 경계 침범 여부 확인
-- 그렇지 않거나 fallback 상황이면 `objectObb.intersectsOBB(wall.obb, collisionEpsilon)`로 OBB 교차 확인
-- 벽 span과 겹치는 경우만 충돌로 인정
-
-### `objectOverlapsWallSpan(objectObb, wall)`
-
-위치: `scene/collision.js`
-
-가구 OBB가 벽의 길이/높이 범위와 겹치는지 검사한다. 벽에 `spanPolygon`이 있으면 OBB를 2D polygon으로 투영해 polygon overlap을 검사하고, 없으면 span axis projection 범위로 검사한다.
-
-### `projectionRadiusForObb(obb, axis)`
-
-위치: `scene/collision.js`
-
-임의 축에 대한 OBB의 projection radius를 계산한다. OBB 각 basis axis와 halfSize를 dot product로 조합한다. 벽 경계까지 남은 거리 계산에 사용된다.
-
-### `objectWallBoundaryClearance(objectObb, wall)`
-
-위치: `scene/collision.js`
-
-가구 OBB가 벽 내부 경계로부터 얼마나 떨어져 있는지 계산한다. 값이 작거나 음수이면 벽 경계를 침범했거나 거의 닿은 상태다.
-
-### `constrainedMovementBeforeWallCollision(object, movement, wallColliders)`
-
-위치: `scene/collision.js`
-
-현재 이동 제한의 핵심 함수다. 한 번의 큰 이동 벡터를 그대로 적용하지 않고, `wallConstraints.sweepStep` 기준으로 작은 step으로 나눈다. 각 step마다 `adjustedMovementForObbBeforeWallCollision()`을 호출해 벽을 넘지 않는 이동량만 누적한다.
-
-이 방식은 빠르게 드래그했을 때 가구가 벽을 순간적으로 건너뛰는 문제를 줄인다. 충돌 후 되돌리는 방식이 아니라, 적용 전에 이동량을 제한한다.
-
-### `adjustedMovementForObbBeforeWallCollision(objectObb, movement, wallColliders)`
-
-위치: `scene/collision.js`
-
-단일 step movement에서 벽 방향으로 파고드는 성분을 제거한다.
-
-처리 방식:
-
-- 이동 후 OBB가 벽 span과 겹치는지 검사
-- `roomFacingNormal`이 있는 벽은 내부 경계 기준 clearance를 계산
-- 벽 안쪽 방향 이동량이 clearance보다 크면 초과분 제거
-- `roomFacingNormal`이 애매한 벽을 위해 `wallSolidClearance()`로 벽 OBB의 가장 얇은 축 기준 제한도 적용
-- 벽과 평행한 이동 성분은 유지
-
-### `wallSolidClearance(objectObb, wall)`
-
-위치: `scene/collision.js`
-
-벽 OBB의 가장 얇은 축을 벽 두께 방향으로 보고, 가구 OBB가 벽 실체까지 얼마나 떨어져 있는지 계산한다. 방 내부 방향 normal 판정이 불안정한 벽, 방 안쪽으로 튀어나온 벽을 보완하기 위해 사용한다.
-
-### `initializeWallConstraints(editableObjects, wallColliders)`
-
-위치: `scene/collision.js`
-
-초기 로딩된 가구가 벽과 겹쳐 있으면 `pushObjectOutOfWalls()`로 벽 밖으로 밀어낸다. 이후 `lastValidPosition`, `lastValidQuaternion`, `lastValidScale`을 저장한다.
-
-### `refreshCollisionState(editableObjects, selectedObject, wallColliders)`
-
-위치: `scene/collision.js`
-
-모든 editable object의 충돌 상태를 갱신한다. 벽과 충돌하면 `object.userData.collisions`에 `"wall"`을 넣고, `setFurnitureVisualState()`로 색상/edge 표시를 업데이트한다.
-
-## 선택 오버레이 및 측정 표시
-
-### `updateSelectionOverlay(object)`
-
-위치: `hooks/useTestThreeEditor.js`
-
-선택된 오브젝트 주변의 링, 치수 라벨 위치를 갱신한다.
-
-주의할 점:
-
-- 선택 링 크기와 라벨 위치는 `new THREE.Box3().setFromObject(object)` AABB 기반이다.
-- 충돌 판정은 OBB 기반이지만, UI 측정 표시는 AABB를 사용한다.
-- 링 반지름은 `Math.max(0.35, Math.max(size.x, size.z) * 0.58 + 0.18)`로 계산한다.
-
-### `stableDimensionsForObject(object, fallbackSize)`
-
-위치: `hooks/useTestThreeEditor.js`
-
-표시용 치수를 안정적으로 가져온다. metadata의 dimensions가 있으면 그 값을 우선하고, 없으면 현재 bounds size를 fallback으로 사용한다.
-
-## 방 치수 및 면적 계산
-
-### `calculateRoomMeasurements(roomModel)`
-
-위치: `scene/roomMeasurements.js`
-
-방의 바닥 면적, 외곽선, width/depth/height를 계산한다.
-
-구현 흐름:
-
-1. `collectFloorAreaGroups()`로 바닥 mesh의 triangle들을 평면별 그룹으로 수집
-2. 가장 큰 floor group을 선택
-3. triangle edge 중 한 번만 등장하는 edge를 외곽선으로 추출
-4. floor bounds로 width/depth 계산
-5. 전체 room `Box3`로 height 계산
-6. floor group이 없으면 room bounds 기반 fallback 면적 사용
-
-### `addRoomMeasurements(measurements)`
-
-위치: `hooks/useTestThreeEditor.js`
-
-`calculateRoomMeasurements()` 결과를 바탕으로 방 외곽선, 치수 line, 면적 badge, pyung 표시를 생성한다.
-
-## 벽 표시 및 카메라 기반 숨김
-
-### `updateViewFacingWalls(wallColliders, camera, referenceRoots)`
-
-위치: `hooks/useTestThreeEditor.js`
-
-카메라 방향에 따라 시야를 가리는 벽이나 reference object를 숨기거나 흐리게 표시한다. 벽 내부를 보기 쉽게 하기 위한 preview 로직이다.
-
-### `isWallHiddenFromCamera(wall, camera)`
-
-위치: `hooks/useTestThreeEditor.js`
-
-벽 normal과 카메라 방향을 비교해 현재 카메라에서 숨길 벽인지 판단한다.
-
-### `applyWallFacePreview(wall, hidden)`
-
-위치: `hooks/useTestThreeEditor.js`
-
-벽 mesh의 특정 face group만 투명하게 만들거나 복원한다. face group 상태를 저장해 원래 material group을 복구할 수 있게 한다.
-
-### `applyReferencePreviewVisibility(reference, hidden)`
-
-위치: `hooks/useTestThreeEditor.js`
-
-문/창문 reference object가 시야를 가릴 때 투명도를 낮추거나 숨김 상태로 표시한다.
-
-## 메타데이터 직렬화 및 저장
+```text
+현재 Three.js object들
+  ↓
+objectToEditableJson()
+  ↓
+editedItems
+  ↓
+createReplayableMetadataJson()
+  ↓
+metadata.json
+  ↓
+saveMetadataJson()
+  ↓
+POST /api/rooms/save
+```
 
 ### `objectToEditableJson(object)`
 
-위치: `scene/roomMetadata.js`
-
-가구/문/창문 object를 저장 가능한 JSON으로 변환한다.
+가구/문/창문 object 하나를 저장 가능한 JSON으로 변환한다.
 
 포함 정보:
 
-- id, sourceType, index
-- catalogId, name, category, modelUrl/path
-- dimensions, dimensionsCm
-- position, rotation
-- transform matrix columns
-- collision 상태
+- `id`, `sourceType`, `index`
+- `catalogId`, `name`, `category`
+- `path`, `modelUrl`
+- `dimensions`, `dimensionsCm`
+- `position`, `rotation`
+- `transform.columns`
+- `collision.hasCollision`, `collision.with`
 
-### `serializeRoomModelToJson(roomModel, generatedFrom)`
+### `_spatiumRoom`
 
-위치: `scene/roomMetadata.js`
+`serializeRoomModelToJson(roomModel, generatedFrom)`은 현재 방 mesh를 JSON으로 직렬화한다.
 
-현재 방 모델 mesh들을 JSON으로 직렬화한다. geometry position/index, matrix, material 정보를 저장한다.
+저장되는 정보:
 
-### `createRoomModelFromJson(roomJson)`
+- 벽 mesh
+- 바닥 mesh
+- 기타 room mesh
+- geometry position / normal / uv / index
+- world matrix
+- material 정보
 
-위치: `scene/roomMetadata.js`
-
-저장된 room JSON에서 Three.js group과 mesh들을 복원한다.
+`createRoomModelFromJson(roomJson)`은 이 JSON을 다시 Three.js group으로 복원한다. 복원된 mesh에는 벽/바닥 판별용 userData가 다시 설정된다.
 
 ### `createReplayableMetadataJson(metadata, editedItems, roomModel)`
 
-위치: `scene/roomMetadata.js`
+기존 metadata를 clone한 뒤 현재 편집 상태로 갱신한다.
 
-현재 편집 상태를 다시 로드 가능한 JSON 형태로 만든다. 기존 metadata를 clone하고, 편집된 objects/doors/windows와 직렬화된 room model을 합친다.
+| 필드 | 처리 |
+| --- | --- |
+| `objects` | 현재 일반 가구 편집 결과로 대체 |
+| `doors` | 문 편집 결과가 있으면 갱신, 없으면 기존 유지 |
+| `windows` | 창문 편집 결과가 있으면 갱신, 없으면 기존 유지 |
+| `_spatiumRoom` | 현재 방 mesh 직렬화 결과 저장 |
+| `_spatiumExport` | export 버전, 시간, scene config, 모델 URL, editedItems 기록 |
 
-### `saveEditedSceneJson(saveContext)`
+### 실제 저장 API
 
-위치: `hooks/useTestThreeEditor.js`
+`saveMetadataJson()`은 `RoomSpringBootApi.saveRoomMetadataJson()`을 호출한다.
 
-현재 editedItems와 roomModel을 `createReplayableMetadataJson()`으로 묶은 뒤 `saveMetadataJson()`을 호출해 백엔드로 저장한다.
+```text
+FormData
+  ├─ projectId
+  ├─ roomId
+  ├─ area optional
+  └─ metadata: metadata.json Blob
 
-### `saveMetadataJson(metadata, saveContext)`
+POST /api/rooms/save
+```
 
-위치: `scene/sceneLoaders.js`
+---
 
-`RoomSpringBootApi.saveRoomMetadataJson()`을 호출해 백엔드에 편집 결과를 저장한다.
+## 설정 파일
 
-## 설정값
+위치: `spatium-frontend/public/config/test-three-scene-config.json`
 
-### `loadSceneConfig()`
+| 키 | 의미 |
+| --- | --- |
+| `models` | category별 기본 GLB 모델 URL |
+| `colors.category` | fallback box category 색상 |
+| `colors.collision` | 충돌 edge 색상 |
+| `colors.collisionFill` | 충돌 fill 색상 |
+| `colors.selectedEdge` | 선택 edge 색상 |
+| `colors.defaultEdge` | 기본 edge 색상 |
+| `colors.doorReference` | 문 reference 색상 |
+| `colors.windowReference` | 창문 reference 색상 |
+| `referenceFallbackThickness` | 문/창문 두께 fallback |
+| `debug.showReferenceLabels` | 문/창문 방향 디버그 라벨 표시 |
+| `debug.showCameraAngle` | 카메라 yaw/pitch badge 표시 |
+| `wallConstraints.collisionEpsilon` | OBB 교차 판정 여유값 |
+| `wallConstraints.sweepStep` | 이동 sweep step 크기 |
+| `wallConstraints.sweepRotationStepDegrees` | 회전 sweep 설정값 |
+| `wallConstraints.colliderHalfThickness` | 벽 콜라이더 최소 반두께 |
+| `wallConstraints.boundaryEpsilon` | 벽 경계 허용 오차 |
+| `wallConstraints.boundarySpanPadding` | 벽 span overlap padding |
+| `wallConstraints.logWallDiagnostics` | 벽 이동 차단/충돌 debug 로그 |
+| `wallConstraints.showColliderDebug` | 벽 콜라이더 시각화 |
 
-위치: `scene/sceneConfig.js`
+현재 설정에는 `showWallDiagnostics`, `clampIterations`, `sweepMaxSteps`도 남아 있다. 다만 현재 핵심 이동/충돌 흐름에서는 위 표의 값들이 주로 사용된다.
 
-`/config/test-three-scene-config.json` 설정을 로드한다. 모델 URL, 색상, 벽 충돌 파라미터, 디버그 표시 여부 등을 제공한다.
+---
 
-### 주요 설정
+## 현재 구현 특징
 
-위치: `public/config/test-three-scene-config.json`
+- 방 씬 데이터는 API의 `roomScene`을 우선 사용한다.
+- 저장된 `_spatiumRoom`이 있으면 원본 USD 모델보다 먼저 복원된다.
+- 일반 가구는 추가, 이동, 회전, 삭제, 교체가 가능하다.
+- 문과 창문은 reference object이며, 기존 reference를 같은 계열 모델로 교체하는 방식이다.
+- 충돌 판정은 object OBB와 wall collider 기준이다.
+- 이동은 충돌 후 되돌리는 방식이 아니라, 적용 전 movement vector를 제한하는 방식이다.
+- 빠른 드래그에서도 벽을 통과하지 않도록 movement를 step 단위로 나눠 검사한다.
+- 선택 정보와 저장 metadata는 `objectToEditableJson()` 결과를 중심으로 동기화된다.
+- 저장 결과는 다시 로드 가능한 metadata JSON이며, 방 mesh 자체도 `_spatiumRoom`에 포함된다.
 
-| 키                                      | 의미                             |
-| --------------------------------------- | -------------------------------- |
-| `models`                                | category별 기본 GLB 모델 URL     |
-| `colors.category`                       | category별 fallback box 색상     |
-| `colors.collision`                      | 충돌 edge 색상                   |
-| `colors.collisionFill`                  | 충돌 fill 색상                   |
-| `wallConstraints.collisionEpsilon`      | OBB 교차 판정 여유값             |
-| `wallConstraints.sweepStep`             | 이동 제한 step 크기              |
-| `wallConstraints.sweepMaxSteps`         | 한 번 이동에서 나눌 최대 step 수 |
-| `wallConstraints.colliderHalfThickness` | 벽 콜라이더 최소 반두께          |
-| `wallConstraints.boundaryEpsilon`       | 벽 경계 허용 오차                |
-| `wallConstraints.boundarySpanPadding`   | 벽 span 판정 padding             |
-| `wallConstraints.showColliderDebug`     | 벽 콜라이더 디버그 표시 여부     |
+---
 
-## 현재 구현상 중요한 특징
+## 빠른 참조
 
-- 가구와 벽 충돌은 OBB 중심이다.
-- 가구 `localObb`는 모델 bounds를 기반으로 생성되고, 이동/회전 시 object matrix를 적용해 world OBB로 변환한다.
-- UI 선택 링과 치수 라벨은 `Box3` AABB 기반이다.
-- 이동은 충돌 후 되돌리는 방식이 아니라, 이동 적용 전에 movement vector를 제한한다.
-- 빠른 이동에서 벽을 건너뛰지 않도록 movement를 작은 step으로 분할한다.
-- 문/창문은 reference object로 관리되며 일반 가구와 충돌 제한 대상에서 제외된다.
-- 충돌 상태 표시는 유지되며, 충돌한 editable furniture에는 `"wall"` collision이 기록된다.
+| 하고 싶은 일 | 먼저 볼 파일 |
+| --- | --- |
+| 에디터 UI 수정 | `spatium-frontend/src/pages/3dEditor.js` |
+| 선택 패널/회전 슬라이더 수정 | `spatium-frontend/src/pages/testThree/TestThreeStagingPage.js` |
+| 포인터 이동/회전 로직 수정 | `spatium-frontend/src/pages/testThree/hooks/useTestThreeEditor.js` |
+| 가구 모델 생성 방식 수정 | `spatium-frontend/src/pages/testThree/scene/objectFactory.js` |
+| 벽 충돌 판정 수정 | `spatium-frontend/src/pages/testThree/scene/collision.js` |
+| 벽 콜라이더 생성 수정 | `spatium-frontend/src/pages/testThree/scene/wallColliders.js` |
+| 저장 JSON 구조 수정 | `spatium-frontend/src/pages/testThree/scene/roomMetadata.js` |
+| 방 면적/치수 계산 수정 | `spatium-frontend/src/pages/testThree/scene/roomMeasurements.js` |
+| 모델 URL/색상/제약값 수정 | `spatium-frontend/public/config/test-three-scene-config.json` |
