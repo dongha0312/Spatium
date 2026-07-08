@@ -6,16 +6,18 @@ const ROTATION_STOPS = [-180, -90, 0, 90, 180];
 const ROTATION_SNAP_THRESHOLD = 4;
 const REPLACEABLE_TYPES = new Set(["object", "door", "window"]);
 
+// 슬라이더 값이 90도 단위 지점(-180/-90/0/90/180) 근처(±4도)면 그 값으로 스냅시킨다.
 function snapRotation(value) {
   const nearest = ROTATION_STOPS.reduce((closest, stop) =>
     Math.abs(stop - value) < Math.abs(closest - value) ? stop : closest,
   );
 
-  return Math.abs(nearest - value) <= ROTATION_SNAP_THRESHOLD
-    ? nearest
-    : value;
+  return Math.abs(nearest - value) <= ROTATION_SNAP_THRESHOLD ? nearest : value;
 }
 
+// Three.js 씬(useRoomSceneEditor)을 렌더링하는 뷰포트 + 선택된 오브젝트의 정보 패널/
+// 회전·높이 슬라이더/교체·삭제 툴바를 그리는 컴포넌트. 상위(3dEditor.js)는 ref를 통해
+// addFurniture/저장/삭제 같은 액션을 호출한다.
 const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
   {
     isSkyview = false,
@@ -28,16 +30,18 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
 ) {
   const {
     containerRef,
-    status,
     error,
     selectedItem,
     selectedRotationDegrees,
+    selectedElevationCm,
+    selectedMaxElevationCm,
     isReplacingSelected,
-    collisionSummary,
     canSaveJson,
     addFurniture,
     deleteSelectedObject,
+    deleteSelectedReference,
     setSelectedRotationDegrees,
+    setSelectedElevationCm,
     saveEditedSceneJson,
     startReplaceSelectedObject,
   } = useRoomSceneEditor({
@@ -48,15 +52,38 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     onSceneChanged,
   });
 
+  // 선택된 오브젝트 종류에 따라 어떤 컨트롤을 보여줄지 결정한다.
   const canShowSelectionControls = REPLACEABLE_TYPES.has(
     selectedItem?.sourceType,
   );
   const canDeleteSelected = selectedItem?.sourceType === "object";
+  const canDeleteReference =
+    selectedItem?.sourceType === "door" ||
+    selectedItem?.sourceType === "window";
+  const canShowElevationControl = selectedItem?.sourceType === "object";
 
   const handleRotationChange = (event) => {
     setSelectedRotationDegrees(snapRotation(Number(event.target.value)));
   };
 
+  const handleElevationChange = (event) => {
+    setSelectedElevationCm(Number(event.target.value));
+  };
+
+  const handleDeleteAsOpening = () => {
+    deleteSelectedReference(false);
+  };
+
+  const handleDeleteFillWithWall = () => {
+    const confirmed = window.confirm(
+      "선택한 문/창문을 삭제하고 벽으로 메우시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+    );
+    if (!confirmed) return;
+    deleteSelectedReference(true);
+  };
+
+  // 상위 컴포넌트(3dEditor.js)가 editorRef.current.xxx() 형태로 호출할 수 있게
+  // 내부 액션 일부를 ref로 노출한다.
   useImperativeHandle(
     ref,
     () => ({
@@ -64,14 +91,22 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
       addFurniture,
       deleteSelectedObject,
       saveEditedSceneJson,
+      isReplacingSelected,
     }),
-    [addFurniture, canSaveJson, deleteSelectedObject, saveEditedSceneJson],
+    [
+      addFurniture,
+      canSaveJson,
+      deleteSelectedObject,
+      saveEditedSceneJson,
+      isReplacingSelected,
+    ],
   );
 
   return (
     <div className="room-scene-editor-page">
       <div ref={containerRef} className="room-scene-editor-viewport" />
 
+      {/* 선택된 오브젝트의 치수/회전/높이 정보 패널 */}
       {canShowSelectionControls && (
         <aside className="room-scene-editor-info-drawer">
           <div className="room-scene-editor-info-title">
@@ -82,28 +117,32 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
           </div>
           <dl className="room-scene-editor-info-list">
             <div>
-              <dt>Width</dt>
+              <dt>가로</dt>
               <dd>{selectedItem.dimensionsCm?.width ?? "-"} cm</dd>
             </div>
             <div>
-              <dt>Depth</dt>
+              <dt>세로</dt>
               <dd>{selectedItem.dimensionsCm?.depth ?? "-"} cm</dd>
             </div>
             <div>
-              <dt>Height</dt>
+              <dt>높이</dt>
               <dd>{selectedItem.dimensionsCm?.height ?? "-"} cm</dd>
             </div>
             <div>
-              <dt>Rotation</dt>
-              <dd>{selectedRotationDegrees} deg</dd>
+              <dt>각도</dt>
+              <dd>{selectedRotationDegrees} 도</dd>
             </div>
+            {canShowElevationControl && (
+              <div>
+                <dt>바닥과 높이 차이</dt>
+                <dd>{selectedElevationCm} cm</dd>
+              </div>
+            )}
           </dl>
-          {selectedItem.collision?.hasCollision && (
-            <div className="room-scene-editor-info-warning">Overlap detected</div>
-          )}
         </aside>
       )}
 
+      {/* 회전/높이 슬라이더 + 교체·삭제 툴바 */}
       {canShowSelectionControls && (
         <div className="room-scene-editor-selection-controls">
           <div className="room-scene-editor-rotation-panel">
@@ -121,23 +160,48 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
                 onChange={handleRotationChange}
                 aria-label="Rotation degrees"
               />
-              <div className="room-scene-editor-rotation-ticks" aria-hidden="true">
+              <div
+                className="room-scene-editor-rotation-ticks"
+                aria-hidden="true"
+              >
                 {ROTATION_STOPS.map((stop) => (
                   <span key={stop} />
                 ))}
               </div>
             </div>
           </div>
+          {canShowElevationControl && selectedMaxElevationCm > 0 && (
+            <div className="room-scene-editor-elevation-panel">
+              <div className="room-scene-editor-elevation-value">
+                {selectedElevationCm} cm
+              </div>
+              <div className="room-scene-editor-elevation-track-wrap">
+                <input
+                  type="range"
+                  className="room-scene-editor-elevation-slider"
+                  min="0"
+                  max={selectedMaxElevationCm}
+                  step="1"
+                  value={selectedElevationCm}
+                  onChange={handleElevationChange}
+                  aria-label="Elevation from floor"
+                />
+              </div>
+            </div>
+          )}
           <div className="room-scene-editor-selection-toolbar">
             <button
               type="button"
               className={`room-scene-editor-selection-tool${
-                isReplacingSelected ? " room-scene-editor-selection-tool--active" : ""
+                isReplacingSelected
+                  ? " room-scene-editor-selection-tool--active"
+                  : ""
               }`}
               onClick={startReplaceSelectedObject}
             >
-              <span className="room-scene-editor-selection-tool-icon">Swap</span>
-              Replace
+              <span className="room-scene-editor-selection-tool-icon">
+                교체
+              </span>
             </button>
             {canDeleteSelected && (
               <button
@@ -145,21 +209,39 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
                 className="room-scene-editor-selection-tool room-scene-editor-selection-tool--danger"
                 onClick={deleteSelectedObject}
               >
-                <span className="room-scene-editor-selection-tool-icon">Del</span>
-                Delete
+                <span className="room-scene-editor-selection-tool-icon">
+                  삭제
+                </span>
               </button>
+            )}
+            {canDeleteReference && (
+              <>
+                <button
+                  type="button"
+                  className="room-scene-editor-selection-tool"
+                  onClick={handleDeleteAsOpening}
+                  title="문/창문만 지우고 개구부는 남깁니다"
+                >
+                  <span className="room-scene-editor-selection-tool-icon">
+                    개구부로 삭제
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  className="room-scene-editor-selection-tool room-scene-editor-selection-tool--danger"
+                  onClick={handleDeleteFillWithWall}
+                  title="문/창문을 지우고 그 자리를 벽으로 메웁니다"
+                >
+                  <span className="room-scene-editor-selection-tool-icon">
+                    벽으로 메우기
+                  </span>
+                </button>
+              </>
             )}
           </div>
         </div>
       )}
 
-      {collisionSummary.hasCollision && (
-        <div className="room-scene-editor-collision-warning">
-          Some items overlap with walls or room boundaries.
-        </div>
-      )}
-
-      {status && <div className="room-scene-editor-status">{status}</div>}
       {error && <pre className="room-scene-editor-error">{error}</pre>}
     </div>
   );
