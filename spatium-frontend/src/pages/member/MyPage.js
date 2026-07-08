@@ -543,10 +543,10 @@ function MyPage() {
                               {room.name}
                             </div>
                           )}
-                          <div className="mp-room-meta">
+                          {/* <div className="mp-room-meta">
                             최근 수정 {room.updatedAt} · 가구{" "}
                             {room.furnitureCount}개
-                          </div>
+                          </div> */}
                         </div>
                         <button
                           type="button"
