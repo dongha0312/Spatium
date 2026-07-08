@@ -525,6 +525,103 @@
   margin-top: 4px;
 }
 
+/* 가구 추가 전 크기 입력 모달 */
+.ed-size-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(28, 18, 9, 0.42);
+}
+
+.ed-size-modal {
+  width: min(360px, 100%);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--sur);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+  color: var(--t);
+  display: flex;
+  flex-direction: column;
+}
+
+.ed-size-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--bd);
+}
+
+.ed-size-modal-head h2 {
+  margin: 0;
+  color: var(--t);
+  font-size: 16px;
+  font-weight: 850;
+  line-height: 1.3;
+}
+
+.ed-size-modal-close {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--t2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.ed-size-modal-close:hover {
+  border-color: var(--ga);
+  color: var(--g);
+}
+
+.ed-size-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.ed-size-modal-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--t2);
+}
+
+.ed-size-modal-field input {
+  width: 110px;
+  padding: 6px 10px;
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--t);
+  font-size: 13px;
+  text-align: right;
+}
+
+.ed-size-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 0 20px 18px;
+}
+
 /* 에디터 본문 래퍼 */
 .ed-wrap {
   background: #1E1B18;

@@ -70,6 +70,12 @@ function ThreeDEditor() {
   );
   const [projectRoomsError, setProjectRoomsError] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
+  const [pendingCatalogItem, setPendingCatalogItem] = useState(null);
+  const [sizeDraftCm, setSizeDraftCm] = useState({
+    width: 0,
+    depth: 0,
+    height: 0,
+  });
 
   const [session, setSession] = useState(() => getLoginSession());
 
@@ -355,8 +361,46 @@ function ThreeDEditor() {
     setActiveCategory(null);
   };
 
-  const handleAddFurniture = async (item) => {
-    await editorRef.current?.addFurniture(item);
+  const handleAddFurniture = (item) => {
+    if (editorRef.current?.isReplacingSelected) {
+      editorRef.current?.addFurniture(item);
+      return;
+    }
+
+    const dims = item.dimensions || {};
+    setPendingCatalogItem(item);
+    setSizeDraftCm({
+      width: Math.round((dims.x || 0.8) * 100),
+      depth: Math.round((dims.z || 0.8) * 100),
+      height: Math.round((dims.y || 0.8) * 100),
+    });
+  };
+
+  const closeSizeModal = () => {
+    setPendingCatalogItem(null);
+  };
+
+  const handleSizeFieldChange = (field) => (event) => {
+    const { value } = event.target;
+    setSizeDraftCm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleConfirmAddFurniture = async () => {
+    if (!pendingCatalogItem) return;
+
+    const originalDims = pendingCatalogItem.dimensions || {};
+    const toMeters = (cm, fallback) => {
+      const value = Number(cm);
+      return Number.isFinite(value) && value > 0 ? value / 100 : fallback;
+    };
+    const customDimensions = {
+      x: toMeters(sizeDraftCm.width, originalDims.x || 0.8),
+      y: toMeters(sizeDraftCm.height, originalDims.y || 0.8),
+      z: toMeters(sizeDraftCm.depth, originalDims.z || 0.8),
+    };
+
+    await editorRef.current?.addFurniture(pendingCatalogItem, customDimensions);
+    setPendingCatalogItem(null);
   };
 
   const toggleSkyview = () => {
@@ -788,6 +832,85 @@ function ThreeDEditor() {
         onAccountClick={handleGoAccount}
       />
 
+      {pendingCatalogItem && (
+        <div className="ed-size-modal-backdrop" onClick={closeSizeModal}>
+          <section
+            className="ed-size-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ed-size-modal-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="ed-size-modal-head">
+              <h2 id="ed-size-modal-title">
+                {pendingCatalogItem.name || "가구"} 크기 설정
+              </h2>
+              <button
+                type="button"
+                className="ed-size-modal-close"
+                onClick={closeSizeModal}
+                aria-label="닫기"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="ed-size-modal-body">
+              <label className="ed-size-modal-field">
+                <span>가로 (cm)</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  step="1"
+                  value={sizeDraftCm.width}
+                  onChange={handleSizeFieldChange("width")}
+                />
+              </label>
+              <label className="ed-size-modal-field">
+                <span>세로 (cm)</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  step="1"
+                  value={sizeDraftCm.depth}
+                  onChange={handleSizeFieldChange("depth")}
+                />
+              </label>
+              <label className="ed-size-modal-field">
+                <span>높이 (cm)</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  step="1"
+                  value={sizeDraftCm.height}
+                  onChange={handleSizeFieldChange("height")}
+                />
+              </label>
+            </div>
+
+            <div className="ed-size-modal-actions">
+              <button
+                type="button"
+                className="ed-footer-btn ed-footer-cancel"
+                onClick={closeSizeModal}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="ed-footer-btn ed-footer-save"
+                onClick={handleConfirmAddFurniture}
+              >
+                추가
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {manualOpen && (
         <div className="ed-manual-backdrop" onClick={closeEditorManual}>
           <section
@@ -817,7 +940,9 @@ function ThreeDEditor() {
                 <h3>기본 흐름</h3>
                 <ol>
                   <li>
-                    왼쪽 목록에서 가구를 선택하면 현재 시점 근처에 추가됩니다.
+                    왼쪽 목록에서 가구를 클릭하면 가로/세로/높이를 입력하는
+                    창이 뜹니다. 크기를 정하고 추가하면 현재 시점 근처에
+                    배치됩니다.
                   </li>
                   <li>
                     배치된 가구를 클릭한 뒤 드래그해서 바닥 위 위치를

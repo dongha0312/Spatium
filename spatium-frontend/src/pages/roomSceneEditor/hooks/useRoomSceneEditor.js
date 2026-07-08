@@ -177,7 +177,7 @@ export function useRoomSceneEditor({
     markSceneChanged();
   }
 
-  async function addFurniture(catalogItem) {
+  async function addFurniture(catalogItem, customDimensions) {
     if (!sceneActionsRef.current) {
       setError("3D 편집기가 아직 준비되지 않았습니다.");
       return false;
@@ -190,7 +190,7 @@ export function useRoomSceneEditor({
       return replaced;
     }
 
-    return sceneActionsRef.current.addFurniture(catalogItem);
+    return sceneActionsRef.current.addFurniture(catalogItem, customDimensions);
   }
 
   function deleteSelectedObject() {
@@ -1204,7 +1204,7 @@ export function useRoomSceneEditor({
         }
 
         sceneActionsRef.current = {
-          addFurniture: async (catalogItem) => {
+          addFurniture: async (catalogItem, customDimensions) => {
             if (!catalogItem) return false;
             if (REFERENCE_CATEGORIES.has(catalogItem.category)) {
               setStatus("");
@@ -1218,7 +1218,12 @@ export function useRoomSceneEditor({
             setStatus(`Adding ${catalogItem.name || "furniture"}...`);
 
             try {
-              const dimensions = normalizedDimensions(catalogItem.dimensions);
+              const effectiveCatalogItem = customDimensions
+                ? { ...catalogItem, dimensions: customDimensions }
+                : catalogItem;
+              const dimensions = normalizedDimensions(
+                effectiveCatalogItem.dimensions,
+              );
               const target = controls.target.clone();
               const position = new THREE.Vector3(
                 target.x,
@@ -1226,7 +1231,7 @@ export function useRoomSceneEditor({
                 target.z,
               );
               const item = createFurnitureItemFromCatalog(
-                catalogItem,
+                effectiveCatalogItem,
                 position,
               );
               const objectIndex = nextObjectIndex;
