@@ -103,13 +103,8 @@ export function useRoomSceneEditor({
   const showMeasurementsRef = useRef(showMeasurements);
   const wallColorRef = useRef(wallColor);
   const onSceneChangedRef = useRef(onSceneChanged);
-  const {
-    isSceneConfigReady,
-    status,
-    setStatus,
-    error,
-    setError,
-  } = useSceneConfigStatus();
+  const { isSceneConfigReady, status, setStatus, error, setError } =
+    useSceneConfigStatus();
   const {
     selectedObjectRef,
     isReplacingSelectedRef,
@@ -134,7 +129,7 @@ export function useRoomSceneEditor({
     onSceneChangedRef.current?.();
   }
 
-useEffect(() => {
+  useEffect(() => {
     showMeasurementsRef.current = showMeasurements;
     syncSelectedRef.current?.();
     syncRoomMeasurementsRef.current?.();
@@ -440,7 +435,7 @@ useEffect(() => {
       roomMeasurementLayer.clear();
       roomMeasurementsRef.current = measurements || null;
       if (Number.isFinite(measurements?.area)) {
-        roomAreaBadge.textContent = `諛?硫댁쟻 ${formatSquareMeters(measurements.area)}  ${formatPyung(measurements.area * 0.3025)}`;
+        roomAreaBadge.textContent = `면적 ${formatSquareMeters(measurements.area)}  ${formatPyung(measurements.area * 0.3025)}`;
         roomAreaBadge.hidden = !showMeasurementsRef.current;
       } else {
         roomAreaBadge.hidden = true;
@@ -831,10 +826,7 @@ useEffect(() => {
       clearWallDiagnostics();
       if (
         !object ||
-        !optionalConfigBoolean(
-          ["wallConstraints", "showWallDiagnostics"],
-          true,
-        )
+        !optionalConfigBoolean(["wallConstraints", "showWallDiagnostics"], true)
       ) {
         return;
       }
@@ -979,7 +971,6 @@ useEffect(() => {
       true,
     );
 
-    // 蹂??異붽?
     let roomModelObjectUrl = null;
     const roomModelUrl = roomScene?.model?.dataBase64
       ? (() => {
@@ -998,7 +989,6 @@ useEffect(() => {
       .then(([model, metadata]) =>
         Promise.all([model, loadModelTemplates(), metadata]),
       )
-      // 蹂??異붽?
       .then(async ([model, modelTemplates, metadata]) => {
         if (!isMounted) {
           if (model) disposeScene(model);
@@ -1213,7 +1203,9 @@ useEffect(() => {
               REFERENCE_CATEGORIES.has(catalogItem.category)
             ) {
               setStatus("");
-              setError("臾?李쎈Ц 紐⑤뜽? 湲곗〈 臾?李쎈Ц???좏깮????援먯껜?섏꽭??");
+              setError(
+                "臾?李쎈Ц 紐⑤뜽? 湲곗〈 臾?李쎈Ц???좏깮????援먯껜?섏꽭??",
+              );
               return false;
             }
             if (
@@ -1221,7 +1213,9 @@ useEffect(() => {
               !REFERENCE_CATEGORIES.has(catalogItem.category)
             ) {
               setStatus("");
-              setError("臾멸낵 李쎈Ц? 臾?李쎈Ц 紐⑤뜽濡쒕쭔 援먯껜?????덉뒿?덈떎.");
+              setError(
+                "臾멸낵 李쎈Ц? 臾?李쎈Ц 紐⑤뜽濡쒕쭔 援먯껜?????덉뒿?덈떎.",
+              );
               return false;
             }
 

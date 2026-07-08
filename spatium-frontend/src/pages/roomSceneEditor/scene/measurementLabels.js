@@ -24,7 +24,7 @@ export function formatSquareMeters(value) {
 }
 
 export function formatPyung(value) {
-  return Number.isFinite(value) ? `${value.toFixed(1)} py` : "-";
+  return Number.isFinite(value) ? `${value.toFixed(1)} 평` : "-";
 }
 
 export function stableDimensionsForObject(object, fallbackSize) {
