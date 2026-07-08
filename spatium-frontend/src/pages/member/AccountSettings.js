@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GoogleLogin } from "@react-oauth/google";
 import "../../styles/accountsettings.css";
 import AccountPanel from "../../components/AccountPanel";
 import AvatarButton from "../../components/AvatarButton";
@@ -209,22 +208,8 @@ function AccountSettings() {
     setPassword("");
   };
 
-  // 소셜 회원 탈퇴 시 : 구글 재인증 버튼을 노출할지 여부
-  const [socialWithdrawPending, setSocialWithdrawPending] = useState(false);
-
-  // 탈퇴 API 호출 공통 처리 (성공 시 세션 정리 후 메인으로)
-  const requestWithdraw = async (payload) => {
-    try {
-      await deleteMyInfo(payload);
-      clearLoginSession();
-      alert("탈퇴되었습니다.");
-      navigate("/");
-    } catch (err) {
-      alert(err.message || "탈퇴 처리 중 문제가 발생했습니다.");
-    }
-  };
-
-  const handleWithdraw = () => {
+  // 일반/소셜 회원 모두 추가 본인 확인 없이 바로 탈퇴 처리
+  const handleWithdraw = async () => {
     if (
       !window.confirm(
         "정말 탈퇴하시겠습니까? 모든 프로젝트와 데이터가 삭제됩니다.",
@@ -233,30 +218,14 @@ function AccountSettings() {
       return;
     }
 
-    if (isSocialMember) {
-      // 소셜 회원 : 비밀번호가 없으므로 구글 재인증(idToken)으로 본인 확인
-      setSocialWithdrawPending(true);
-      return;
+    try {
+      await deleteMyInfo();
+      clearLoginSession();
+      alert("탈퇴되었습니다.");
+      navigate("/");
+    } catch (err) {
+      alert(err.message || "탈퇴 처리 중 문제가 발생했습니다.");
     }
-
-    // 일반 회원 : 현재 비밀번호 재확인
-    const currentPassword = window.prompt(
-      "본인 확인을 위해 현재 비밀번호를 입력해주세요.",
-    );
-    if (!currentPassword) return;
-
-    requestWithdraw({ password: currentPassword });
-  };
-
-  // 소셜 회원 탈퇴 : 구글 재인증 성공 시 받은 idToken으로 탈퇴 진행
-  const handleWithdrawGoogleCredential = (credentialResponse) => {
-    const idToken = credentialResponse?.credential;
-    if (!idToken) {
-      alert("구글 본인 확인에 실패했습니다. 다시 시도해주세요.");
-      return;
-    }
-    setSocialWithdrawPending(false);
-    requestWithdraw({ idToken });
   };
 
   const scrollToWithdraw = () => {
@@ -485,23 +454,6 @@ function AccountSettings() {
                 회원 탈퇴
               </button>
             </div>
-            {socialWithdrawPending && (
-              <div style={{ marginTop: 12 }}>
-                <div
-                  style={{ marginBottom: 8, color: "#8a8a8a", fontSize: 13 }}
-                >
-                  본인 확인을 위해 구글 로그인을 한 번 더 진행해주세요.
-                </div>
-                <GoogleLogin
-                  onSuccess={handleWithdrawGoogleCredential}
-                  onError={() => {
-                    alert("구글 본인 확인에 실패했습니다. 다시 시도해주세요.");
-                  }}
-                  text="continue_with"
-                  size="medium"
-                />
-              </div>
-            )}
           </div>
         </div>
       </div>
