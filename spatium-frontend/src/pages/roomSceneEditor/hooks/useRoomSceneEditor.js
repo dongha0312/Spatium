@@ -1,16 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import {
-  CSS2DObject,
-  CSS2DRenderer,
-} from "three/examples/jsm/renderers/CSS2DRenderer.js";
+import { CSS2DRenderer } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import {
   getRoomMetadataUrl,
   getRoomModelUrl,
-  loadSceneConfig,
   optionalConfigBoolean,
-  referenceFallbackThickness,
   sceneColor,
   wallConfigBoolean,
 } from "../scene/sceneConfig";
@@ -22,11 +17,7 @@ import {
   loadUsdRoomModel,
   saveMetadataJson,
 } from "../scene/sceneLoaders";
-import {
-  columnsFromMatrix,
-  disposeScene,
-  frameObject,
-} from "../scene/threeUtils";
+import { disposeScene, frameObject } from "../scene/threeUtils";
 import {
   createReplayableMetadataJson,
   createRoomModelFromJson,
@@ -53,680 +44,48 @@ import {
   prepareRoomModel,
 } from "../scene/wallColliders";
 import { calculateRoomMeasurements } from "../scene/roomMeasurements";
-
-const DEFAULT_FURNITURE_DIMENSIONS = { x: 0.8, y: 0.8, z: 0.8 };
-const REFERENCE_CATEGORIES = new Set(["door", "window"]);
-
-function base64ToObjectUrl(base64, contentType = "application/octet-stream") {
-  const binary = window.atob(base64);
-  const bytes = [];
-
-  for (let offset = 0; offset < binary.length; offset += 1024) {
-    const slice = binary.slice(offset, offset + 1024);
-    const chunk = new Uint8Array(slice.length);
-
-    for (let index = 0; index < slice.length; index += 1) {
-      chunk[index] = slice.charCodeAt(index);
-    }
-
-    bytes.push(chunk);
-  }
-
-  return URL.createObjectURL(new Blob(bytes, { type: contentType }));
-}
-
-function normalizedDimensions(dimensions = {}) {
-  return {
-    x: Math.max(Number(dimensions.x) || DEFAULT_FURNITURE_DIMENSIONS.x, 0.04),
-    y: Math.max(Number(dimensions.y) || DEFAULT_FURNITURE_DIMENSIONS.y, 0.04),
-    z: Math.max(Number(dimensions.z) || DEFAULT_FURNITURE_DIMENSIONS.z, 0.04),
-  };
-}
-
-function normalizedReferenceDimensions(category, dimensions = {}) {
-  const fallbackThickness = referenceFallbackThickness(category);
-  const thickness = Number(dimensions.z);
-
-  return {
-    x: Math.max(Number(dimensions.x) || DEFAULT_FURNITURE_DIMENSIONS.x, 0.04),
-    y: Math.max(Number(dimensions.y) || DEFAULT_FURNITURE_DIMENSIONS.y, 0.04),
-    z:
-      Number.isFinite(thickness) &&
-      thickness > 0 &&
-      thickness <= fallbackThickness * 1.5
-        ? thickness
-        : fallbackThickness,
-  };
-}
-
-function roundedTransform(
-  position,
-  quaternion = new THREE.Quaternion(),
-  scale = new THREE.Vector3(1, 1, 1),
-) {
-  const matrix = new THREE.Matrix4().compose(position, quaternion, scale);
-
-  return {
-    columns: columnsFromMatrix(matrix).map((column) =>
-      column.map((value) => Number(value.toFixed(6))),
-    ),
-  };
-}
-
-function createFurnitureItemFromCatalog(
-  catalogItem,
-  position,
-  quaternion = new THREE.Quaternion(),
-  scale = new THREE.Vector3(1, 1, 1),
-) {
-  const dimensions = normalizedDimensions(catalogItem.dimensions);
-
-  return {
-    catalogId: catalogItem.id,
-    name: catalogItem.name,
-    category: catalogItem.category,
-    path: catalogItem.path || catalogItem.modelUrl,
-    modelUrl: catalogItem.modelUrl,
-    dimensions,
-    transform: roundedTransform(position, quaternion, scale),
-  };
-}
-
-function estimateFloorY(metadataObjects, roomModel) {
-  const objectFloorYs = (metadataObjects || [])
-    .map((item) => {
-      const y = Number(item.transform?.columns?.[3]?.[1]);
-      const height = Number(item.dimensions?.y);
-      return Number.isFinite(y) && Number.isFinite(height)
-        ? y - height / 2
-        : null;
-    })
-    .filter((value) => value != null);
-
-  if (objectFloorYs.length) {
-    return Math.min(...objectFloorYs);
-  }
-
-  const bounds = new THREE.Box3().setFromObject(roomModel);
-  return bounds.isEmpty() ? 0 : bounds.min.y;
-}
-
-function createDimensionLabel() {
-  const element = document.createElement("div");
-  element.className = "dimension-label";
-  const label = new CSS2DObject(element);
-  label.visible = false;
-  return label;
-}
-
-function createRoomDimensionLabel(text) {
-  const element = document.createElement("div");
-  element.className = "room-dimension-label";
-  element.textContent = text;
-  return new CSS2DObject(element);
-}
-
-function createReferenceDebugLabel() {
-  const element = document.createElement("div");
-  element.className = "reference-debug-label";
-  const label = new CSS2DObject(element);
-  label.visible = true;
-  return label;
-}
-
-function formatCentimeters(value) {
-  return `${Math.max(Math.round(value * 100), 1)} cm`;
-}
-
-function formatSquareMeters(value) {
-  return Number.isFinite(value) ? `${value.toFixed(2)} m2` : "-";
-}
-
-function formatPyung(value) {
-  return Number.isFinite(value) ? `${value.toFixed(1)} 평` : "-";
-}
-
-function stableDimensionsForObject(object, fallbackSize) {
-  const dimensions = object?.userData.roomItem?.dimensions || {};
-  const localObbSize = object?.userData.localObb?.halfSize
-    ?.clone()
-    .multiplyScalar(2);
-
-  return {
-    width: Number(dimensions.x) || localObbSize?.x || fallbackSize.x,
-    height: Number(dimensions.y) || localObbSize?.y || fallbackSize.y,
-    depth: Number(dimensions.z) || localObbSize?.z || fallbackSize.z,
-  };
-}
-
-function applyWallPreviewOpacity(object, hidden) {
-  object.traverse?.((child) => {
-    const materials = Array.isArray(child.material)
-      ? child.material
-      : [child.material];
-
-    materials.forEach((material) => {
-      if (!material) return;
-      if (!material.userData.spatiumOriginalWallState) {
-        material.userData.spatiumOriginalWallState = {
-          opacity: material.opacity,
-          transparent: material.transparent,
-          depthWrite: material.depthWrite,
-        };
-      }
-
-      const original = material.userData.spatiumOriginalWallState;
-      material.transparent = hidden || original.transparent;
-      material.opacity = hidden ? 0.04 : original.opacity;
-      material.depthWrite = hidden ? false : original.depthWrite;
-      material.needsUpdate = true;
-    });
-  });
-}
-
-function materialArray(material) {
-  return Array.isArray(material) ? material : [material];
-}
-
-function findMaterialIndexForTriangle(geometry, triangleStart) {
-  const group = geometry.groups.find(
-    ({ start, count }) =>
-      triangleStart >= start && triangleStart < start + count,
-  );
-
-  return group?.materialIndex || 0;
-}
-
-function triangleCenterWorld(object, triangleStart) {
-  const geometry = object.geometry;
-  const position = geometry?.attributes?.position;
-  if (!position) return null;
-
-  const index = geometry.index;
-  const center = new THREE.Vector3();
-  const vertex = new THREE.Vector3();
-
-  for (let offset = 0; offset < 3; offset += 1) {
-    const vertexIndex = index
-      ? index.getX(triangleStart + offset)
-      : triangleStart + offset;
-
-    vertex.fromBufferAttribute(position, vertexIndex);
-    center.add(vertex);
-  }
-
-  return center.multiplyScalar(1 / 3).applyMatrix4(object.matrixWorld);
-}
-
-function wallPreviewContainsTriangle(wall, triangleCenter) {
-  if (!triangleCenter) return false;
-
-  const axes = {
-    thickness: new THREE.Vector3(),
-    height: new THREE.Vector3(),
-    length: new THREE.Vector3(),
-  };
-  wall.obb.rotation.extractBasis(axes.thickness, axes.height, axes.length);
-
-  const relative = triangleCenter.clone().sub(wall.obb.center);
-  const thicknessDistance = Math.abs(relative.dot(axes.thickness));
-  const heightDistance = Math.abs(relative.dot(axes.height));
-  const lengthDistance = Math.abs(relative.dot(axes.length));
-  const thicknessPadding = 0;
-  const spanPadding = 0;
-
-  return (
-    thicknessDistance <= wall.obb.halfSize.x + thicknessPadding &&
-    heightDistance <= wall.obb.halfSize.y + spanPadding &&
-    lengthDistance <= wall.obb.halfSize.z + spanPadding
-  );
-}
-
-function ensureWallFacePreviewState(object) {
-  const geometry = object.geometry;
-  if (!geometry) return null;
-
-  if (object.userData.spatiumWallFacePreview) {
-    return object.userData.spatiumWallFacePreview;
-  }
-
-  const originals = materialArray(object.material).filter(Boolean);
-  if (!originals.length) return null;
-
-  const originalGroups = geometry.groups.length
-    ? geometry.groups.map((group) => ({ ...group }))
-    : [
-        {
-          start: 0,
-          count: geometry.index
-            ? geometry.index.count
-            : geometry.attributes.position.count,
-          materialIndex: 0,
-        },
-      ];
-  const transparentMaterials = originals.map((material) => {
-    const transparentMaterial = material.clone();
-
-    transparentMaterial.transparent = true;
-    transparentMaterial.opacity = 0.04;
-    transparentMaterial.depthWrite = false;
-    transparentMaterial.needsUpdate = true;
-    return transparentMaterial;
-  });
-
-  const drawCount = geometry.index
-    ? geometry.index.count
-    : geometry.attributes.position.count;
-
-  geometry.clearGroups();
-  for (let triangleStart = 0; triangleStart < drawCount; triangleStart += 3) {
-    const originalMaterialIndex = findMaterialIndexForTriangle(
-      { groups: originalGroups },
-      triangleStart,
-    );
-
-    geometry.addGroup(triangleStart, 3, originalMaterialIndex);
-  }
-
-  const state = {
-    originalMaterialCount: originals.length,
-    originalGroups,
-  };
-
-  object.material = [...originals, ...transparentMaterials];
-  object.userData.spatiumWallFacePreview = state;
-  return state;
-}
-
-function resetWallFacePreview(object) {
-  const state = object.userData.spatiumWallFacePreview;
-  if (!state || !object.geometry) return;
-
-  object.geometry.groups.forEach((group) => {
-    if (group.materialIndex >= state.originalMaterialCount) {
-      group.materialIndex -= state.originalMaterialCount;
-    }
-  });
-}
-
-function applyWallFacePreview(wall, hidden) {
-  if (
-    !Number.isFinite(wall.triangleStart) ||
-    !Number.isFinite(wall.triangleCount)
-  ) {
-    applyWallPreviewOpacity(wall.object, hidden);
-    return;
-  }
-
-  const state = ensureWallFacePreviewState(wall.object);
-  if (!state) {
-    applyWallPreviewOpacity(wall.object, hidden);
-    return;
-  }
-
-  const geometry = wall.object.geometry;
-  const groups = hidden
-    ? geometry.groups.filter((group) =>
-        wallPreviewContainsTriangle(
-          wall,
-          triangleCenterWorld(wall.object, group.start),
-        ),
-      )
-    : geometry.groups.filter(
-        ({ start, count }) =>
-          start === wall.triangleStart && count === wall.triangleCount,
-      );
-
-  groups.forEach((group) => {
-    const originalMaterialIndex =
-      group.materialIndex >= state.originalMaterialCount
-        ? group.materialIndex - state.originalMaterialCount
-        : group.materialIndex;
-
-    group.materialIndex = hidden
-      ? originalMaterialIndex + state.originalMaterialCount
-      : originalMaterialIndex;
-  });
-}
-
-function applyReferencePreviewVisibility(reference, hidden) {
-  const debugLabel = reference.userData.debugLabel;
-
-  reference.traverse?.((child) => {
-    if (child === reference || child === debugLabel) return;
-    if (child.element?.classList?.contains("reference-debug-label")) return;
-    if (
-      child.isMesh ||
-      child.isLine ||
-      child.isLineSegments ||
-      child.isSprite
-    ) {
-      if (child.userData.spatiumOriginalVisible == null) {
-        child.userData.spatiumOriginalVisible = child.visible;
-      }
-
-      child.visible = hidden ? true : child.userData.spatiumOriginalVisible;
-
-      const materials = Array.isArray(child.material)
-        ? child.material
-        : [child.material];
-
-      materials.forEach((material) => {
-        if (!material) return;
-        if (!material.userData.spatiumOriginalReferenceState) {
-          material.userData.spatiumOriginalReferenceState = {
-            opacity: material.opacity,
-            transparent: material.transparent,
-            depthWrite: material.depthWrite,
-            alphaTest: material.alphaTest,
-            visible: material.visible,
-          };
-        }
-
-        const original = material.userData.spatiumOriginalReferenceState;
-        material.visible = hidden ? true : original.visible;
-        material.transparent = hidden || original.transparent;
-        material.opacity = hidden ? 0.08 : original.opacity;
-        material.depthWrite = hidden ? false : original.depthWrite;
-        material.alphaTest = hidden ? 0 : original.alphaTest;
-        material.needsUpdate = true;
-      });
-    }
-  });
-}
-
-function isWallHiddenFromCamera(wall, camera) {
-  const toCamera = camera.position.clone().sub(wall.obb.center).normalize();
-  return wall.roomFacingNormal && toCamera.dot(wall.roomFacingNormal) < -0.2;
-}
-
-function referenceVisibilityState(reference, camera) {
-  const normal = reference.userData.roomFacingNormal?.clone().setY(0);
-  if (!normal || normal.lengthSq() < 1e-8) {
-    return {
-      hidden: false,
-      dot: null,
-      normalYaw: null,
-      toCameraYaw: null,
-    };
-  }
-
-  const toCamera = camera.position.clone().sub(reference.position).setY(0);
-  if (toCamera.lengthSq() < 1e-8) {
-    return {
-      hidden: false,
-      dot: null,
-      normalYaw: yawDegreesFromDirection(normal),
-      toCameraYaw: null,
-    };
-  }
-
-  const normalizedNormal = normal.normalize();
-  const normalizedToCamera = toCamera.normalize();
-  const dot = normalizedToCamera.dot(normalizedNormal);
-
-  return {
-    hidden: dot < 0,
-    dot,
-    normalYaw: yawDegreesFromDirection(normalizedNormal),
-    toCameraYaw: yawDegreesFromDirection(normalizedToCamera),
-  };
-}
-
-function formatDebugValue(value, suffix = "") {
-  return value == null ? "--" : `${value}${suffix}`;
-}
-
-function updateReferenceDebugLabel(reference, state) {
-  const element = reference.userData.debugLabel?.element;
-  if (!element) return;
-
-  const type = reference.userData.sourceType || "ref";
-  const index = Number(reference.userData.sourceIndex) + 1;
-  const labelIndex = Number.isFinite(index) ? index : "";
-  const normalYaw =
-    state.normalYaw == null ? null : Math.round(state.normalYaw);
-  const toCameraYaw =
-    state.toCameraYaw == null ? null : Math.round(state.toCameraYaw);
-  const dot = state.dot == null ? null : state.dot.toFixed(2);
-
-  element.textContent = `${type}${labelIndex} n:${formatDebugValue(
-    normalYaw,
-    "°",
-  )} cam:${formatDebugValue(toCameraYaw, "°")} dot:${formatDebugValue(
-    dot,
-  )} ${state.hidden ? "hide" : "show"}`;
-}
-
-function yawDegreesFromDirection(direction) {
-  return normalizeRotationDegrees(
-    THREE.MathUtils.radToDeg(Math.atan2(direction.x, direction.z)),
-  );
-}
-
-function updateViewFacingWalls(wallColliders, camera, referenceRoots = []) {
-  const wallObjects = new Set(wallColliders.map((wall) => wall.object));
-  const fallbackVisibilityByObject = new Map();
-
-  wallObjects.forEach((wallObject) => {
-    resetWallFacePreview(wallObject);
-  });
-
-  wallColliders.forEach((wall) => {
-    const hidden = isWallHiddenFromCamera(wall, camera);
-
-    if (
-      Number.isFinite(wall.triangleStart) &&
-      Number.isFinite(wall.triangleCount)
-    ) {
-      applyWallFacePreview(wall, hidden);
-      return;
-    }
-
-    const currentHidden = fallbackVisibilityByObject.get(wall.object) || false;
-    fallbackVisibilityByObject.set(wall.object, currentHidden || hidden);
-  });
-
-  fallbackVisibilityByObject.forEach((hidden, wallObject) => {
-    applyWallPreviewOpacity(wallObject, hidden);
-  });
-
-  referenceRoots.forEach((reference) => {
-    const state = referenceVisibilityState(reference, camera);
-    updateReferenceDebugLabel(reference, state);
-    applyReferencePreviewVisibility(reference, state.hidden);
-  });
-}
-
-function applyRoomWallColor(wallColliders, color) {
-  if (!color) return;
-
-  const nextColor = new THREE.Color(color);
-  const wallObjects = new Set(wallColliders.map((wall) => wall.object));
-
-  wallObjects.forEach((wallObject) => {
-    wallObject.traverse?.((child) => {
-      const materials = Array.isArray(child.material)
-        ? child.material
-        : [child.material];
-
-      materials.forEach((material) => {
-        if (!material?.color) return;
-
-        material.color.copy(nextColor);
-        if (material.userData.spatiumOriginalWallState) {
-          material.userData.spatiumOriginalWallState.color = nextColor.clone();
-        }
-        material.needsUpdate = true;
-      });
-    });
-  });
-}
-
-function referencePlaneNormal(reference) {
-  const localObb = reference.userData.localObb;
-  if (!localObb) return null;
-
-  const axes = [
-    { name: "x", axis: new THREE.Vector3() },
-    { name: "y", axis: new THREE.Vector3() },
-    { name: "z", axis: new THREE.Vector3() },
-  ];
-  localObb.rotation.extractBasis(axes[0].axis, axes[1].axis, axes[2].axis);
-
-  const horizontalAxes = axes
-    .map((entry) => ({
-      ...entry,
-      halfSize: localObb.halfSize[entry.name],
-      horizontal: entry.axis.clone().setY(0),
-    }))
-    .filter((entry) => entry.horizontal.lengthSq() > 1e-8)
-    .sort((a, b) => a.halfSize - b.halfSize);
-
-  const thinnestHorizontalAxis = horizontalAxes[0];
-  if (!thinnestHorizontalAxis) return null;
-
-  return thinnestHorizontalAxis.horizontal
-    .normalize()
-    .applyQuaternion(reference.quaternion)
-    .setY(0)
-    .normalize();
-}
-
-function initializeReferenceFacingNormal(reference, roomCenter) {
-  const localNormal = referencePlaneNormal(reference);
-
-  if (!localNormal || localNormal.lengthSq() < 1e-8) {
-    reference.userData.roomFacingNormal = null;
-    return;
-  }
-
-  const normal = localNormal.normalize();
-  const toRoomCenter = roomCenter.clone().sub(reference.position).setY(0);
-
-  if (toRoomCenter.lengthSq() > 1e-8 && normal.dot(toRoomCenter) < 0) {
-    normal.multiplyScalar(-1);
-  }
-
-  reference.userData.roomFacingNormal = normal;
-}
-
-function normalizeRotationDegrees(degrees) {
-  const normalized = THREE.MathUtils.euclideanModulo(degrees + 180, 360) - 180;
-  return Math.round(normalized);
-}
-
-function rotationDegreesFromObject(object) {
-  if (!object) return 0;
-
-  const euler = new THREE.Euler().setFromQuaternion(object.quaternion, "YXZ");
-  return normalizeRotationDegrees(THREE.MathUtils.radToDeg(euler.y));
-}
-
-function formatCameraViewAngle(camera) {
-  const direction = camera.getWorldDirection(new THREE.Vector3());
-  const yaw = yawDegreesFromDirection(direction);
-  const pitch = Math.round(
-    THREE.MathUtils.radToDeg(
-      Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1)),
-    ),
-  );
-
-  return `View Yaw ${yaw}° / Pitch ${pitch}°`;
-}
+import {
+  base64ToObjectUrl,
+  createFallbackReferenceTemplate,
+  createFurnitureItemFromCatalog,
+  estimateFloorY,
+  formatCameraViewAngle,
+  isReplaceableObject,
+  normalizeRotationDegrees,
+  normalizedDimensions,
+  normalizedReferenceDimensions,
+  REFERENCE_CATEGORIES,
+  rotationDegreesFromObject,
+} from "../scene/editorTransforms";
+import {
+  createDimensionLabel,
+  createRoomDimensionLabel,
+  formatCentimeters,
+  formatPyung,
+  formatSquareMeters,
+  stableDimensionsForObject,
+} from "../scene/measurementLabels";
+import {
+  createReferenceDebugLabel,
+  initializeReferenceFacingNormal,
+} from "../scene/referenceVisibility";
+import {
+  applyRoomWallColor,
+  updateViewFacingWalls,
+} from "../scene/wallVisibility";
+import { useSceneConfigStatus } from "./useSceneConfigStatus";
+import { useSelectionState } from "./useSelectionState";
+import {
+  applySkyviewMode,
+  captureCameraView,
+  useSkyviewMode,
+} from "./useSkyviewMode";
 
 function debugConfigBoolean(name, defaultValue = false) {
   return optionalConfigBoolean(["debug", name], defaultValue);
 }
 
-function isReplaceableObject(object) {
-  if (!object) return false;
-
-  return (
-    canTransformObject(object) ||
-    object.userData.sourceType === "door" ||
-    object.userData.sourceType === "window"
-  );
-}
-
-function createFallbackReferenceTemplate(sourceType) {
-  const geometry = new THREE.BoxGeometry(1, 1, 1);
-  const material = new THREE.MeshStandardMaterial({
-    color: sceneColor(
-      sourceType === "door" ? "doorReference" : "windowReference",
-    ),
-    roughness: 0.72,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  const group = new THREE.Group();
-
-  group.add(mesh);
-  return group;
-}
-
-function captureCameraView(camera, controls) {
-  return {
-    position: camera.position.clone(),
-    target: controls.target.clone(),
-    up: camera.up.clone(),
-    near: camera.near,
-    far: camera.far,
-  };
-}
-
-function applyCameraView(camera, controls, view) {
-  camera.position.copy(view.position);
-  camera.up.copy(view.up);
-  camera.near = view.near;
-  camera.far = view.far;
-  camera.updateProjectionMatrix();
-  controls.target.copy(view.target);
-  controls.enableRotate = true;
-  controls.update();
-}
-
-function applySkyviewCamera(viewController) {
-  const { camera, controls, worldGroup } = viewController;
-  const bounds = new THREE.Box3().setFromObject(worldGroup);
-  if (bounds.isEmpty()) return;
-
-  const center = bounds.getCenter(new THREE.Vector3());
-  const size = bounds.getSize(new THREE.Vector3());
-  const maxFloorSpan = Math.max(size.x, size.z, 1);
-  const height =
-    (maxFloorSpan / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))) *
-    1.5;
-
-  camera.up.set(0, 0, -1);
-  camera.position.set(
-    center.x,
-    center.y + Math.max(height, size.y + 2),
-    center.z,
-  );
-  camera.near = Math.max(height / 1000, 0.01);
-  camera.far = Math.max(height * 100, size.y + height + 100);
-  camera.updateProjectionMatrix();
-  controls.target.copy(center);
-  controls.enableRotate = false;
-  controls.update();
-}
-
-function applySkyviewMode(viewController, isSkyview) {
-  if (!viewController) return;
-
-  const { camera, controls } = viewController;
-  if (isSkyview) {
-    viewController.defaultView = captureCameraView(camera, controls);
-    applySkyviewCamera(viewController);
-    return;
-  }
-
-  if (viewController.defaultView) {
-    applyCameraView(camera, controls, viewController.defaultView);
-  }
-}
-
-export function useTestThreeEditor({
+export function useRoomSceneEditor({
   isSkyview = false,
   showMeasurements = false,
   wallColor = null,
@@ -734,7 +93,6 @@ export function useTestThreeEditor({
   onSceneChanged,
 } = {}) {
   const containerRef = useRef(null);
-  const selectedObjectRef = useRef(null);
   const syncSelectedRef = useRef(null);
   const syncRoomMeasurementsRef = useRef(null);
   const roomMeasurementsRef = useRef(null);
@@ -742,40 +100,34 @@ export function useTestThreeEditor({
   const roomModelRef = useRef(null);
   const viewControllerRef = useRef(null);
   const sceneActionsRef = useRef(null);
-  const isSkyviewRef = useRef(isSkyview);
   const showMeasurementsRef = useRef(showMeasurements);
   const wallColorRef = useRef(wallColor);
   const onSceneChangedRef = useRef(onSceneChanged);
-  const isReplacingSelectedRef = useRef(false);
-  const [isSceneConfigReady, setSceneConfigReady] = useState(false);
-  const [status, setStatus] = useState("Loading room model...");
-  const [error, setError] = useState("");
-  const [selectedItem, setSelectedItem] = useState(null);
-  const [selectedRotationDegrees, setSelectedRotationDegreesState] =
-    useState(0);
-  const [isReplacingSelected, setReplacingSelected] = useState(false);
+  const { isSceneConfigReady, status, setStatus, error, setError } =
+    useSceneConfigStatus();
+  const {
+    selectedObjectRef,
+    isReplacingSelectedRef,
+    selectedItem,
+    setSelectedItem,
+    selectedRotationDegrees,
+    setSelectedRotationDegreesState,
+    isReplacingSelected,
+    setReplaceMode,
+    canResetSelected,
+    canDeleteSelected,
+  } = useSelectionState();
+  const isSkyviewRef = useSkyviewMode(viewControllerRef, isSkyview);
   const [editedItems, setEditedItems] = useState([]);
   const [collisionSummary, setCollisionSummary] = useState({
     hasCollision: false,
     with: [],
   });
-  const canResetSelected = selectedItem?.sourceType === "object";
-  const canDeleteSelected = selectedItem?.sourceType === "object";
   const canSaveJson = Boolean(sourceMetadataRef.current);
-
-  function setReplaceMode(active) {
-    isReplacingSelectedRef.current = active;
-    setReplacingSelected(active);
-  }
 
   function markSceneChanged() {
     onSceneChangedRef.current?.();
   }
-
-  useEffect(() => {
-    isSkyviewRef.current = isSkyview;
-    applySkyviewMode(viewControllerRef.current, isSkyview);
-  }, [isSkyview]);
 
   useEffect(() => {
     showMeasurementsRef.current = showMeasurements;
@@ -821,7 +173,7 @@ export function useTestThreeEditor({
 
   async function addFurniture(catalogItem) {
     if (!sceneActionsRef.current) {
-      setError("3D 편집기가 아직 준비되지 않았습니다.");
+      setError("3D ?몄쭛湲곌? ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??");
       return false;
     }
 
@@ -837,7 +189,7 @@ export function useTestThreeEditor({
 
   function deleteSelectedObject() {
     if (!sceneActionsRef.current) {
-      setError("3D 편집기가 아직 준비되지 않았습니다.");
+      setError("3D ?몄쭛湲곌? ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??");
       return false;
     }
 
@@ -846,7 +198,7 @@ export function useTestThreeEditor({
 
   function rotateSelectedObject() {
     if (!sceneActionsRef.current) {
-      setError("3D 편집기가 아직 준비되지 않았습니다.");
+      setError("3D ?몄쭛湲곌? ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??");
       return false;
     }
 
@@ -855,7 +207,7 @@ export function useTestThreeEditor({
 
   function setSelectedRotationDegrees(degrees) {
     if (!sceneActionsRef.current?.setSelectedRotationDegrees) {
-      setError("3D 편집기가 아직 준비되지 않았습니다.");
+      setError("3D ?몄쭛湲곌? ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??");
       return false;
     }
 
@@ -867,14 +219,14 @@ export function useTestThreeEditor({
 
     setReplaceMode(true);
     setError("");
-    setStatus("왼쪽 목록에서 교체할 가구를 선택하세요.");
+    setStatus("?쇱そ 紐⑸줉?먯꽌 援먯껜??媛援щ? ?좏깮?섏꽭??");
     return true;
   }
 
   async function saveEditedSceneJson(saveContext = {}) {
     if (!sourceMetadataRef.current || !roomModelRef.current) {
       setStatus("");
-      setError("저장할 3D 편집 데이터가 아직 준비되지 않았습니다.");
+      setError("??ν븷 3D ?몄쭛 ?곗씠?곌? ?꾩쭅 以鍮꾨릺吏 ?딆븯?듬땲??");
       return false;
     }
 
@@ -912,29 +264,7 @@ export function useTestThreeEditor({
 
     let isMounted = true;
 
-    if (!isSceneConfigReady) {
-      setError("");
-      setStatus("Loading scene config...");
-      loadSceneConfig()
-        .then(() => {
-          if (isMounted) {
-            setSceneConfigReady(true);
-          }
-        })
-        .catch((caughtError) => {
-          if (!isMounted) return;
-          setStatus("");
-          setError(
-            caughtError instanceof Error
-              ? caughtError.message
-              : String(caughtError),
-          );
-        });
-
-      return () => {
-        isMounted = false;
-      };
-    }
+    if (!isSceneConfigReady) return undefined;
 
     let frameId = 0;
     let nextObjectIndex = 0;
@@ -969,7 +299,7 @@ export function useTestThreeEditor({
 
     const labelRenderer = new CSS2DRenderer();
     labelRenderer.setSize(width, height);
-    labelRenderer.domElement.className = "test-three-label-layer";
+    labelRenderer.domElement.className = "room-scene-editor-label-layer";
     root.appendChild(labelRenderer.domElement);
 
     const showCameraAngle = debugConfigBoolean("showCameraAngle", false);
@@ -981,12 +311,12 @@ export function useTestThreeEditor({
       ? document.createElement("div")
       : null;
     if (cameraAngleBadge) {
-      cameraAngleBadge.className = "test-three-camera-angle";
+      cameraAngleBadge.className = "room-scene-editor-camera-angle";
       cameraAngleBadge.textContent = formatCameraViewAngle(camera);
       root.appendChild(cameraAngleBadge);
     }
     const roomAreaBadge = document.createElement("div");
-    roomAreaBadge.className = "test-three-room-area";
+    roomAreaBadge.className = "room-scene-editor-room-area";
     roomAreaBadge.textContent = "";
     roomAreaBadge.hidden = true;
     root.appendChild(roomAreaBadge);
@@ -1026,7 +356,7 @@ export function useTestThreeEditor({
     wallDiagnosticLayer.name = "WallDiagnosticLayer";
     const roomMeasurementLayer = new THREE.Group();
     roomMeasurementLayer.name = "RoomMeasurementLayer";
-    roomMeasurementLayer.visible = true;
+    roomMeasurementLayer.visible = showMeasurementsRef.current;
     worldGroup.add(
       furnitureLayer,
       referenceLayer,
@@ -1095,15 +425,18 @@ export function useTestThreeEditor({
     controlPickTargets.push(selectionHandle);
 
     function syncRoomMeasurementLayerVisibility() {
-      roomMeasurementLayer.visible = true;
+      const isVisible = showMeasurementsRef.current;
+      roomMeasurementLayer.visible = isVisible;
+      roomAreaBadge.hidden =
+        !isVisible || !Number.isFinite(roomMeasurementsRef.current?.area);
     }
 
     function addRoomMeasurements(measurements) {
       roomMeasurementLayer.clear();
       roomMeasurementsRef.current = measurements || null;
       if (Number.isFinite(measurements?.area)) {
-        roomAreaBadge.textContent = `방 면적 ${formatSquareMeters(measurements.area)}  ${formatPyung(measurements.area * 0.3025)}`;
-        roomAreaBadge.hidden = false;
+        roomAreaBadge.textContent = `면적 ${formatSquareMeters(measurements.area)}  ${formatPyung(measurements.area * 0.3025)}`;
+        roomAreaBadge.hidden = !showMeasurementsRef.current;
       } else {
         roomAreaBadge.hidden = true;
       }
@@ -1493,10 +826,7 @@ export function useTestThreeEditor({
       clearWallDiagnostics();
       if (
         !object ||
-        !optionalConfigBoolean(
-          ["wallConstraints", "showWallDiagnostics"],
-          true,
-        )
+        !optionalConfigBoolean(["wallConstraints", "showWallDiagnostics"], true)
       ) {
         return;
       }
@@ -1641,7 +971,6 @@ export function useTestThreeEditor({
       true,
     );
 
-    // 변수 추가
     let roomModelObjectUrl = null;
     const roomModelUrl = roomScene?.model?.dataBase64
       ? (() => {
@@ -1660,7 +989,6 @@ export function useTestThreeEditor({
       .then(([model, metadata]) =>
         Promise.all([model, loadModelTemplates(), metadata]),
       )
-      // 변수 추가
       .then(async ([model, modelTemplates, metadata]) => {
         if (!isMounted) {
           if (model) disposeScene(model);
@@ -1819,7 +1147,7 @@ export function useTestThreeEditor({
             if (REFERENCE_CATEGORIES.has(catalogItem.category)) {
               setStatus("");
               setError(
-                "문과 창문은 기존 문/창문을 선택한 뒤 교체로 적용하세요.",
+                "臾멸낵 李쎈Ц? 湲곗〈 臾?李쎈Ц???좏깮????援먯껜濡??곸슜?섏꽭??",
               );
               return false;
             }
@@ -1875,7 +1203,9 @@ export function useTestThreeEditor({
               REFERENCE_CATEGORIES.has(catalogItem.category)
             ) {
               setStatus("");
-              setError("문/창문 모델은 기존 문/창문을 선택한 뒤 교체하세요.");
+              setError(
+                "臾?李쎈Ц 紐⑤뜽? 湲곗〈 臾?李쎈Ц???좏깮????援먯껜?섏꽭??",
+              );
               return false;
             }
             if (
@@ -1883,7 +1213,9 @@ export function useTestThreeEditor({
               !REFERENCE_CATEGORIES.has(catalogItem.category)
             ) {
               setStatus("");
-              setError("문과 창문은 문/창문 모델로만 교체할 수 있습니다.");
+              setError(
+                "臾멸낵 李쎈Ц? 臾?李쎈Ц 紐⑤뜽濡쒕쭔 援먯껜?????덉뒿?덈떎.",
+              );
               return false;
             }
 
@@ -2148,7 +1480,17 @@ export function useTestThreeEditor({
         URL.revokeObjectURL(roomModelObjectUrl);
       }
     };
-  }, [isSceneConfigReady, roomScene]);
+  }, [
+    isSceneConfigReady,
+    isSkyviewRef,
+    roomScene,
+    selectedObjectRef,
+    setError,
+    setReplaceMode,
+    setSelectedItem,
+    setSelectedRotationDegreesState,
+    setStatus,
+  ]);
 
   return {
     containerRef,
