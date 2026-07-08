@@ -1,3 +1,4 @@
+// 여러 페이지에서 반복되던 내 정보 패널 UI를 재사용하는 공통 컴포넌트입니다.
 function AccountPanel({
   open,
   prefix,
