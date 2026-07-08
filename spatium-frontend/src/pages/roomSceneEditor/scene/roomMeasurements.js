@@ -5,6 +5,8 @@ const FLOOR_PLANE_PRECISION = 1000;
 const MIN_TRIANGLE_AREA = 1e-6;
 const POINT_PRECISION = 1000;
 
+// 좌표를 반올림해서 문자열 키로 만든다 — 부동소수점 오차 때문에 같은 점인데 다르게
+// 판정되는 걸 막기 위함(정점 병합/외곽선 edge 매칭에 사용).
 function pointKey(point) {
   return [
     Math.round(point.x * POINT_PRECISION),
@@ -12,12 +14,15 @@ function pointKey(point) {
   ].join(":");
 }
 
+// 두 점(a,b)으로 이뤄진 선분의 방향과 무관한 키를 만든다 — 같은 edge를 양쪽 삼각형에서
+// 각각 만나도 하나로 인식되게 하기 위함(외곽선 판정: count===1이면 바깥쪽 edge).
 function segmentKey(a, b) {
   const aKey = pointKey(a);
   const bKey = pointKey(b);
   return aKey < bKey ? `${aKey}|${bKey}` : `${bKey}|${aKey}`;
 }
 
+// 바닥 평면(XZ)에 투영했을 때 삼각형의 면적.
 function triangleAreaOnFloor(a, b, c) {
   return Math.abs(
     (a.x * (b.z - c.z) + b.x * (c.z - a.z) + c.x * (a.z - b.z)) / 2,
@@ -49,11 +54,15 @@ function boundsAreValid(bounds) {
   );
 }
 
+// 삼각형이 속한 "바닥 높이(Y)"를 키로 만든다. 방에 단차가 있으면(예: 현관/거실 높이 차이)
+// 같은 Y에 있는 삼각형끼리만 하나의 바닥 그룹으로 묶기 위함.
 function floorPlaneKey(a, b, c) {
   const averageY = (a.y + b.y + c.y) / 3;
   return String(Math.round(averageY * FLOOR_PLANE_PRECISION));
 }
 
+// 바닥 mesh의 모든 삼각형을 Y높이별로 그룹핑하면서, 그룹별 면적/바운드/edge(변) 사용
+// 횟수를 누적한다. edge 사용 횟수가 1이면 그 edge는 바닥의 바깥 테두리(구멍이 아닌 한)다.
 function collectFloorAreaGroups(roomModel) {
   const groups = new Map();
   const vertexA = new THREE.Vector3();
@@ -131,6 +140,8 @@ function collectFloorAreaGroups(roomModel) {
   return Array.from(groups.values());
 }
 
+// 여러 바닥 높이 그룹 중 면적이 가장 넓은 것을 "메인 바닥"으로 선택한다
+// (단차/작은 조각들은 무시하고 주된 방 면적만 쓰기 위함).
 function largestFloorGroup(roomModel) {
   return collectFloorAreaGroups(roomModel).reduce(
     (largest, group) => (!largest || group.area > largest.area ? group : largest),
@@ -138,6 +149,9 @@ function largestFloorGroup(roomModel) {
   );
 }
 
+// 방의 폭/깊이/높이/면적과, 치수 표시용 외곽선/높이선을 계산한다.
+// 바닥 mesh를 찾으면 실제 바닥 폴리곤 기준(area: "floor")으로, 못 찾으면 방 전체
+// bounding box 기준(area: "bounds")으로 fallback한다.
 export function calculateRoomMeasurements(roomModel) {
   if (!roomModel) return null;
 

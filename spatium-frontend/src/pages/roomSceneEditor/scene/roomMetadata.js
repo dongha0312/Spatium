@@ -15,6 +15,8 @@ import {
   isUsdWallMesh,
 } from "./wallColliders";
 
+// 가구/문/창문 오브젝트 하나를 저장 가능한 JSON(위치/회전/치수/충돌 정보)으로 변환한다.
+// 선택 정보 패널 표시와 metadata 저장(createReplayableMetadataJson) 양쪽에서 공통으로 쓰인다.
 export function objectToEditableJson(object) {
   object.updateMatrix();
   object.updateWorldMatrix(true, true);
@@ -94,6 +96,7 @@ export function roundedArray(values, digits = 6) {
   return Array.from(values, (value) => roundedNumber(value, digits));
 }
 
+// THREE material을 저장 가능한 JSON으로 요약한다 (_spatiumRoom 저장/복원에 사용).
 export function materialToRoomJson(material) {
   const sourceMaterial = Array.isArray(material) ? material[0] : material;
   const color = sourceMaterial?.color?.getHexString
@@ -110,6 +113,8 @@ export function materialToRoomJson(material) {
   };
 }
 
+// 방 mesh 하나(벽/바닥/기타)를 geometry(position/normal/uv/index)와 material까지 통째로
+// JSON으로 직렬화한다. 원본 USD 모델 없이도 다시 그릴 수 있도록 필요한 모든 정보를 담는다.
 export function serializeRoomMesh(object) {
   const geometry = object.geometry;
   const position = geometry?.attributes?.position;
@@ -142,6 +147,8 @@ export function serializeRoomMesh(object) {
   };
 }
 
+// 방 모델 전체(벽/바닥/기타 mesh)를 순회하며 직렬화한다. 삭제된 것으로 표시된 mesh
+// (isUsdReplacedMesh, 원본 스캔의 문/창문 등)는 제외한다. 결과가 metadata._spatiumRoom에 저장된다.
 export function serializeRoomModelToJson(roomModel, generatedFrom = null) {
   if (!roomModel) return null;
 
@@ -175,6 +182,7 @@ export function serializeRoomModelToJson(roomModel, generatedFrom = null) {
   };
 }
 
+// _spatiumRoom JSON에서 walls/floors/meshes를 하나의 배열로 합친다 (순서: 벽 -> 바닥 -> 기타).
 export function roomMeshesFromJson(roomJson) {
   if (!roomJson) return [];
 
@@ -199,6 +207,9 @@ export function roomMeshesFromJson(roomJson) {
     : meshes;
 }
 
+// serializeRoomModelToJson()의 역변환. 저장된 _spatiumRoom JSON으로부터 Three.js
+// BufferGeometry/Mesh들을 복원해서 방 모델 그룹을 다시 만든다. 원본 USD 모델이 없어도
+// 이 결과만으로 방을 다시 그릴 수 있다.
 export function createRoomModelFromJson(roomJson) {
   const roomMeshes = roomMeshesFromJson(roomJson);
   if (!roomMeshes.length) return null;
@@ -271,7 +282,10 @@ export function createRoomModelFromJson(roomJson) {
   return group.children.length ? group : null;
 }
 
-// usdz, json 합쳐서 json으로만 그릴 수 있는 파일로 만들기
+// 원본 metadata + 현재 편집 상태(editedItems, roomModel)를 합쳐서, 저장 시 서버로 보낼
+// 최종 metadata JSON을 만든다. objects/doors/windows는 현재 씬 기준으로 통째로 교체하고,
+// _spatiumRoom(방 mesh 자체)도 다시 직렬화해서 넣는다 — 이렇게 저장된 JSON은 원본 USD
+// 모델 없이도 다시 열어서 편집을 이어갈 수 있다("replayable").
 export function createReplayableMetadataJson(metadata, editedItems, roomModel) {
   const nextMetadata = cloneJsonValue(metadata) || {};
   const originalObjects = nextMetadata.objects || [];
@@ -313,12 +327,14 @@ export function createReplayableMetadataJson(metadata, editedItems, roomModel) {
     };
   });
 
-  nextMetadata.doors = doorEdits.length
-    ? doorEdits.map((edit) => applyReferenceEdit(edit, originalDoors))
-    : originalDoors;
-  nextMetadata.windows = windowEdits.length
-    ? windowEdits.map((edit) => applyReferenceEdit(edit, originalWindows))
-    : originalWindows;
+  // editedItems는 현재 씬의 전체 상태를 반영하므로(문/창문을 모두 지운 경우 포함),
+  // 비어 있다고 originalDoors/originalWindows로 되돌리면 삭제가 저장에서 사라진다.
+  nextMetadata.doors = doorEdits.map((edit) =>
+    applyReferenceEdit(edit, originalDoors),
+  );
+  nextMetadata.windows = windowEdits.map((edit) =>
+    applyReferenceEdit(edit, originalWindows),
+  );
   nextMetadata._spatiumRoom =
     serializeRoomModelToJson(
       roomModel,

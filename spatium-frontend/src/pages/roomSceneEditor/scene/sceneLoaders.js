@@ -7,6 +7,8 @@ import {
 } from "./sceneConfig";
 import { saveRoomMetadataJson } from "../../../springApi/RoomSpringBootApi";
 
+// USD/USDZ 방 모델을 로드한다. blob: URL은 그대로, 일반 URL은 캐시 무효화용 timestamp를
+// 붙여서 로드한다. 로드에 실패해도 예외를 던지지 않고 null을 반환한다(呼출부가 fallback 처리).
 export function loadUsdRoomModel(url) {
   if (!url) return Promise.resolve(null);
 
@@ -21,6 +23,7 @@ export function loadUsdRoomModel(url) {
   });
 }
 
+// 가구/문/창문용 GLB 모델을 로드한다.
 export function loadGltfModel(url, label) {
   if (!url) {
     return Promise.reject(new Error(`Missing model URL for ${label}.`));
@@ -31,6 +34,8 @@ export function loadGltfModel(url, label) {
   });
 }
 
+// 설정 파일의 models 목록 중, 주어진 category들과 이름이 매칭되는 항목만 골라낸다.
+// categories가 없으면 전체를 반환한다.
 export function modelEntriesForCategories(categories) {
   const entries = Object.entries(getModelUrls()).filter(([, url]) => url);
   if (!categories) return entries;
@@ -49,6 +54,8 @@ export function modelEntriesForCategories(categories) {
   return Array.from(selectedEntries.values());
 }
 
+// 방 metadata(objects/doors/windows)에 실제로 등장하는 category 목록을 뽑는다.
+// 필요한 모델 템플릿만 미리 로드하기 위한 목록으로 쓰인다.
 export function modelCategoriesFromMetadata(metadata) {
   const categories = new Set(
     (metadata.objects || []).map((item) => item.category).filter(Boolean),
@@ -60,6 +67,8 @@ export function modelCategoriesFromMetadata(metadata) {
   return Array.from(categories);
 }
 
+// category별 기본 GLB 모델들을 한 번에 로드해서 Map(lookupKey -> {key, gltf})으로 반환한다.
+// 이후 findModelTemplate()으로 category 이름으로 조회해서 재사용(clone)한다.
 export async function loadModelTemplates(categories) {
   const entries = modelEntriesForCategories(categories);
   const loadedTemplates = await Promise.all(
@@ -89,6 +98,7 @@ export function requireModelTemplate(modelTemplates, category) {
   return template;
 }
 
+// JSON을 fetch한다 (캐시 무효화 timestamp 포함, no-store).
 export function fetchJson(url, label) {
   if (!url) {
     return Promise.reject(new Error(`Missing JSON URL for ${label}.`));
@@ -105,6 +115,7 @@ export function fetchJson(url, label) {
   });
 }
 
+// 편집된 metadata JSON을 백엔드에 저장한다 (POST /api/rooms/save).
 export function saveMetadataJson(metadata, saveContext = {}) {
   return saveRoomMetadataJson({
     projectId: saveContext.projectId,
