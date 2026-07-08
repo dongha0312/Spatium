@@ -140,6 +140,7 @@ function HomePage() {
                 initial={session.nickname.charAt(0)}
                 name={session.nickname}
                 onClick={togglePanel}
+                showCaret={false}
               />
             </div>
           ) : (
