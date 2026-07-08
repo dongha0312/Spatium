@@ -140,11 +140,6 @@ function MyPage() {
   }, []);
 
   const totalRoomCount = projects.reduce((sum, p) => sum + p.rooms.length, 0);
-  const totalFurnitureCount = projects.reduce(
-    (sum, p) => sum + (p.furnitureCount || 0),
-    0,
-  );
-
   const togglePanel = () => setPanelOpen((prev) => !prev);
 
   const handleGoAccount = () => {
@@ -560,7 +555,7 @@ function MyPage() {
             }}
             statItems={[
               { label: "프로젝트", value: projects.length },
-              { label: "배치 가구", value: totalFurnitureCount },
+              { label: "룸 개수", value: totalRoomCount },
             ]}
             onClose={() => setPanelOpen(false)}
             onProfileClick={handleGoAccount}

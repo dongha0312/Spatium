@@ -15,12 +15,10 @@ import {
   getLoginSession,
 } from "../utils/authSession";
 import { getMyInfo } from "../springApi/MemberSpringBootApi";
-import {
-  getProjectInfo,
-  getProjectList,
-} from "../springApi/ProjectSpringBootAPi";
+import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
 import { getRoomList, getRoomSceneData } from "../springApi/RoomSpringBootApi";
 import useLogout from "../hooks/useLogout";
+import useProjectStats from "../hooks/useProjectStats";
 
 const FURNITURE_CATALOG_URL = "/data/furniture_catalog.json";
 
@@ -79,16 +77,13 @@ function ThreeDEditor() {
   // 닉네임 클릭 시 열리는 "내 정보" 우측 패널
   const [panelOpen, setPanelOpen] = useState(false);
 
-  // 패널 이용현황에 표시할 통계 (프로젝트 수 / 배치 가구 수)
-  const [accountStats, setAccountStats] = useState({
-    projectCount: 0,
-    furnitureCount: 0,
-  });
+  // 패널 이용현황에 표시할 통계 (프로젝트 수 / 룸 수)
+  const accountStats = useProjectStats(Boolean(session));
 
   // 상단바/패널 아바타에 표시할 프로필 사진 (없으면 이니셜)
   const [profileImage, setProfileImage] = useState(null);
 
-  // 로그인 상태면 내 정보(프로필 사진)와 프로젝트 목록을 불러옴
+  // 로그인 상태면 내 정보(프로필 사진)를 불러옴
   useEffect(() => {
     if (!session) return;
     let active = true;
@@ -101,19 +96,6 @@ function ThreeDEditor() {
         console.warn("내 정보 조회 실패:", err);
       });
 
-    getProjectList()
-      .then((page) => {
-        if (!active) return;
-        const items = page?.items || [];
-        const furnitureCount = items.reduce(
-          (sum, p) => sum + (p.furnitureCount || 0),
-          0,
-        );
-        setAccountStats({ projectCount: items.length, furnitureCount });
-      })
-      .catch((err) => {
-        console.warn("프로젝트 수 조회 실패:", err);
-      });
     return () => {
       active = false;
     };
@@ -764,7 +746,7 @@ function ThreeDEditor() {
         }}
         statItems={[
           { label: "프로젝트", value: accountStats.projectCount },
-          { label: "배치 가구", value: accountStats.furnitureCount },
+          { label: "룸 개수", value: accountStats.roomCount },
         ]}
         onClose={() => setPanelOpen(false)}
         onProfileClick={handleGoAccount}
