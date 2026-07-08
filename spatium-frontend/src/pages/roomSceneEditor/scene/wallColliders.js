@@ -8,6 +8,8 @@ const WALL_FACE_MIN_HEIGHT = 0.05;
 const WALL_FACE_MIN_LENGTH = 0.05;
 const FLOOR_SIDE_SAMPLE_DISTANCE = 0.12;
 
+// 원본 스캔 mesh 중, 앱이 자체 카탈로그 모델로 대체(replace)한 것들을 이름 패턴으로
+// 판별한다. 이런 mesh는 화면에 숨기고(prepareRoomModel) 저장에서도 제외한다(serializeRoomModelToJson).
 export function isUsdReplacedMesh(object) {
   let cursor = object;
   while (cursor) {
@@ -23,6 +25,9 @@ export function isUsdReplacedMesh(object) {
   return false;
 }
 
+// mesh가 벽인지 판별한다. userData.isUsdWallMesh가 있으면(JSON 복원본 등) 바로 인정하고,
+// 없으면 조상 노드 이름이 "Wall_N_grp"/"WallN" 패턴인지로 판단한다. 문/창문 이름 패턴을
+// 만나면 즉시 false — 같은 그룹 안에 문/창문 mesh가 같이 있어도 혼동하지 않는다.
 export function isUsdWallMesh(object) {
   if (!object.isMesh) return false;
   if (object.userData.isUsdWallMesh) return true;
@@ -41,6 +46,7 @@ export function isUsdWallMesh(object) {
   return hasWallNode;
 }
 
+// isUsdWallMesh와 같은 방식으로 바닥 mesh를 판별한다("Floor"/"Ground"/"Slab" 이름 패턴).
 export function isUsdFloorMesh(object) {
   if (!object.isMesh) return false;
   if (object.userData.isUsdFloorMesh) return true;
@@ -56,6 +62,7 @@ export function isUsdFloorMesh(object) {
   return false;
 }
 
+// 로컬 좌표계 Box3(축 정렬 박스)를 matrixWorld로 변환해서 월드 좌표계 OBB(회전 포함)로 만든다.
 export function worldObbFromLocalBox(box, matrixWorld) {
   const center = box.getCenter(new THREE.Vector3()).applyMatrix4(matrixWorld);
   const halfSize = box.getSize(new THREE.Vector3()).multiplyScalar(0.5);
@@ -76,12 +83,15 @@ export function worldObbFromLocalBox(box, matrixWorld) {
   );
 }
 
+// 세 축 벡터로부터 회전 행렬(Matrix3)을 만든다 (OBB의 rotation으로 쓰인다).
 function matrix3FromBasis(xAxis, yAxis, zAxis) {
   return new THREE.Matrix3().setFromMatrix4(
     new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis),
   );
 }
 
+// 점들 중 가장 멀리 떨어진 두 점을 찾아 그 방향을 벽의 "길이 방향" 축으로 추정한다
+// (OBB-fallback 경로에서 벽의 대략적인 방향을 정할 때 쓰인다).
 function dominantHorizontalEdgeAxis(points) {
   let bestLengthSq = 0;
   const axis = new THREE.Vector3();
@@ -102,6 +112,8 @@ function dominantHorizontalEdgeAxis(points) {
   return bestLengthSq > 1e-8 ? axis.normalize() : null;
 }
 
+// 한 벽(연결된 정점 집합)의 점들로부터 두께/높이/길이 축이 정렬된 OBB를 만든다.
+// worldWallObbsFromGeometry에서 각 연결 성분(component)마다 호출된다.
 function worldWallObbFromPoints(points) {
   if (!points.length) return null;
 
@@ -158,6 +170,7 @@ function worldWallObbFromPoints(points) {
   return new OBB(center, halfSize, rotation);
 }
 
+// 정점 좌표를 반올림해 키로 만든다 (부동소수점 오차로 같은 점이 다르게 인식되는 걸 방지).
 function quantizedPointKey(position, index) {
   return [
     Math.round(position.getX(index) * 100000),
@@ -166,6 +179,8 @@ function quantizedPointKey(position, index) {
   ].join(":");
 }
 
+// union-find(서로소 집합) 자료구조의 find 연산 — 경로 압축 포함.
+// worldWallObbsFromGeometry에서 같은 벽에 속한 정점/삼각형들을 하나의 그룹으로 묶는 데 쓰인다.
 function findRoot(parents, index) {
   let root = index;
   while (parents[root] !== root) {
@@ -181,12 +196,16 @@ function findRoot(parents, index) {
   return root;
 }
 
+// union-find의 union 연산 — 두 정점을 같은 그룹으로 합친다.
 function unionRoots(parents, a, b) {
   const rootA = findRoot(parents, a);
   const rootB = findRoot(parents, b);
   if (rootA !== rootB) parents[rootB] = rootA;
 }
 
+// 벽 mesh의 정점들을 연결된 성분(같은 벽)별로 묶어서 각각 OBB 하나씩 만든다.
+// 현재 실제 콜라이더 생성(createWallColliders)은 삼각형 단위인 worldWallFaceCollidersFromGeometry를
+// 쓰고 있어서, 이 함수는 다른 곳에서 호출되지 않는다(예전 방식이거나 향후 대안 구현).
 export function worldWallObbsFromGeometry(object) {
   const geometry = object.geometry;
   const position = geometry?.attributes?.position;
@@ -242,6 +261,8 @@ export function worldWallObbsFromGeometry(object) {
     .filter(Boolean);
 }
 
+// 수평 법선을 정규화된 "대표 방향"으로 통일한다 (같은 벽의 앞/뒤 면이 서로 반대 방향
+// 법선을 갖더라도, canonicalize하면 같은 방향으로 취급되어 face 그룹핑이 일관되게 된다).
 function canonicalHorizontalNormal(normal) {
   const horizontalNormal = new THREE.Vector3(normal.x, 0, normal.z);
   if (horizontalNormal.lengthSq() < 1e-8) return null;
@@ -257,6 +278,7 @@ function canonicalHorizontalNormal(normal) {
   return horizontalNormal;
 }
 
+// 점을 여러 축에 투영해서 각 축의 min/max 범위를 갱신한다.
 function addPointRange(ranges, point, axes) {
   Object.entries(axes).forEach(([axisName, axis]) => {
     const projected = point.dot(axis);
@@ -265,6 +287,7 @@ function addPointRange(ranges, point, axes) {
   });
 }
 
+// 2D 외적 부호(collision.js의 cross2D와 동일 역할, "length/height" 좌표계 버전).
 function crossSpan2D(a, b, c) {
   return (
     (b.length - a.length) * (c.height - a.height) -
@@ -272,6 +295,8 @@ function crossSpan2D(a, b, c) {
   );
 }
 
+// 벽 face 점들의 볼록 껍질(spanPolygon)을 구한다 — 벽의 정확한 외곽선 모양을 나타내며,
+// 가구가 이 다각형과 겹치는지 정밀 판정(objectOverlapsWallSpan)하는 데 쓰인다.
 function spanConvexHull(points) {
   const sortedPoints = [...points].sort((a, b) =>
     a.length === b.length ? a.height - b.height : a.length - b.length,
@@ -315,6 +340,7 @@ function spanConvexHull(points) {
   return [...lower, ...upper];
 }
 
+// XZ 평면에서 점이 삼각형 안에 있는지 판정한다 (barycentric 부호 검사).
 function pointInTriangleXZ(point, a, b, c) {
   const area =
     (b.x - a.x) * (c.z - a.z) -
@@ -336,12 +362,15 @@ function pointInTriangleXZ(point, a, b, c) {
   return !(hasNegative && hasPositive);
 }
 
+// 점(XZ 좌표)이 바닥 삼각형들 중 어느 하나 위에 있는지 — "이 위치가 방 안쪽인가?"를
+// 판정하는 데 쓰인다(roomSideFromFloorSamples).
 function pointIsOverFloor(point, floorTriangles) {
   return floorTriangles.some((triangle) =>
     pointInTriangleXZ(point, triangle.a, triangle.b, triangle.c),
   );
 }
 
+// 방의 바닥 mesh에서 모든 삼각형을 XZ 평면 좌표로 수집한다.
 function collectFloorTriangles(roomModel) {
   const floorTriangles = [];
   const vertexA = new THREE.Vector3();
@@ -389,6 +418,9 @@ function collectFloorTriangles(roomModel) {
   return floorTriangles;
 }
 
+// 벽 face의 법선 방향(+)과 반대 방향(-)으로 살짝 떨어진 두 샘플점 중 어느 쪽이 바닥
+// 위(방 안쪽)에 있는지로, 이 벽이 "어느 쪽을 향해야 방 안쪽인지"(roomSide)를 결정한다.
+// 양쪽 다 바닥 위거나 둘 다 아니면(0 또는 null) 애매한 경우로 처리한다.
 function roomSideFromFloorSamples(points, normal, floorTriangles) {
   if (!floorTriangles.length) return null;
 
@@ -417,6 +449,9 @@ function roomSideFromFloorSamples(points, normal, floorTriangles) {
   return null;
 }
 
+// 벽의 한 face 그룹(같은 방향 법선을 가진 삼각형들)으로부터 실제 벽 콜라이더 객체를 만든다.
+// roomSide가 판정되면 roomFacingNormal/roomFacingProjection(경계선 기반 판정용)까지 채우고,
+// 애매하면(null) 그 정보 없이(solid OBB 판정으로 fallback되는) 콜라이더를 만든다.
 function createWallColliderFromFaceGroup(
   object,
   group,
@@ -511,6 +546,8 @@ function createWallColliderFromFaceGroup(
   };
 }
 
+// 벽 mesh의 삼각형을 하나씩 순회하며, 수평에 가까운 법선(WALL_FACE_NORMAL_Y_LIMIT 이내)을
+// 가진 삼각형마다 개별 콜라이더를 만든다. createWallColliders()가 실제로 쓰는 메인 경로다.
 export function worldWallFaceCollidersFromGeometry(
   object,
   roomCenter,
@@ -665,6 +702,8 @@ export function measureWallThicknessAtPosition(
   };
 }
 
+// mesh의 모든 정점(월드 좌표)을 direction 축에 투영했을 때의 min/max 범위.
+// 벽 실측 두께 계산(measureWallThicknessAtPosition)과 벽 중심 투영 계산에 쓰인다.
 export function geometryProjectionRange(object, direction) {
   const position = object.geometry?.attributes?.position;
   if (!position) return null;
@@ -683,6 +722,10 @@ export function geometryProjectionRange(object, direction) {
   return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
 }
 
+// 방 모델의 모든 벽 mesh로부터 충돌 판정용 콜라이더 배열을 만든다. 벽마다 우선
+// worldWallFaceCollidersFromGeometry(삼각형 단위, roomFacingNormal 포함)를 시도하고,
+// face 정보를 못 만들면 mesh 전체 bounding box 기반 OBB(fallback)로 만든다.
+// fallback OBB는 두께를 colliderHalfThickness로 강제로 얇게 깎아서 "충돌용 얇은 평면"으로 만든다.
 export function createWallColliders(roomModel) {
   const colliders = [];
   roomModel.updateWorldMatrix(true, true);
@@ -769,6 +812,7 @@ export function createWallColliders(roomModel) {
   return colliders;
 }
 
+// 벽 디버그 시각화용 — 벽의 "경계선" 중심 위치(roomFacingProjection 기준)를 계산한다.
 function wallBoundaryCenter(wall, normal) {
   if (!normal || !Number.isFinite(wall.roomFacingProjection)) {
     return wall.obb.center.clone();
@@ -782,6 +826,7 @@ function wallBoundaryCenter(wall, normal) {
     .addScaledVector(normal, boundaryProjection - wall.obb.center.dot(normal));
 }
 
+// 벽 디버그 시각화용 — 경계선 사각형을 그리기 위한 두 축(길이/높이)을 구한다.
 function wallBoundarySpanAxes(wall, normal) {
   const spans = (wall.spanAxes || [])
     .filter(({ axis, halfSize }) => axis && Number.isFinite(halfSize))
@@ -809,6 +854,7 @@ function wallBoundarySpanAxes(wall, normal) {
     .slice(0, 2);
 }
 
+// 벽 경계선을 사각형 윤곽선(LineSegments 지오메트리)으로 만든다 (디버그 시각화용).
 function createBoundaryOutlineGeometry(center, spanAxes) {
   if (spanAxes.length < 2) return null;
 
@@ -837,6 +883,7 @@ function createBoundaryOutlineGeometry(center, spanAxes) {
   ]);
 }
 
+// 벽 바닥선(경계 사각형의 아랫변)만 강조해서 그리는 지오메트리 (디버그 시각화용).
 function createBoundaryBaselineGeometry(center, spanAxes) {
   if (spanAxes.length < 2) return null;
 
@@ -863,6 +910,8 @@ function createBoundaryBaselineGeometry(center, spanAxes) {
   ]);
 }
 
+// 벽 콜라이더들을 눈에 보이는 선(OBB 박스 외곽선 + 경계 사각형 + 바닥선)으로 그려주는
+// 디버그 레이어를 만든다. showColliderDebug/충돌·차단 벽 하이라이트 등에 쓰인다.
 export function createWallColliderVisuals(wallColliders, options = {}) {
   const group = new THREE.Group();
   const color = options.color || sceneColor("wallColliderDebug");
@@ -943,6 +992,8 @@ export function createWallColliderVisuals(wallColliders, options = {}) {
   return group;
 }
 
+// 방 모델 로딩 직후 한 번 호출된다. 그림자를 받도록 설정하고, 앱이 대체한 원본 스캔
+// mesh(isUsdReplacedMesh)는 화면에서 숨긴다.
 export function prepareRoomModel(model) {
   model.traverse((object) => {
     if (!object.isMesh) return;

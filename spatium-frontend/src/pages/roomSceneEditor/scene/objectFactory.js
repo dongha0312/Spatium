@@ -13,6 +13,8 @@ const REFERENCE_THICKNESS_MIN = 0.02;
 const WALL_INFILL_PADDING = 0.06;
 const WALL_INFILL_MIN_THICKNESS = 0.04;
 
+// wallColliders 배열(콜라이더 여러 개가 같은 mesh를 가리킬 수 있음)에서 중복 없는
+// 원본 벽 mesh 목록만 뽑는다 (실측 두께 계산은 콜라이더가 아니라 mesh 자체가 필요하다).
 function wallMeshesFromColliders(wallColliders) {
   return [
     ...new Set(
@@ -49,10 +51,13 @@ function fitReferenceToWallThickness(targetSize, position, wallColliders) {
   return { targetSize: nextTargetSize, position: nextPosition };
 }
 
+// 원점에 중심을 둔 OBB를 만든다 (fallback box 가구 등, 모델 없이 크기만 아는 경우).
 function createCenteredLocalObb(size) {
   return new OBB(new THREE.Vector3(0, 0, 0), size.clone().multiplyScalar(0.5));
 }
 
+// 실제 GLB 모델의 geometry bounds로부터 local OBB를 만든다. bounds가 비어있거나
+// 이상하면(0 이하 크기) createCenteredLocalObb로 fallback한다.
 function createLocalObbFromBounds(bounds, fallbackSize) {
   if (!bounds || bounds.isEmpty()) {
     return createCenteredLocalObb(fallbackSize);
@@ -69,6 +74,8 @@ function createLocalObbFromBounds(bounds, fallbackSize) {
   );
 }
 
+// localObb 크기의 박스 외곽선(EdgesGeometry)을 만든다. 기본은 안 보이게(visible=false)
+// 해두고, 선택/충돌 시에만 setFurnitureVisualState()가 보이게 켠다.
 function createCollisionBoxLine(localObb, opacity = 0.55) {
   const size = localObb.halfSize.clone().multiplyScalar(2);
   const boxGeometry = new THREE.BoxGeometry(size.x, size.y, size.z);
@@ -91,6 +98,8 @@ function createCollisionBoxLine(localObb, opacity = 0.55) {
   return edge;
 }
 
+// 화면에는 안 그려지지만(opacity 0) 레이캐스트 피킹은 되는 material.
+// GLB 모델 자체의 복잡한 mesh 대신, 이 material을 쓴 박스(hitBox)로 클릭 판정을 단순화한다.
 function createPickOnlyMaterial(color) {
   return new THREE.MeshBasicMaterial({
     color,
@@ -101,6 +110,7 @@ function createPickOnlyMaterial(color) {
   });
 }
 
+// localObb 크기의 투명 박스 mesh. pickTargets에 등록되어 실제 클릭/선택 판정에 쓰인다.
 function createCollisionHitBox(localObb, color) {
   const size = localObb.halfSize.clone().multiplyScalar(2);
   const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
@@ -110,6 +120,9 @@ function createCollisionHitBox(localObb, color) {
   return mesh;
 }
 
+// 모델의 모든 material을 복제한다. 같은 GLB 템플릿을 여러 인스턴스가 공유하므로,
+// 개별 인스턴스의 색상/투명도(충돌 표시, 유리 투명화 등)를 바꾸기 전에 반드시 복제해야
+// 다른 인스턴스에 영향이 안 간다.
 function cloneRenderableMaterials(object) {
   object.traverse((child) => {
     if (!child.material) return;
@@ -120,6 +133,7 @@ function cloneRenderableMaterials(object) {
   });
 }
 
+// GLB 템플릿이 없는 가구를 위한 fallback — 단색 반투명 박스로 가구를 표현한다.
 export function createEditableFurniture(item, index) {
   const dimensions = item.dimensions || {};
   const category = item.category || "object";
@@ -178,6 +192,8 @@ export function createEditableFurniture(item, index) {
   return { root, pickTargets: [mesh] };
 }
 
+// 오브젝트(및 자식들)의 모든 정점을 순회해서 정확한 월드 좌표 bounding box를 구한다.
+// THREE.Box3.setFromObject보다 느리지만, 스킨/모프 없는 정적 모델에서 더 정확하다.
 export function getBaseGeometryBounds(object) {
   const bounds = new THREE.Box3();
   const vertex = new THREE.Vector3();
@@ -197,6 +213,8 @@ export function getBaseGeometryBounds(object) {
   return bounds.isEmpty() ? new THREE.Box3().setFromObject(object) : bounds;
 }
 
+// 모델을 목표 크기(targetSize, 미터)에 맞춰 스케일하고 중심을 원점으로 이동시킨다.
+// 여러 번 호출해도(리사이즈 등) 매번 "현재 bounds -> 목표 크기" 비율로 다시 스케일하므로 결과가 수렴한다.
 export function fitModelToTargetSize(model, targetSize) {
   model.updateWorldMatrix(true, true);
   const bounds = getBaseGeometryBounds(model);
@@ -213,6 +231,8 @@ export function fitModelToTargetSize(model, targetSize) {
   model.updateWorldMatrix(true, true);
 }
 
+// 일부 문/창문 GLB 템플릿에 섞여 있는, 원래 모델과 무관한 부산물(예: UI 킷 잔여물,
+// 화면/스크린 mesh)을 이름 패턴으로 찾아서 제거한다.
 function removeReferenceModelArtifacts(model) {
   const artifactNamePatterns = [/^Blender Bros Sci-Fi UI Pack/i, /^Solid 25$/i];
   const artifactMaterialPatterns = [
@@ -274,6 +294,8 @@ function applyGlassTransparency(model) {
   });
 }
 
+// GLB 템플릿이 있는 일반 가구를 만든다. 템플릿을 clone하고 목표 크기로 fit한 뒤,
+// 그 결과 bounds로 충돌용 localObb/hitBox/edge를 만든다.
 export function createEditableFurnitureModel(modelTemplate, item, index) {
   const dimensions = item.dimensions || {};
   const category = item.category || "object";
@@ -334,6 +356,8 @@ export function createEditableFurnitureModel(modelTemplate, item, index) {
   return { root, pickTargets: [hitBox] };
 }
 
+// 문 reference 오브젝트를 만든다 (editable:false, sourceType:"door"). 두께/위치는
+// fitReferenceToWallThickness로 속한 벽에 맞춰 보정하고, 유리 재질은 투명 처리한다.
 export function createDoorModel(doorTemplate, item, index, wallColliders = []) {
   const doorItem = { ...item, category: "door" };
   const dimensions = item.dimensions || {};
@@ -404,6 +428,7 @@ export function createDoorModel(doorTemplate, item, index, wallColliders = []) {
   return { root, pickTargets: [hitBox] };
 }
 
+// 창문 reference 오브젝트를 만든다. createDoorModel과 구조가 동일하고 category만 다르다.
 export function createWindowModel(
   windowTemplate,
   item,
