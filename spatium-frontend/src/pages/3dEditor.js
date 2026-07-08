@@ -7,18 +7,19 @@ import React, {
 } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import "../styles/3deditor.css";
+import AccountPanel from "../components/AccountPanel";
+import AvatarButton from "../components/AvatarButton";
+import Logo from "../components/Logo";
 import TestThreeStagingPage from "./testThree/TestThreeStagingPage";
 import {
-  clearLoginSession,
   getAccessToken,
   getLoginSession,
 } from "../utils/authSession";
-import { deleteLogout, getMyInfo } from "../springApi/MemberSpringBootApi";
-import {
-  getProjectInfo,
-  getProjectList,
-} from "../springApi/ProjectSpringBootAPi";
+import { getMyInfo } from "../springApi/MemberSpringBootApi";
+import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
 import { getRoomList, getRoomSceneData } from "../springApi/RoomSpringBootApi";
+import useLogout from "../hooks/useLogout";
+import useProjectStats from "../hooks/useProjectStats";
 
 const FURNITURE_CATALOG_URL = "/data/furniture_catalog.json";
 
@@ -77,16 +78,13 @@ function ThreeDEditor() {
   // 닉네임 클릭 시 열리는 "내 정보" 우측 패널
   const [panelOpen, setPanelOpen] = useState(false);
 
-  // 패널 이용현황에 표시할 통계 (프로젝트 수 / 배치 가구 수)
-  const [accountStats, setAccountStats] = useState({
-    projectCount: 0,
-    furnitureCount: 0,
-  });
+  // 패널 이용현황에 표시할 통계 (프로젝트 수 / 룸 수)
+  const accountStats = useProjectStats(Boolean(session));
 
   // 상단바/패널 아바타에 표시할 프로필 사진 (없으면 이니셜)
   const [profileImage, setProfileImage] = useState(null);
 
-  // 로그인 상태면 내 정보(프로필 사진)와 프로젝트 목록을 불러옴
+  // 로그인 상태면 내 정보(프로필 사진)를 불러옴
   useEffect(() => {
     if (!session) return;
     let active = true;
@@ -99,19 +97,6 @@ function ThreeDEditor() {
         console.warn("내 정보 조회 실패:", err);
       });
 
-    getProjectList()
-      .then((page) => {
-        if (!active) return;
-        const items = page?.items || [];
-        const furnitureCount = items.reduce(
-          (sum, p) => sum + (p.furnitureCount || 0),
-          0,
-        );
-        setAccountStats({ projectCount: items.length, furnitureCount });
-      })
-      .catch((err) => {
-        console.warn("프로젝트 수 조회 실패:", err);
-      });
     return () => {
       active = false;
     };
@@ -129,19 +114,11 @@ function ThreeDEditor() {
   };
 
   // 로그아웃 : 서버 세션 정리 후 로컬 세션 삭제, 상단바를 로그인 상태에서 되돌림
-  const handleLogout = async () => {
-    try {
-      if (getAccessToken()) {
-        await deleteLogout();
-      }
-    } catch (err) {
-      console.warn("Logout API failed, clearing local session anyway.", err);
-    }
-    clearLoginSession();
+  const handleLogout = useLogout(() => {
     setSession(null);
     setPanelOpen(false);
     navigate("/");
-  };
+  });
 
   const categoryFilters = useMemo(
     () =>
@@ -428,12 +405,7 @@ function ThreeDEditor() {
   return (
     <div className="ed-root">
       <div className="ed-nav">
-        <Link to="/" className="ed-logo">
-          <div className="ed-logo-sq">
-            <div className="ed-logo-sq-i" />
-          </div>
-          SPATIUM
-        </Link>
+        <Logo prefix="ed" />
         <div className="ed-nav-center">{roomLabel}</div>
         <div className="ed-nav-status">
           {isSaving && <span className="ed-save-state">Saving...</span>}
@@ -458,22 +430,13 @@ function ThreeDEditor() {
               마이페이지
             </button>
             {/* 닉네임 클릭 : 우측 "내 정보" 패널 열기 */}
-            <button
-              type="button"
-              className="ed-av-btn"
+            <AvatarButton
+              prefix="ed"
+              imageUrl={profileImage}
+              initial={session.nickname.charAt(0).toUpperCase()}
+              name={session.nickname}
               onClick={toggleAccountPanel}
-              aria-label="내 정보 열기"
-            >
-              <div className="ed-av-circ">
-                {profileImage ? (
-                  <img className="ed-av-img" src={profileImage} alt="" />
-                ) : (
-                  session.nickname.charAt(0).toUpperCase()
-                )}
-              </div>
-              <span className="ed-av-name">{session.nickname}</span>
-              <span className="ed-av-caret">⌄</span>
-            </button>
+            />
           </div>
         ) : (
           <Link to="/member/mypage" className="ed-av-btn">
@@ -768,70 +731,24 @@ function ThreeDEditor() {
       </div>
 
       {/* 닉네임 클릭 시 열리는 "내 정보" 우측 패널 */}
-      {session && panelOpen && (
-        <>
-          <div className="ed-scrim" onClick={() => setPanelOpen(false)}></div>
-          <div className="ed-panel">
-            <div className="ed-panel-head">
-              <div className="ed-panel-title">내 정보</div>
-              <button
-                className="ed-panel-close"
-                onClick={() => setPanelOpen(false)}
-                aria-label="닫기"
-              >
-                ×
-              </button>
-            </div>
-            <div className="ed-panel-body">
-              <span className="ed-panel-label">기본정보</span>
-              <button className="ed-panel-profile" onClick={handleGoAccount}>
-                <div className="ed-panel-avatar">
-                  {profileImage ? (
-                    <img className="ed-panel-avatar-img" src={profileImage} alt="" />
-                  ) : (
-                    session.nickname.charAt(0).toUpperCase()
-                  )}
-                </div>
-                <div>
-                  <div className="ed-panel-pname">{session.nickname}</div>
-                  <div className="ed-panel-pnick">@{session.email}</div>
-                </div>
-                <span className="ed-panel-arrow">›</span>
-              </button>
-
-              <span className="ed-panel-label">이용현황</span>
-              <div className="ed-panel-stats">
-                <div className="ed-panel-stat">
-                  <span className="ed-panel-stat-num">
-                    {accountStats.projectCount}
-                  </span>
-                  <span className="ed-panel-stat-label">프로젝트</span>
-                </div>
-                <div className="ed-panel-stat">
-                  <span className="ed-panel-stat-num">
-                    {accountStats.furnitureCount}
-                  </span>
-                  <span className="ed-panel-stat-label">배치 가구</span>
-                </div>
-              </div>
-            </div>
-            <div className="ed-panel-foot">
-              <button
-                className="ed-panel-foot-btn ed-panel-sub"
-                onClick={handleLogout}
-              >
-                로그아웃
-              </button>
-              <button
-                className="ed-panel-foot-btn ed-panel-main"
-                onClick={handleGoAccount}
-              >
-                계정설정
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+      <AccountPanel
+        open={Boolean(session && panelOpen)}
+        prefix="ed"
+        profile={{
+          name: session?.nickname,
+          initial: session?.nickname?.charAt(0).toUpperCase(),
+          imageUrl: profileImage,
+          subtext: session?.email ? `@${session.email}` : "",
+        }}
+        statItems={[
+          { label: "프로젝트", value: accountStats.projectCount },
+          { label: "룸 개수", value: accountStats.roomCount },
+        ]}
+        onClose={() => setPanelOpen(false)}
+        onProfileClick={handleGoAccount}
+        onLogout={handleLogout}
+        onAccountClick={handleGoAccount}
+      />
     </div>
   );
 }
