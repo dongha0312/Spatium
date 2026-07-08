@@ -647,7 +647,7 @@ export function constrainedMovementBeforeWallCollision(
     blockedWallSet.add(wall);
     blockedWalls.push(wall);
     if (shouldLogWallDiagnostics()) {
-      console.debug("[testThree] wall movement blocked", {
+      console.debug("[roomSceneEditor] wall movement blocked", {
         object: editableObjectLabel(object),
         ...wallDebugSummary(wall),
         ...details,
@@ -721,7 +721,7 @@ export function refreshCollisionState(
 
     if (intersectingWalls.length) {
       if (object === selectedObject && shouldLogWallDiagnostics()) {
-        console.debug("[testThree] furniture wall collision", {
+        console.debug("[roomSceneEditor] furniture wall collision", {
           object: editableObjectLabel(object),
           walls: intersectingWalls.map(wallDebugSummary),
         });
