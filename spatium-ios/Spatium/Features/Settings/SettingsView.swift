@@ -50,7 +50,6 @@ private struct AccountSection: View {
     @State private var profile: UserProfile?
     @State private var showLogin = false
     @State private var showDeleteConfirm = false
-    @State private var accountActionError: String?
 
     var body: some View {
         SettingsGroup(title: "계정") {
@@ -63,12 +62,6 @@ private struct AccountSection: View {
                 SettingsDivider()
                 DestructiveSettingsButton(systemImage: "trash", title: "회원 탈퇴") {
                     showDeleteConfirm = true
-                }
-                if let accountActionError {
-                    Text(accountActionError)
-                        .font(.caption2)
-                        .foregroundStyle(SpatiumTheme.coral)
-                        .padding(.top, 2)
                 }
             } else {
                 Button {
@@ -107,34 +100,12 @@ private struct AccountSection: View {
             })
         }
         .sheet(isPresented: $showDeleteConfirm) {
-            ConfirmSheet(
-                title: "정말 탈퇴하시겠어요?",
-                message: "모든 프로젝트와 데이터가 삭제되며 되돌릴 수 없습니다.",
-                confirmTitle: "탈퇴하기",
-                onConfirm: deleteAccount
-            )
+            DeleteAccountSheet(authMethod: tokenStore.authMethod)
         }
     }
 
     private func logout() {
         Task { try? await AuthService().logout() }
-    }
-
-    private func deleteAccount() {
-        accountActionError = nil
-        Task {
-            do {
-                if AuthTokenStore.shared.accessToken?.hasPrefix("mock_") == true {
-                    // mock 세션(시뮬레이터 로그인)은 서버에 계정이 없으므로 로컬만 정리한다.
-                    AuthTokenStore.shared.clear()
-                } else {
-                    try await UserService().deleteAccount()
-                }
-            } catch {
-                // 실패를 삼키면 사용자는 탈퇴된 줄 알게 되므로 반드시 표시한다.
-                accountActionError = "탈퇴하지 못했어요: \(error.localizedDescription)"
-            }
-        }
     }
 }
 

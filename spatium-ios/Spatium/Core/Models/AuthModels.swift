@@ -46,6 +46,21 @@ enum SocialProvider: String, Codable {
     case kakao = "KAKAO"
 }
 
+/// 현재 로그인된 계정의 인증 수단. 회원 탈퇴 시 본인 재확인 방식
+/// (일반=비밀번호, 소셜=소셜 재로그인)을 고르는 데 사용합니다.
+enum AccountAuthMethod: Equatable {
+    case local
+    case social(SocialProvider)
+}
+
+/// 회원 탈퇴: DELETE /api/users/me
+/// 일반 계정은 password로, 소셜 계정은 새로 발급받은 idToken으로 서버가 본인을 재확인합니다.
+/// (nil 필드는 인코딩에서 생략되어 백엔드의 required=false 파싱과 맞습니다.)
+struct AccountDeleteRequest: Encodable {
+    var password: String?
+    var idToken: String?
+}
+
 /// 로그인: POST /api/auth/sessions
 struct LoginRequest: Encodable {
     var email: String

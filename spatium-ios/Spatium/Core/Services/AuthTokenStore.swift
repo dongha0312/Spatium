@@ -16,6 +16,7 @@ final class AuthTokenStore: ObservableObject {
     private static let service = "com.spatium.auth"
     private static let accessAccount = "accessToken"
     private static let refreshAccount = "refreshToken"
+    private static let authMethodAccount = "authMethod"
 
     @Published private(set) var isLoggedIn: Bool
 
@@ -31,6 +32,27 @@ final class AuthTokenStore: ObservableObject {
         Self.read(account: Self.refreshAccount)
     }
 
+    /// 로그인 시점에 저장해 둔 계정 인증 수단. 회원 탈퇴의 본인 재확인 분기에 사용합니다.
+    /// (액세스 토큰 JWT/프로필 응답에는 provider 정보가 없어 로그인 경로별로 직접 기록합니다.)
+    var authMethod: AccountAuthMethod? {
+        guard let raw = Self.read(account: Self.authMethodAccount) else { return nil }
+        if raw == "local" { return .local }
+        if raw.hasPrefix("social:"),
+           let provider = SocialProvider(rawValue: String(raw.dropFirst("social:".count))) {
+            return .social(provider)
+        }
+        return nil
+    }
+
+    func saveAuthMethod(_ method: AccountAuthMethod) {
+        switch method {
+        case .local:
+            Self.write("local", account: Self.authMethodAccount)
+        case .social(let provider):
+            Self.write("social:\(provider.rawValue)", account: Self.authMethodAccount)
+        }
+    }
+
     func save(_ tokens: AuthTokens) {
         Self.write(tokens.accessToken, account: Self.accessAccount)
         Self.write(tokens.refreshToken, account: Self.refreshAccount)
@@ -40,6 +62,7 @@ final class AuthTokenStore: ObservableObject {
     func clear() {
         Self.delete(account: Self.accessAccount)
         Self.delete(account: Self.refreshAccount)
+        Self.delete(account: Self.authMethodAccount)
         isLoggedIn = false
     }
 

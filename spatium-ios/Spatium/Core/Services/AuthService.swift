@@ -30,6 +30,7 @@ struct AuthService {
         )
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
         tokenStore.save(AuthTokens(accessToken: data.accessToken, refreshToken: resolveRefreshToken(from: data)))
+        tokenStore.saveAuthMethod(.local)
         return data.user
     }
 
@@ -72,6 +73,7 @@ struct AuthService {
                 profileImageUrl: nil
             )
             tokenStore.save(AuthTokens(accessToken: "mock_access_token", refreshToken: "mock_refresh_token"))
+            tokenStore.saveAuthMethod(.social(request.provider))
             return dummyUser
         }
 
@@ -82,6 +84,7 @@ struct AuthService {
         )
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
         tokenStore.save(AuthTokens(accessToken: data.accessToken, refreshToken: resolveRefreshToken(from: data)))
+        tokenStore.saveAuthMethod(.social(request.provider))
         return data.user
     }
 

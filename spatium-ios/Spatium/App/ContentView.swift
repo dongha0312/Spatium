@@ -25,6 +25,15 @@ struct ContentView: View {
                     || ProcessInfo.processInfo.arguments.contains("-UITestHome") {
             // 스크린샷 검증용: 로그인 게이트를 건너뛰고 메인 탭(설정 또는 홈)으로 바로 진입.
             MainTabView()
+        } else if ProcessInfo.processInfo.arguments.contains("-UITestDeleteLocal") {
+            // 스크린샷 검증용: 회원 탈퇴 시트(일반 계정)를 바로 띄운다.
+            Color.clear.sheet(isPresented: .constant(true)) { DeleteAccountSheet(authMethod: .local) }
+        } else if ProcessInfo.processInfo.arguments.contains("-UITestDeleteSocial") {
+            // 스크린샷 검증용: 회원 탈퇴 시트(소셜 계정)를 바로 띄운다.
+            Color.clear.sheet(isPresented: .constant(true)) { DeleteAccountSheet(authMethod: .social(.google)) }
+        } else if ProcessInfo.processInfo.arguments.contains("-UITestDeleteUnknown") {
+            // 스크린샷 검증용: 유형 불명(nil) — 비밀번호 + 소셜 재인증을 모두 제공하는 시트.
+            Color.clear.sheet(isPresented: .constant(true)) { DeleteAccountSheet(authMethod: nil) }
         } else {
             gate
         }
