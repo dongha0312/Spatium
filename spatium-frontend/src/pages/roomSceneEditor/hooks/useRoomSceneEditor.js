@@ -237,7 +237,7 @@ export function useRoomSceneEditor({
     );
 
     setError("");
-    setStatus("Saving JSON...");
+    setStatus("저장중...");
 
     try {
       await saveMetadataJson(replayableMetadata, {
@@ -245,7 +245,7 @@ export function useRoomSceneEditor({
         area: roomMeasurementsRef.current?.area,
       });
       sourceMetadataRef.current = replayableMetadata;
-      setStatus("JSON saved.");
+      setStatus("저장완료");
       window.setTimeout(() => setStatus(""), 1200);
       return true;
     } catch (caughtError) {

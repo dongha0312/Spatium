@@ -11,10 +11,7 @@ import AccountPanel from "../components/AccountPanel";
 import AvatarButton from "../components/AvatarButton";
 import Logo from "../components/Logo";
 import RoomSceneEditorPage from "./roomSceneEditor/RoomSceneEditorPage";
-import {
-  getAccessToken,
-  getLoginSession,
-} from "../utils/authSession";
+import { getAccessToken, getLoginSession } from "../utils/authSession";
 import { getMyInfo } from "../springApi/MemberSpringBootApi";
 import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
 import { getRoomList, getRoomSceneData } from "../springApi/RoomSpringBootApi";
@@ -72,6 +69,7 @@ function ThreeDEditor() {
     Boolean(projectId),
   );
   const [projectRoomsError, setProjectRoomsError] = useState("");
+  const [manualOpen, setManualOpen] = useState(false);
 
   const [session, setSession] = useState(() => getLoginSession());
 
@@ -103,6 +101,15 @@ function ThreeDEditor() {
   }, [session]);
 
   const toggleAccountPanel = () => setPanelOpen((prev) => !prev);
+
+  const openEditorManual = () => {
+    setManualOpen(true);
+    setPanelOpen(false);
+  };
+
+  const closeEditorManual = () => {
+    setManualOpen(false);
+  };
 
   // 마이페이지 버튼 : 대시보드로 이동
   const handleGoMypage = () => navigate("/member/mypage");
@@ -167,7 +174,9 @@ function ThreeDEditor() {
       })
       .catch((error) => {
         if (isMounted) {
-          setCatalogError(error.message || "Failed to load catalog.");
+          setCatalogError(
+            error.message || "카탈로그 정보를 불러오는데 실패했습니다",
+          );
         }
       });
 
@@ -207,7 +216,9 @@ function ThreeDEditor() {
         .catch((error) => {
           if (!isMounted) return;
           setRoomScene(null);
-          setRoomSceneError(error.message || "Failed to load room scene.");
+          setRoomSceneError(
+            error.message || "방 데이터를 불러오는데 실패했습니다",
+          );
           setRoomLabel(shortId(roomId, "Room editor"));
         })
         .finally(() => {
@@ -247,7 +258,7 @@ function ThreeDEditor() {
       .catch((error) => {
         if (!isMounted) return;
         setProjectRooms([]);
-        setProjectRoomsError(error.message || "Failed to load rooms.");
+        setProjectRoomsError(error.message || "방 정보 불러오기 실패");
       })
       .finally(() => {
         if (isMounted) setProjectRoomsLoading(false);
@@ -288,6 +299,21 @@ function ThreeDEditor() {
       window.removeEventListener("popstate", handlePopState);
     };
   }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!manualOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setManualOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [manualOpen]);
 
   const handleSceneChanged = useCallback(() => {
     setHasUnsavedChanges(true);
@@ -370,12 +396,12 @@ function ThreeDEditor() {
     setSaveError("");
 
     if (!projectId || !roomId) {
-      setSaveError("Missing project or room information.");
+      setSaveError("프로젝트나 방 정보를 찾을 수 없습니다");
       return;
     }
 
     if (!accessToken) {
-      setSaveError("Please log in before saving.");
+      setSaveError("저장하시려면 로그인해주세요");
       return;
     }
 
@@ -388,15 +414,15 @@ function ThreeDEditor() {
       });
 
       if (!saved) {
-        setSaveError("Save failed. Check the editor message and try again.");
+        setSaveError("저장실패. 메시지를 확인후 다시 시도해주세요");
         return;
       }
 
       setHasUnsavedChanges(false);
-      setSaveMessage("Saved.");
+      setSaveMessage("저장됨");
       window.setTimeout(() => setSaveMessage(""), 1800);
     } catch (error) {
-      setSaveError(error.message || "Save failed.");
+      setSaveError(error.message || "저장 실패");
     } finally {
       setIsSaving(false);
     }
@@ -408,7 +434,7 @@ function ThreeDEditor() {
         <Logo prefix="ed" />
         <div className="ed-nav-center">{roomLabel}</div>
         <div className="ed-nav-status">
-          {isSaving && <span className="ed-save-state">Saving...</span>}
+          {isSaving && <span className="ed-save-state">저장중...</span>}
           {!isSaving && saveMessage && (
             <span className="ed-save-state ed-save-ok">{saveMessage}</span>
           )}
@@ -416,9 +442,18 @@ function ThreeDEditor() {
             <span className="ed-save-state ed-save-error">{saveError}</span>
           )}
           {!isSaving && hasUnsavedChanges && !saveMessage && !saveError && (
-            <span className="ed-save-state">Unsaved changes</span>
+            <span className="ed-save-state">저장되지 않은 변경사항</span>
           )}
         </div>
+        <button
+          type="button"
+          className="ed-help-btn"
+          onClick={openEditorManual}
+          aria-label="Open 3D editor guide"
+          title="3D editor guide"
+        >
+          ?
+        </button>
         {session ? (
           <div className="ed-nav-account">
             {/* 닉네임 왼쪽 : 마이페이지로 바로 이동하는 외곽선 버튼 */}
@@ -485,7 +520,7 @@ function ThreeDEditor() {
                     <div className="ed-cat-empty">{projectRoomsError}</div>
                   ) : projectRooms.length === 0 ? (
                     <div className="ed-cat-empty">
-                      No rooms in this project.
+                      이 프로젝트에 저장된 방이 없습니다
                     </div>
                   ) : (
                     projectRooms.map((room) => (
@@ -544,7 +579,9 @@ function ThreeDEditor() {
                 <div className="ed-cat-empty">{catalogError}</div>
               )}
               {!catalogError && visibleCatalogItems.length === 0 && (
-                <div className="ed-cat-empty">No furniture found.</div>
+                <div className="ed-cat-empty">
+                  가구정보를 불러오지 못했습니다
+                </div>
               )}
               {visibleCatalogItems.map((item) => (
                 <button
@@ -580,7 +617,7 @@ function ThreeDEditor() {
           >
             <div className="ed-canvas-placeholder">
               {roomSceneLoading ? (
-                <div className="ed-cat-empty">Loading room scene...</div>
+                <div className="ed-cat-empty">방 정보 불러오는 중...</div>
               ) : roomSceneError ? (
                 <div className="ed-cat-empty">{roomSceneError}</div>
               ) : (
@@ -601,7 +638,7 @@ function ThreeDEditor() {
 
             {showMeasurements && (
               <div className="ed-canvas-badge ed-canvas-badge-measure">
-                Measurements on
+                측정모드 On
               </div>
             )}
 
@@ -635,8 +672,8 @@ function ThreeDEditor() {
                     wallColorPickerOpen ? " ed-viewbar-active" : ""
                   }`}
                   onClick={toggleWallColorPicker}
-                  aria-label="Change wall color"
-                  title="Change wall color"
+                  aria-label="벽 색상 변경"
+                  title="벽 색상 변경"
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -680,8 +717,8 @@ function ThreeDEditor() {
                 type="button"
                 className={`ed-viewbar-icon-btn${showMeasurements ? " ed-viewbar-active" : ""}`}
                 onClick={toggleMeasurements}
-                aria-label="Toggle measurements"
-                title="Toggle measurements"
+                aria-label="측정 모드"
+                title="측정 모드"
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -750,6 +787,90 @@ function ThreeDEditor() {
         onLogout={handleLogout}
         onAccountClick={handleGoAccount}
       />
+
+      {manualOpen && (
+        <div className="ed-manual-backdrop" onClick={closeEditorManual}>
+          <section
+            className="ed-manual-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ed-manual-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="ed-manual-head">
+              <div>
+                <div className="ed-manual-kicker">3D Editor Guide</div>
+                <h2 id="ed-manual-title">3D 에디터 설명서</h2>
+              </div>
+              <button
+                type="button"
+                className="ed-manual-close"
+                onClick={closeEditorManual}
+                aria-label="Close editor guide"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="ed-manual-body">
+              <section className="ed-manual-section">
+                <h3>기본 흐름</h3>
+                <ol>
+                  <li>
+                    왼쪽 목록에서 가구를 선택하면 현재 시점 근처에 추가됩니다.
+                  </li>
+                  <li>배치된 가구를 클릭한 뒤 드래그해서 위치를 조정합니다.</li>
+                  <li>선택 패널의 회전 슬라이더로 각도를 조정합니다.</li>
+                  <li>
+                    작업이 끝나면 오른쪽 아래 저장 버튼으로 현재 방을
+                    저장합니다.
+                  </li>
+                </ol>
+              </section>
+
+              <section className="ed-manual-section">
+                <h3>선택한 오브젝트</h3>
+                <ul>
+                  <li>가구를 선택하면 크기, 회전값, 충돌 상태가 표시됩니다.</li>
+                  <li>
+                    교체버튼을 누른 뒤 왼쪽 목록에서 다른 가구를 선택하면
+                    교체됩니다.
+                  </li>
+                  <li>
+                    삭제버튼은 일반 가구에만 적용됩니다. 문과 창문은 삭제 대신
+                    교체만 지원합니다.
+                  </li>
+                </ul>
+              </section>
+
+              <section className="ed-manual-section">
+                <h3>하단 보기 도구</h3>
+                <ul>
+                  <li>Skyview는 방을 위에서 내려다보는 시점으로 전환합니다.</li>
+                  <li>색상 버튼은 벽 색상을 변경합니다.</li>
+                  <li>자 아이콘은 방 치수와 면적 표시를 켜거나 끕니다.</li>
+                </ul>
+              </section>
+
+              <section className="ed-manual-section">
+                <h3>충돌과 저장</h3>
+                <ul>
+                  <li>
+                    가구는 벽이나 방 경계를 통과하지 않도록 이동이 제한됩니다.
+                  </li>
+                  <li>
+                    겹침 경고가 보이면 선택한 가구의 위치나 회전을 조정하세요.
+                  </li>
+                  <li>
+                    방을 바꾸거나 나가기 전에 저장하지 않은 변경 사항이 있으면
+                    확인 메시지가 표시됩니다.
+                  </li>
+                </ul>
+              </section>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
