@@ -1332,6 +1332,18 @@ export function useRoomSceneEditor({
               }
 
               if (isReferenceReplacement) {
+                // 교체로 들어온 문/창문도 초기 로딩 때와 동일하게 roomFacingNormal을
+                // 설정해야 카메라 각도에 따라 벽과 함께 흐려지는 처리가 적용된다.
+                initializeReferenceFacingNormal(nextObject.root, roomCenter);
+                if (showReferenceLabels) {
+                  const debugLabel = createReferenceDebugLabel();
+                  const labelHeight =
+                    nextObject.root.userData.localObb?.halfSize?.y ?? 1;
+                  debugLabel.position.set(0, labelHeight + 0.2, 0);
+                  nextObject.root.userData.debugLabel = debugLabel;
+                  nextObject.root.add(debugLabel);
+                }
+
                 removeReferenceObject(object);
                 addReferenceToScene(
                   nextObject,

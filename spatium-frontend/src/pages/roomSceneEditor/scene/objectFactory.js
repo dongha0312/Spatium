@@ -1,6 +1,10 @@
 import * as THREE from "three";
 import { OBB } from "three/examples/jsm/math/OBB.js";
-import { categoryColor, referenceFallbackThickness, sceneColor } from "./sceneConfig";
+import {
+  categoryColor,
+  referenceFallbackThickness,
+  sceneColor,
+} from "./sceneConfig";
 import { decomposeRoomTransform } from "./threeUtils";
 import { measureWallThicknessAtPosition } from "./wallColliders";
 
@@ -11,7 +15,9 @@ const WALL_INFILL_MIN_THICKNESS = 0.04;
 
 function wallMeshesFromColliders(wallColliders) {
   return [
-    ...new Set((wallColliders || []).map((collider) => collider.object).filter(Boolean)),
+    ...new Set(
+      (wallColliders || []).map((collider) => collider.object).filter(Boolean),
+    ),
   ];
 }
 
@@ -44,10 +50,7 @@ function fitReferenceToWallThickness(targetSize, position, wallColliders) {
 }
 
 function createCenteredLocalObb(size) {
-  return new OBB(
-    new THREE.Vector3(0, 0, 0),
-    size.clone().multiplyScalar(0.5),
-  );
+  return new OBB(new THREE.Vector3(0, 0, 0), size.clone().multiplyScalar(0.5));
 }
 
 function createLocalObbFromBounds(bounds, fallbackSize) {
@@ -60,7 +63,10 @@ function createLocalObbFromBounds(bounds, fallbackSize) {
     return createCenteredLocalObb(fallbackSize);
   }
 
-  return new OBB(bounds.getCenter(new THREE.Vector3()), size.multiplyScalar(0.5));
+  return new OBB(
+    bounds.getCenter(new THREE.Vector3()),
+    size.multiplyScalar(0.5),
+  );
 }
 
 function createCollisionBoxLine(localObb, opacity = 0.55) {
@@ -208,10 +214,7 @@ export function fitModelToTargetSize(model, targetSize) {
 }
 
 function removeReferenceModelArtifacts(model) {
-  const artifactNamePatterns = [
-    /^Blender Bros Sci-Fi UI Pack/i,
-    /^Solid 25$/i,
-  ];
+  const artifactNamePatterns = [/^Blender Bros Sci-Fi UI Pack/i, /^Solid 25$/i];
   const artifactMaterialPatterns = [
     /^\.?Blender Bros Sci-Fi UI Pack/i,
     /^Black plastic PL$/i,
@@ -225,7 +228,9 @@ function removeReferenceModelArtifacts(model) {
       : [object.material];
     if (
       object !== model &&
-      (artifactNamePatterns.some((pattern) => pattern.test(object.name || "")) ||
+      (artifactNamePatterns.some((pattern) =>
+        pattern.test(object.name || ""),
+      ) ||
         materials.some((material) =>
           artifactMaterialPatterns.some((pattern) =>
             pattern.test(material?.name || ""),
@@ -238,6 +243,34 @@ function removeReferenceModelArtifacts(model) {
 
   artifacts.forEach((object) => {
     object.parent?.remove(object);
+  });
+}
+
+const GLASS_MATERIAL_NAME_PATTERN = /glass/i;
+const GLASS_OPACITY = 0.1;
+
+// 문/창문 GLB의 "유리" 재질은 alphaMode가 OPAQUE로 export되어 있어서(glTF 원본 데이터
+// 자체가 불투명) three.js가 그대로 불투명하게 렌더링한다. 재질 이름으로 유리를 찾아서
+// transparent/opacity를 강제로 설정해준다. cloneRenderableMaterials() 이후에 호출해야
+// 같은 GLB를 쓰는 다른 인스턴스의 재질에 영향을 주지 않는다.
+function applyGlassTransparency(model) {
+  model.traverse((object) => {
+    if (!object.isMesh) return;
+
+    const materials = Array.isArray(object.material)
+      ? object.material
+      : [object.material];
+
+    materials.forEach((material) => {
+      if (!material || !GLASS_MATERIAL_NAME_PATTERN.test(material.name || "")) {
+        return;
+      }
+
+      material.transparent = true;
+      material.opacity = GLASS_OPACITY;
+      material.depthWrite = false;
+      material.needsUpdate = true;
+    });
   });
 }
 
@@ -326,6 +359,7 @@ export function createDoorModel(doorTemplate, item, index, wallColliders = []) {
 
   removeReferenceModelArtifacts(model);
   cloneRenderableMaterials(model);
+  applyGlassTransparency(model);
   model.traverse((object) => {
     if (object.isMesh) {
       object.castShadow = true;
@@ -400,6 +434,7 @@ export function createWindowModel(
 
   removeReferenceModelArtifacts(model);
   cloneRenderableMaterials(model);
+  applyGlassTransparency(model);
   model.traverse((object) => {
     if (object.isMesh) {
       object.castShadow = true;
