@@ -11,18 +11,22 @@ enum AppTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .home: "홈"
-        case .rooms: "공간"
+        case .rooms: "프로젝트"
         case .scan: "스캔"
         case .settings: "설정"
         }
     }
 
     var systemImage: String {
+        systemImage(selected: false)
+    }
+
+    func systemImage(selected: Bool) -> String {
         switch self {
-        case .home: "house"
-        case .rooms: "square.grid.2x2"
-        case .scan: "camera.viewfinder"
-        case .settings: "gearshape"
+        case .home: selected ? "house.fill" : "house"
+        case .rooms: selected ? "folder.fill" : "folder"
+        case .scan: "viewfinder"
+        case .settings: selected ? "gearshape.fill" : "gearshape"
         }
     }
 }
