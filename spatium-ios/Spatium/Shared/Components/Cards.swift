@@ -5,11 +5,16 @@ struct Card<Content: View>: View {
 
     var body: some View {
         content
-            .padding(16)
-            .background(SpatiumTheme.surface)
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(SpatiumTheme.border, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: .black.opacity(0.025), radius: 6, y: 2)
+            .padding(18)
+            .background(cardBackground)
+            .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border.opacity(0.85), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
+            .shadow(color: SpatiumTheme.shadow.opacity(0.08), radius: 18, y: 8)
+    }
+
+    @ViewBuilder
+    private var cardBackground: some View {
+        SpatiumTheme.surface
     }
 }
 
@@ -27,41 +32,38 @@ struct SectionHeader: View {
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
                     .font(.caption.weight(.bold))
-                    .foregroundStyle(SpatiumTheme.brown)
+                    .foregroundStyle(SpatiumTheme.accent)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .background(SpatiumTheme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(SpatiumTheme.border, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(SpatiumTheme.accent.opacity(0.08))
+                    .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.accent.opacity(0.16), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
             }
         }
     }
 }
 
-struct MetricTile: View {
+struct EyebrowLabel: View {
     let title: String
-    let value: String
-
-    static let gridColumns = [
-        GridItem(.adaptive(minimum: 96), spacing: 10)
-    ]
+    var systemImage: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        Label {
             Text(title)
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(SpatiumTheme.soft)
-            Text(value)
-                .font(.headline.weight(.black))
-                .foregroundStyle(SpatiumTheme.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+        } icon: {
+            if let systemImage {
+                Image(systemName: systemImage)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(SpatiumTheme.surface)
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(SpatiumTheme.border, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .font(.caption2.weight(.black))
+        .tracking(1)
+        .textCase(.uppercase)
+        .foregroundStyle(SpatiumTheme.accent)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(SpatiumTheme.accent.opacity(0.08))
+        .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.accent.opacity(0.14), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
     }
 }
 
