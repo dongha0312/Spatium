@@ -93,10 +93,13 @@ Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하
 
 | 사용자 동작 | 호출 |
 | --- | --- |
-| 가구 클릭 | `editorRef.current.addFurniture(item)` |
+| 가구 클릭 (replace 모드 아님) | `3dEditor.js`가 가로/세로/높이 입력 모달(`ed-size-modal`)을 먼저 띄우고, 확정 시 `editorRef.current.addFurniture(item, customDimensions)` |
+| 가구 클릭 (replace 모드) | 모달 없이 바로 `editorRef.current.addFurniture(item)` |
 | 저장 | `editorRef.current.saveEditedSceneJson({ projectId, roomId })` |
 | 선택 가구 삭제 | `deleteSelectedObject()` |
 | 선택 가구 교체 | `startReplaceSelectedObject()` 후 카탈로그 클릭 |
+
+`addFurniture(catalogItem, customDimensions)`의 `customDimensions`(m 단위 `{x,y,z}`)는 새로 추가되는 가구에만 적용된다. 훅 내부에서 `{ ...catalogItem, dimensions: customDimensions }`로 치환한 뒤 기존 로직(`createFurnitureItemFromCatalog` → `normalizedDimensions`)을 그대로 타므로, 이미 배치된 가구의 크기를 바꾸는 기능은 아니다 — replace나 이동/회전과 달리 배치 후에는 크기를 다시 조정할 수 없다.
 
 저장 시에는 metadata JSON이 `FormData`에 담겨 `POST /api/rooms/save`로 전송된다.
 
@@ -237,6 +240,48 @@ roomModel
 
 현재 UI에서는 새 문/창문을 직접 추가하지 않는다. 기존 문/창문을 선택한 뒤 Replace로 같은 reference 계열 모델만 교체한다.
 
+#### 삭제: 개구부로 남기기 / 벽으로 메우기
+
+문/창문은 일반 가구와 달리 "삭제" 대신 두 가지 삭제 방식을 제공한다 (`deleteSelectedReference(fillWithWall)`).
+
+| 방식 | 동작 |
+| --- | --- |
+| 개구부로 삭제 (`fillWithWall: false`) | reference object만 제거한다. 벽에는 원래 있던 개구부(구멍)가 그대로 남는다 |
+| 벽으로 메우기 (`fillWithWall: true`) | `createWallInfillMesh()`로 그 자리를 채우는 박스 mesh를 만들어 `roomModel`에 추가한 뒤 reference object를 제거한다 |
+
+`createWallInfillMesh()`는 [벽 두께에 맞춘 fitting](#벽-두께에-맞춘-fitting)과 같은 `measureWallThicknessAtPosition()`을 재사용해서, 문/창문이 속한 벽의 실측 두께/중심에 맞춰 채움 박스를 만든다. 크기는 reference의 `localObb`(가로/세로)에 여유 패딩(6cm)을 더한 값이다. 만든 mesh에는 `userData.isUsdWallMesh = true`를 직접 표시해 일반 벽과 동일하게 취급되게 하며, 이름은 `Infill_...`로 시작해 `isUsdReplacedMesh()`의 `Door`/`Window` 이름 패턴에 걸리지 않게 한다(걸리면 저장에서 제외됨).
+
+색상은 `materialForWallInfill()`이 `measureWallThicknessAtPosition()`이 찾아준 매칭된 벽 mesh의 material을 그대로 `clone()`해서 쓴다 — 색상뿐 아니라 roughness/metalness, 있다면 텍스처까지 원래 벽과 동일해진다(매칭된 벽을 못 찾은 경우에만 `roomMaterialDefault` fallback). 사용자가 벽 색상을 따로 지정한 상태라면, 콜라이더 재생성 뒤 호출되는 `applyRoomWallColor()`가 새 mesh도 포함해서 다시 덮어써 일관되게 유지된다.
+
+벽으로 메운 뒤에는 벽 콜라이더를 다시 만들고(`createWallColliders(roomModel)`) 기존 가구도 다시 밀어낸다(`initializeWallConstraints`) — 방금 벽이 생긴 자리에 가구가 있었을 수 있기 때문이다.
+
+`createReplayableMetadataJson()`은 현재 씬의 문/창문 목록을 그대로 저장하므로(더 이상 "편집 없으면 원본 유지" 폴백을 쓰지 않는다), 삭제 결과가 저장에도 정확히 반영된다. 벽으로 메운 경우 새 mesh는 `_spatiumRoom.walls`에 포함되어 재로딩 시에도 벽으로 남는다.
+
+#### 벽 두께에 맞춘 fitting
+
+RoomPlan 스캔 데이터의 문/창문은 항상 `dimensions.z = 0`이다(문/창문은 평면으로만 기록됨). 그래서 두께는 `room-scene-config.json`의 `referenceFallbackThickness`(기본 0.08m)로만 정해지고, 위치는 스캔이 기록한 **벽 앞면(room-facing surface)** 좌표를 그대로 쓴다. 이 좌표를 중심으로 두께를 좌우 대칭 적용하면 두께의 절반이 항상 벽 앞으로 튀어나온다 — 이게 실제 튀어나옴의 원인이었다. 이를 막기 위해 `createDoorModel()`/`createWindowModel()`은 `wallColliders`를 받아 아래 순서로 두께와 위치를 보정한다.
+
+```text
+문/창문 저장 위치(position)
+  ↓
+nearestWallMesh() — 벽 mesh들의 world bounding box까지의 거리(Box3.distanceToPoint)로
+  가장 가까운 벽 mesh 하나를 찾는다
+  (문/창문은 벽 개구부 위에 있어 삼각형 자체와는 안 겹치므로 bounding box 거리로 판정한다.
+   per-triangle face collider를 기준으로 찾으면 문틀 옆면(reveal)처럼 두께 축과 무관한
+   삼각형을 잘못 고를 수 있어서, 벽 mesh 전체를 기준으로 삼는다)
+  ↓
+localThicknessAxis() — 그 mesh의 로컬 bounding box에서 가장 짧은 축을 두께 방향으로 판정
+  (길이/높이보다 두께가 훨씬 얇은 박스 형태이므로 안정적으로 두께 축을 찾는다)
+  ↓
+geometryProjectionRange(wall.object, normal) — 벽 mesh 전체를 그 축에 투영해 실제 두께
+  (min/max)와 두께 방향 중심(centerProjection)을 측정
+  ↓
+fitReferenceToWallThickness() — targetSize.z를 min(원래 두께, 실측 두께 - margin)으로 clamp,
+  position을 벽의 두께 방향 중심(centerProjection)으로 재정렬
+```
+
+가까이에 벽을 찾지 못하면(거리 0.5m 초과) 원래 값을 그대로 사용한다. 위치는 `wallColliders.js`, 로직은 `objectFactory.js`에 있다.
+
 ---
 
 ## 선택, 이동, 회전
@@ -271,7 +316,21 @@ constrainedMovementBeforeWallCollision()
 벽을 넘지 않는 movement만 적용
 ```
 
-이동 가능한 대상은 일반 가구다. 문/창문은 선택 및 교체는 가능하지만 벽 충돌 제약 대상에서는 제외된다.
+이동 가능한 대상은 일반 가구다. 문/창문은 선택 및 교체는 가능하지만 벽 충돌 제약 대상(움직이는 쪽)에서는 제외된다. 다만 가구를 이동/회전시킬 때는 문/창문도 벽과 함께 장애물로 취급되어 통과할 수 없다 — [벽 충돌과 이동 제한](#벽-충돌과-이동-제한) 참고.
+
+### 높이(수직) 이동
+
+포인터 드래그는 바닥 평면(X-Z) 이동만 처리하며 `object.position.y`는 드래그 도중 항상 시작 높이로 고정된다. 수직 이동은 별도의 높이 슬라이더(`setSelectedElevationCm`)로만 가능하다.
+
+| 항목 | 설명 |
+| --- | --- |
+| 대상 | `sourceType: "object"`인 일반 가구만 (`canTransformObject()`가 true인 오브젝트) |
+| 값 정의 | 바닥에서 가구 바닥면까지의 간격(cm). 0이면 바닥에 놓인 상태 |
+| 범위 | `0 ~ (천장Y - 바닥Y - 가구높이)`를 cm로 환산한 값. `useRoomSceneEditor`의 `elevationBoundsForObject()`가 매 선택마다 계산 |
+| 충돌 처리 | 높이 변경 후 `hasWallCollision()`이 true이면 이전 위치로 되돌림(회전 슬라이더와 동일 패턴) |
+| UI | `RoomSceneEditorPage.js`의 `room-scene-editor-elevation-panel` 슬라이더, 최대 이동 범위가 0보다 클 때만 표시 |
+
+가구를 벽에 자동으로 붙이거나 끌어당기는 스냅 로직은 없다. 이 높이 슬라이더도 스냅이 아니라 사용자가 직접 값을 지정하는 방식이다.
 
 ### 회전
 
@@ -299,6 +358,18 @@ object.userData.localObb
 ```
 
 UI 치수 표시는 metadata 또는 bounds 기반이지만, 실제 충돌 판정은 `localObb`를 월드 좌표로 변환한 OBB로 수행한다.
+
+### 문/창문도 장애물이다
+
+가구를 이동/회전/높이 조정할 때 충돌 판정에 쓰이는 목록은 벽 콜라이더만이 아니다. `useRoomSceneEditor.js`의 `activeColliders()`가 `wallColliders`에 `referenceCollidersFromRoots(referenceRoots)`(문/창문 오브젝트들의 world OBB)를 합쳐서 전달한다.
+
+```text
+activeColliders()
+  = wallColliders
+  + referenceRoots.map(root => ({ object: root, obb: worldObbForObject(root) }))
+```
+
+문/창문 콜라이더는 `spanAxes`/`roomFacingNormal`이 없어서, `wallBlocksObjectObb()`가 boundary 판정 대신 **단순 OBB 교차 판정**으로 처리한다 — 실제 문/창문 박스와 겹치면 그대로 막힌다. `constrainedMovementBeforeWallCollision()`, `hasWallCollision()`, `initializeWallConstraints()`, `refreshCollisionState()`에 전달되는 콜라이더 목록은 모두 이 `activeColliders()` 결과다. 문/창문 자신은 `shouldConstrainToWalls()`에서 여전히 제외되므로(움직이지 않음) 이 목록에 자기 자신이 포함돼도 스스로 막히지는 않는다.
 
 ### 핵심 함수
 
@@ -482,6 +553,7 @@ POST /api/rooms/save
 | `wallConstraints.boundarySpanPadding` | 벽 span overlap padding |
 | `wallConstraints.logWallDiagnostics` | 벽 이동 차단/충돌 debug 로그 |
 | `wallConstraints.showColliderDebug` | 벽 콜라이더 시각화 |
+| `wallConstraints.showCollisionHighlight` | 가구가 벽과 충돌했을 때 바운딩 박스를 빨간색으로 표시할지 여부. `false`면 충돌 여부와 무관하게 선택 시 항상 `selectedEdge`(노란색) 박스만 표시된다 (`setFurnitureVisualState()`) |
 
 현재 설정에는 `showWallDiagnostics`, `clampIterations`, `sweepMaxSteps`도 남아 있다. 다만 현재 핵심 이동/충돌 흐름에서는 위 표의 값들이 주로 사용된다.
 
@@ -491,9 +563,11 @@ POST /api/rooms/save
 
 - 방 씬 데이터는 API의 `roomScene`을 우선 사용한다.
 - 저장된 `_spatiumRoom`이 있으면 원본 USD 모델보다 먼저 복원된다.
-- 일반 가구는 추가, 이동, 회전, 삭제, 교체가 가능하다.
+- 일반 가구는 추가, 이동, 회전, 높이(수직) 조정, 삭제, 교체가 가능하다.
 - 문과 창문은 reference object이며, 기존 reference를 같은 계열 모델로 교체하는 방식이다.
-- 충돌 판정은 object OBB와 wall collider 기준이다.
+- 문/창문 삭제는 개구부로 남기기와 벽으로 메우기 중 선택할 수 있다(`deleteSelectedReference(fillWithWall)`).
+- 문/창문 두께는 속한 벽의 실측 두께에 맞춰 clamp되고 위치도 벽 두께 중심으로 재정렬되어, 벽보다 두꺼워서 앞뒤로 튀어나오는 문제를 방지한다.
+- 충돌 판정은 object OBB와 wall collider 기준이며, 가구 이동/회전/높이 조정 시에는 문/창문 OBB도 동일하게 장애물로 취급된다(`activeColliders()`).
 - 이동은 충돌 후 되돌리는 방식이 아니라, 적용 전 movement vector를 제한하는 방식이다.
 - 빠른 드래그에서도 벽을 통과하지 않도록 movement를 step 단위로 나눠 검사한다.
 - 선택 정보와 저장 metadata는 `objectToEditableJson()` 결과를 중심으로 동기화된다.
