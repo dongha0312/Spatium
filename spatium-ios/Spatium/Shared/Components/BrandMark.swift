@@ -1,20 +1,23 @@
 import SwiftUI
 
 struct BrandMark: View {
+    var size: CGFloat = 28
+
     var body: some View {
-        RoundedRectangle(cornerRadius: 5, style: .continuous)
-            .fill(
-                LinearGradient(
-                    colors: [SpatiumTheme.accent, SpatiumTheme.brown],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
+        ZStack {
+            Rectangle()
+                .fill(
+                    LinearGradient(
+                        colors: [SpatiumTheme.accentLight, SpatiumTheme.accent],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
                 )
-            )
-            .frame(width: 30, height: 30)
-            .overlay {
-                RoundedRectangle(cornerRadius: 2)
-                    .stroke(.white, lineWidth: 2)
-                    .frame(width: 12, height: 12)
-            }
+
+            Rectangle()
+                .stroke(.white, lineWidth: size * 0.05)
+                .frame(width: size * 0.38, height: size * 0.38)
+        }
+        .frame(width: size, height: size)
     }
 }

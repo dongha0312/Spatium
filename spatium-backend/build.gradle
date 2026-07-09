@@ -25,6 +25,7 @@ dependencies {
 	// 내장 톰캣(Tomcat)을 띄우고 REST API를 만들게 해줍니다. 
 	// 이게 없으면 서버가 바로 꺼집니다.
     implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
 
 
 	// 단위 테스트나 통합 테스트를 작성할 때 필요합니다. 
@@ -60,6 +61,18 @@ dependencies {
 		자동 리로딩은 안되며, java 코드 수정 후 브라우저 새로고침시
 		수정사항이 자동으로 반영되도록 처리됩니다. */
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+
+
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	/* Spring Security : 필터 체인 기반 인증/인가 담당
+	   - SecurityConfig + JwtAuthenticationFilter에서 사용 */
+	implementation 'org.springframework.boot:spring-boot-starter-security'
+
+	/* JWT 토큰 생성/검증 담당 (로그인, 로그아웃 인증용) */
+	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 }
 
 tasks.named('test') {

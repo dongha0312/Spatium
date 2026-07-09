@@ -8,14 +8,17 @@ struct RoomPlanMetadata: Codable {
     var doors: [RoomPlanSurfaceMetadata]
     var windows: [RoomPlanSurfaceMetadata]
     var openings: [RoomPlanSurfaceMetadata]
+    /// 사용자가 3D 편집기에서 확정한 객체 목록 (이동/회전/이름·크기 수정/추가/삭제 반영).
+    var editedObjects: [EditableScanItem]
 
-    init(room: CapturedRoom, roomType: String) {
+    init(room: CapturedRoom, roomType: String, editedObjects: [EditableScanItem] = []) {
         let trimmedRoomType = roomType.trimmingCharacters(in: .whitespacesAndNewlines)
         self.roomType = trimmedRoomType.isEmpty ? nil : trimmedRoomType
         self.objects = room.objects.map { RoomPlanObjectMetadata(object: $0) }
         self.doors = room.doors.map { RoomPlanSurfaceMetadata(surface: $0) }
         self.windows = room.windows.map { RoomPlanSurfaceMetadata(surface: $0) }
         self.openings = room.openings.map { RoomPlanSurfaceMetadata(surface: $0) }
+        self.editedObjects = editedObjects
     }
 
     enum CodingKeys: String, CodingKey {
@@ -24,6 +27,7 @@ struct RoomPlanMetadata: Codable {
         case doors
         case windows
         case openings
+        case editedObjects
     }
 
     func encode(to encoder: Encoder) throws {
@@ -33,6 +37,7 @@ struct RoomPlanMetadata: Codable {
         try container.encode(doors, forKey: .doors)
         try container.encode(windows, forKey: .windows)
         try container.encode(openings, forKey: .openings)
+        try container.encode(editedObjects, forKey: .editedObjects)
     }
 }
 
