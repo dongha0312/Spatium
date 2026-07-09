@@ -3,17 +3,7 @@ import { useRoomSceneEditor } from "./hooks/useRoomSceneEditor";
 import "./RoomSceneEditorPage.css";
 
 const ROTATION_STOPS = [-180, -90, 0, 90, 180];
-const ROTATION_SNAP_THRESHOLD = 4;
-const REPLACEABLE_TYPES = new Set(["object", "door", "window"]);
-
-// 슬라이더 값이 90도 단위 지점(-180/-90/0/90/180) 근처(±4도)면 그 값으로 스냅시킨다.
-function snapRotation(value) {
-  const nearest = ROTATION_STOPS.reduce((closest, stop) =>
-    Math.abs(stop - value) < Math.abs(closest - value) ? stop : closest,
-  );
-
-  return Math.abs(nearest - value) <= ROTATION_SNAP_THRESHOLD ? nearest : value;
-}
+const REPLACEABLE_TYPES = new Set(["object", "door", "window", "opening"]);
 
 // Three.js 씬(useRoomSceneEditor)을 렌더링하는 뷰포트 + 선택된 오브젝트의 정보 패널/
 // 회전·높이 슬라이더/교체·삭제 툴바를 그리는 컴포넌트. 상위(3dEditor.js)는 ref를 통해
@@ -38,8 +28,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     selectedElevationCm,
     selectedMaxElevationCm,
     isReplacingSelected,
+    isPlacingFurniture,
     canSaveJson,
     addFurniture,
+    cancelFurniturePlacement,
     deleteSelectedObject,
     deleteSelectedReference,
     setSelectedRotationDegrees,
@@ -65,6 +57,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     selectedItem?.sourceType === "door" ||
     selectedItem?.sourceType === "window";
   const canShowElevationControl = selectedItem?.sourceType === "object";
+  const isOpeningSelected = selectedItem?.sourceType === "opening";
 
   const handleRotationChange = (event) => {
     setSelectedRotationDegrees(Number(event.target.value));
@@ -110,6 +103,20 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     <div className="room-scene-editor-page">
       <div ref={containerRef} className="room-scene-editor-viewport" />
 
+      {/* 가구 배치 모드 안내 배너 — 바닥을 클릭할 때까지 표시된다 */}
+      {isPlacingFurniture && (
+        <div className="room-scene-editor-placement-banner">
+          <span>가구를 놓을 위치를 바닥에서 클릭하세요.</span>
+          <button
+            type="button"
+            className="room-scene-editor-placement-cancel"
+            onClick={cancelFurniturePlacement}
+          >
+            취소
+          </button>
+        </div>
+      )}
+
       {/* 선택된 오브젝트의 치수/회전/높이 정보 패널 */}
       {canShowSelectionControls && (
         <aside className="room-scene-editor-info-drawer">
@@ -117,7 +124,9 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
             {selectedItem.name || selectedItem.category || "Selected item"}
           </div>
           <div className="room-scene-editor-info-subtitle">
-            {selectedItem.category || selectedItem.sourceType}
+            {isOpeningSelected
+              ? "개구부"
+              : selectedItem.category || selectedItem.sourceType}
           </div>
           <dl className="room-scene-editor-info-list">
             <div>
@@ -149,31 +158,34 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
       {/* 회전/높이 슬라이더 + 교체·삭제 툴바 */}
       {canShowSelectionControls && (
         <div className="room-scene-editor-selection-controls">
-          <div className="room-scene-editor-rotation-panel">
-            <div className="room-scene-editor-rotation-value">
-              회전 : {selectedRotationDegrees}도
-            </div>
-            <div className="room-scene-editor-rotation-track-wrap">
-              <input
-                type="range"
-                className="room-scene-editor-rotation-slider"
-                min="-180"
-                max="180"
-                step="1"
-                value={selectedRotationDegrees}
-                onChange={handleRotationChange}
-                aria-label="Rotation degrees"
-              />
-              <div
-                className="room-scene-editor-rotation-ticks"
-                aria-hidden="true"
-              >
-                {ROTATION_STOPS.map((stop) => (
-                  <span key={stop} />
-                ))}
+          {/* 개구부는 벽에 고정된 자리라서 자유 회전이 의미 없다(벽과 바로 충돌한다) */}
+          {!isOpeningSelected && (
+            <div className="room-scene-editor-rotation-panel">
+              <div className="room-scene-editor-rotation-value">
+                회전 : {selectedRotationDegrees}도
+              </div>
+              <div className="room-scene-editor-rotation-track-wrap">
+                <input
+                  type="range"
+                  className="room-scene-editor-rotation-slider"
+                  min="-180"
+                  max="180"
+                  step="1"
+                  value={selectedRotationDegrees}
+                  onChange={handleRotationChange}
+                  aria-label="Rotation degrees"
+                />
+                <div
+                  className="room-scene-editor-rotation-ticks"
+                  aria-hidden="true"
+                >
+                  {ROTATION_STOPS.map((stop) => (
+                    <span key={stop} />
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
+          )}
           {canShowElevationControl && selectedMaxElevationCm > 0 && (
             <div className="room-scene-editor-elevation-panel">
               <div className="room-scene-editor-elevation-value">
@@ -204,7 +216,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
               onClick={startReplaceSelectedObject}
             >
               <span className="room-scene-editor-selection-tool-icon">
-                교체
+                {isOpeningSelected ? "채우기" : "교체"}
               </span>
             </button>
             {canDeleteSelected && (
