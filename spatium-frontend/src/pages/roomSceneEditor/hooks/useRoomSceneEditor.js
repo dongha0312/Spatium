@@ -85,6 +85,11 @@ import {
   useSkyviewMode,
 } from "./useSkyviewMode";
 
+// 카메라가 바닥 아래쪽으로 돌아가 위를 올려다보며(아래에서 위로) 바닥이 훤히 보이는
+// 시점까지 가지 않도록 polar angle 상한을 둔다(180도 = 대상 바로 아래에서 수직으로
+// 올려다보는 시점).
+const FLOOR_VIEW_MAX_POLAR_ANGLE = THREE.MathUtils.degToRad(90);
+
 function debugConfigBoolean(name, defaultValue = false) {
   return optionalConfigBoolean(["debug", name], defaultValue);
 }
@@ -399,6 +404,7 @@ export function useRoomSceneEditor({
     // 작을수록(0에 가까울수록) 더 오래 미끄러지듯 회전한다. 1이면 관성 없이 즉시 멈춘다.
     controls.dampingFactor = 0.15;
     controls.rotateSpeed = 0.3;
+    controls.maxPolarAngle = FLOOR_VIEW_MAX_POLAR_ANGLE;
 
     scene.add(
       new THREE.HemisphereLight(
