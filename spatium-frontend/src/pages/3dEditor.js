@@ -19,7 +19,7 @@ import useLogout from "../hooks/useLogout";
 import useProjectStats from "../hooks/useProjectStats";
 import { FLOOR_COLORS } from "./roomSceneEditor/scene/floorColor";
 
-const FURNITURE_CATALOG_URL = "/testdata/furniture_catalog.json";
+const FURNITURE_CATALOG_URL = "/data/furniture_catalog.json";
 
 const WALL_COLORS = ["#F5F0EA", "#E8DCC8", "#C4956A", "#3A3A3A"];
 
@@ -1053,8 +1053,8 @@ function ThreeDEditor() {
                   </li>
                   <li>
                     개구부로 남겨둔 자리를 클릭하면 다시 선택할 수 있고,
-                    "채우기" 버튼을 누른 뒤 왼쪽 목록에서 문이나 창문을
-                    고르면 그 자리에 채워집니다.
+                    "채우기" 버튼을 누른 뒤 왼쪽 목록에서 문이나 창문을 고르면
+                    그 자리에 채워집니다.
                   </li>
                 </ul>
               </section>
