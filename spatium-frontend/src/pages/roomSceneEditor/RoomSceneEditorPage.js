@@ -141,7 +141,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
         <div className="room-scene-editor-selection-controls">
           <div className="room-scene-editor-rotation-panel">
             <div className="room-scene-editor-rotation-value">
-              {selectedRotationDegrees}
+              회전 : {selectedRotationDegrees}도
             </div>
             <div className="room-scene-editor-rotation-track-wrap">
               <input
@@ -167,7 +167,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
           {canShowElevationControl && selectedMaxElevationCm > 0 && (
             <div className="room-scene-editor-elevation-panel">
               <div className="room-scene-editor-elevation-value">
-                {selectedElevationCm} cm
+                바닥과의 높이 : {selectedElevationCm}cm
               </div>
               <div className="room-scene-editor-elevation-track-wrap">
                 <input

@@ -18,6 +18,10 @@ export function captureCameraView(camera, controls) {
 // Skyview 카메라가 있어야 할 상태(위치/타깃/up/near/far)를 계산만 한다(적용은 안 함).
 // 방이 스캔 당시 월드 축에서 몇 도 돌아가 있는지(roomYawOffsetDegrees)만큼 up 벡터를
 // 같이 돌려서, 화면에서 봤을 때 방 벽이 기울어지지 않고 똑바로 보이게 한다.
+// up 벡터는 두 방향(정방향/반대 방향) 중 현재 카메라가 보고 있는 쪽에 가까운 벽이 화면
+// 아래쪽에 오는 쪽으로 고른다 — 그래야 반대편 시점에서 스카이뷰로 전환할 때 up 벡터가
+// 거의 180도를 뒤집으며 요동치지 않고, 항상 가까운 쪽 벽이 아래로 가는 자연스러운 방향
+// 중에서 더 가까운(회전량이 적은) 쪽으로 전환된다.
 function computeSkyviewCameraState(viewController) {
   const { camera, worldGroup, roomYawOffsetDegrees } = viewController;
   const bounds = new THREE.Box3().setFromObject(worldGroup);
@@ -29,10 +33,21 @@ function computeSkyviewCameraState(viewController) {
   const height =
     (maxFloorSpan / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))) *
     1.1;
-  const up = new THREE.Vector3(0, 0, -1).applyAxisAngle(
+  const baseUp = new THREE.Vector3(0, 0, -1).applyAxisAngle(
     new THREE.Vector3(0, 1, 0),
     THREE.MathUtils.degToRad(roomYawOffsetDegrees || 0),
   );
+
+  const camDirFromCenter = new THREE.Vector3(
+    camera.position.x - center.x,
+    0,
+    camera.position.z - center.z,
+  );
+  const up =
+    camDirFromCenter.lengthSq() > 1e-6 &&
+    baseUp.dot(camDirFromCenter.normalize()) > 0
+      ? baseUp.clone().negate()
+      : baseUp;
 
   return {
     position: new THREE.Vector3(
