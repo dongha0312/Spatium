@@ -3,17 +3,7 @@ import { useRoomSceneEditor } from "./hooks/useRoomSceneEditor";
 import "./RoomSceneEditorPage.css";
 
 const ROTATION_STOPS = [-180, -90, 0, 90, 180];
-const ROTATION_SNAP_THRESHOLD = 4;
 const REPLACEABLE_TYPES = new Set(["object", "door", "window"]);
-
-// 슬라이더 값이 90도 단위 지점(-180/-90/0/90/180) 근처(±4도)면 그 값으로 스냅시킨다.
-function snapRotation(value) {
-  const nearest = ROTATION_STOPS.reduce((closest, stop) =>
-    Math.abs(stop - value) < Math.abs(closest - value) ? stop : closest,
-  );
-
-  return Math.abs(nearest - value) <= ROTATION_SNAP_THRESHOLD ? nearest : value;
-}
 
 // Three.js 씬(useRoomSceneEditor)을 렌더링하는 뷰포트 + 선택된 오브젝트의 정보 패널/
 // 회전·높이 슬라이더/교체·삭제 툴바를 그리는 컴포넌트. 상위(3dEditor.js)는 ref를 통해
@@ -23,8 +13,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     isSkyview = false,
     showMeasurements = false,
     wallColor = null,
+    floorColor = null,
     roomScene = null,
     onSceneChanged,
+    onFloorColorLoaded,
   },
   ref,
 ) {
@@ -48,8 +40,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     isSkyview,
     showMeasurements,
     wallColor,
+    floorColor,
     roomScene,
     onSceneChanged,
+    onFloorColorLoaded,
   });
 
   // 선택된 오브젝트 종류에 따라 어떤 컨트롤을 보여줄지 결정한다.
@@ -63,7 +57,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
   const canShowElevationControl = selectedItem?.sourceType === "object";
 
   const handleRotationChange = (event) => {
-    setSelectedRotationDegrees(snapRotation(Number(event.target.value)));
+    setSelectedRotationDegrees(Number(event.target.value));
   };
 
   const handleElevationChange = (event) => {

@@ -51,9 +51,9 @@ import {
   createFallbackReferenceTemplate,
   createFurnitureItemFromCatalog,
   estimateFloorY,
+  estimateRoomYawOffsetDegrees,
   formatCameraViewAngle,
   isReplaceableObject,
-  normalizeRotationDegrees,
   normalizedDimensions,
   normalizedReferenceDimensions,
   REFERENCE_CATEGORIES,
@@ -75,11 +75,13 @@ import {
   applyRoomWallColor,
   updateViewFacingWalls,
 } from "../scene/wallVisibility";
+import { applyRoomFloorColor } from "../scene/floorColor";
 import { useSceneConfigStatus } from "./useSceneConfigStatus";
 import { useSelectionState } from "./useSelectionState";
 import {
   applySkyviewMode,
   captureCameraView,
+  updateCameraTransition,
   useSkyviewMode,
 } from "./useSkyviewMode";
 
@@ -96,8 +98,10 @@ export function useRoomSceneEditor({
   isSkyview = false,
   showMeasurements = false,
   wallColor = null,
+  floorColor = null,
   roomScene = null,
   onSceneChanged,
+  onFloorColorLoaded,
 } = {}) {
   const containerRef = useRef(null);
   const syncSelectedRef = useRef(null);
@@ -109,7 +113,9 @@ export function useRoomSceneEditor({
   const sceneActionsRef = useRef(null);
   const showMeasurementsRef = useRef(showMeasurements);
   const wallColorRef = useRef(wallColor);
+  const floorColorRef = useRef(floorColor);
   const onSceneChangedRef = useRef(onSceneChanged);
+  const onFloorColorLoadedRef = useRef(onFloorColorLoaded);
   const { isSceneConfigReady, setStatus, error, setError } =
     useSceneConfigStatus();
   const {
@@ -152,8 +158,17 @@ export function useRoomSceneEditor({
   }, [wallColor]);
 
   useEffect(() => {
+    floorColorRef.current = floorColor;
+    sceneActionsRef.current?.setFloorColor?.(floorColor);
+  }, [floorColor]);
+
+  useEffect(() => {
     onSceneChangedRef.current = onSceneChanged;
   }, [onSceneChanged]);
+
+  useEffect(() => {
+    onFloorColorLoadedRef.current = onFloorColorLoaded;
+  }, [onFloorColorLoaded]);
 
   // 오브젝트 하나의 최신 상태를 selectedItem/editedItems React state에 반영한다.
   function updateEditedItem(object) {
@@ -276,6 +291,7 @@ export function useRoomSceneEditor({
       sourceMetadataRef.current,
       editedItems,
       roomModelRef.current,
+      floorColorRef.current,
     );
 
     setError("");
@@ -315,6 +331,7 @@ export function useRoomSceneEditor({
     let nextObjectIndex = 0;
     let floorY = 0;
     let ceilingY = 0;
+    let roomYawOffsetDegrees = 0;
     const editableRoots = [];
     const referenceRoots = [];
     const pickTargets = [];
@@ -378,6 +395,10 @@ export function useRoomSceneEditor({
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    // 관성(드래그 후 관성으로 계속 회전) 정도. 값이 클수록 감속이 빨라져 관성이 약해지고,
+    // 작을수록(0에 가까울수록) 더 오래 미끄러지듯 회전한다. 1이면 관성 없이 즉시 멈춘다.
+    controls.dampingFactor = 0.15;
+    controls.rotateSpeed = 0.3;
 
     scene.add(
       new THREE.HemisphereLight(
@@ -399,6 +420,10 @@ export function useRoomSceneEditor({
       controls,
       worldGroup,
       defaultView: null,
+      baseMaxDistance: null,
+      roomYawOffsetDegrees: 0,
+      transition: null,
+      isInSkyview: false,
     };
 
     const furnitureLayer = new THREE.Group();
@@ -957,7 +982,7 @@ export function useRoomSceneEditor({
         selectedObject ? objectToEditableJson(selectedObject) : null,
       );
       setSelectedRotationDegreesState(
-        rotationDegreesFromObject(selectedObject),
+        rotationDegreesFromObject(selectedObject, roomYawOffsetDegrees),
       );
       const elevationBounds = elevationBoundsForObject(selectedObject);
       setSelectedElevationCmState(elevationBounds.currentCm);
@@ -1128,13 +1153,30 @@ export function useRoomSceneEditor({
         roomModel.name = jsonRoomModel ? "JsonRoomLayer" : "RoomLayer";
         prepareRoomModel(roomModel);
         worldGroup.add(roomModel);
-        addRoomMeasurements(calculateRoomMeasurements(roomModel));
+        const roomMeasurements = calculateRoomMeasurements(roomModel);
+        addRoomMeasurements(roomMeasurements);
+        // 방이 월드 좌표축에서 얼마나 돌아가 있는지 추정해둔다 — 회전 슬라이더/표시 각도를
+        // "방 기준 상대 각도"로 보여주기 위함(estimateRoomYawOffsetDegrees 참고). Skyview
+        // 카메라도 이 값을 참고해서 화면상 방이 똑바로(축에 맞게) 보이도록 돌린다.
+        roomYawOffsetDegrees = estimateRoomYawOffsetDegrees(
+          roomMeasurements?.outlineSegments,
+        );
+        if (viewControllerRef.current) {
+          viewControllerRef.current.roomYawOffsetDegrees = roomYawOffsetDegrees;
+        }
         const roomBoundsBox = new THREE.Box3().setFromObject(roomModel);
         const roomCenter = roomBoundsBox.getCenter(new THREE.Vector3());
         floorY = estimateFloorY(metadata.objects, roomModel);
         ceilingY = roomBoundsBox.isEmpty() ? floorY : roomBoundsBox.max.y;
         wallColliders.push(...createWallColliders(roomModel));
         applyRoomWallColor(wallColliders, wallColorRef.current);
+        // 이전에 저장된 바닥 색상이 있으면(부모의 floorColor prop보다 우선) 그걸 복원한다.
+        // 부모는 마운트 시점에 이 값을 알 수 없으므로(useState(null)로 시작), 로드가 끝난
+        // 뒤 onFloorColorLoaded로 알려줘서 상위 상태와 UI를 동기화한다.
+        const persistedFloorColor = metadata._spatiumFloorColor || null;
+        floorColorRef.current = persistedFloorColor;
+        applyRoomFloorColor(roomModel, persistedFloorColor);
+        onFloorColorLoadedRef.current?.(persistedFloorColor);
         if (wallConfigBoolean("showColliderDebug")) {
           referenceLayer.add(createWallColliderVisuals(wallColliders));
         }
@@ -1465,16 +1507,19 @@ export function useRoomSceneEditor({
             markSceneChanged();
             return true;
           },
-          // 회전 슬라이더로 각도를 직접 지정한다. 마찬가지로 벽 충돌 시 되돌린다.
+          // 회전 슬라이더로 각도를 직접 지정한다. 슬라이더 값은 "방 기준 상대 각도"이므로
+          // roomYawOffsetRef를 더해 월드 절대 각도로 바꿔서 적용한다. 마찬가지로 벽 충돌 시
+          // 되돌린다.
           setSelectedRotationDegrees: (degrees) => {
             const object = selectedObjectRef.current;
             if (!isReplaceableObject(object)) return false;
 
-            const normalized = normalizeRotationDegrees(Number(degrees) || 0);
+            const roomRelativeDegrees = Number(degrees) || 0;
+            const worldDegrees = roomRelativeDegrees + roomYawOffsetDegrees;
             const previousQuaternion = object.quaternion.clone();
             object.quaternion.setFromAxisAngle(
               upAxis,
-              THREE.MathUtils.degToRad(normalized),
+              THREE.MathUtils.degToRad(worldDegrees),
             );
             object.updateWorldMatrix(true, false);
             if (hasWallCollision(object, activeColliders())) {
@@ -1538,7 +1583,10 @@ export function useRoomSceneEditor({
           // 재생성 + 기존 가구 재보정까지) reference를 제거하고, 아니면 그냥 제거만 한다.
           deleteSelectedReference: (fillWithWall) => {
             const object = selectedObjectRef.current;
-            if (!object || !REFERENCE_CATEGORIES.has(object.userData.sourceType)) {
+            if (
+              !object ||
+              !REFERENCE_CATEGORIES.has(object.userData.sourceType)
+            ) {
               return false;
             }
 
@@ -1560,12 +1608,17 @@ export function useRoomSceneEditor({
             setReplaceMode(false);
             syncSceneState(null);
             markSceneChanged();
-            setStatus(fillWithWall ? "벽으로 메웠습니다." : "개구부로 남겼습니다.");
+            setStatus(
+              fillWithWall ? "벽으로 메웠습니다." : "개구부로 남겼습니다.",
+            );
             window.setTimeout(() => setStatus(""), 900);
             return true;
           },
           setWallColor: (color) => {
             applyRoomWallColor(wallColliders, color);
+          },
+          setFloorColor: (color) => {
+            applyRoomFloorColor(roomModel, color);
           },
         };
 
@@ -1610,13 +1663,20 @@ export function useRoomSceneEditor({
 
         if (editableRoots[0]) selectObject(editableRoots[0]);
         if (!editableRoots.length) syncSceneState(null);
-        frameObject(camera, controls, worldGroup);
+        // 초기 프레이밍 거리보다 휠로 더 멀리 줌아웃할 수 없게 막는다.
+        const framedDistance = frameObject(camera, controls, worldGroup);
+        if (framedDistance) {
+          controls.maxDistance = framedDistance;
+        }
         if (viewControllerRef.current) {
+          viewControllerRef.current.baseMaxDistance = controls.maxDistance;
           viewControllerRef.current.defaultView = captureCameraView(
             camera,
             controls,
           );
-          applySkyviewMode(viewControllerRef.current, isSkyviewRef.current);
+          applySkyviewMode(viewControllerRef.current, isSkyviewRef.current, {
+            instant: true,
+          });
         }
         setStatus("");
       })
@@ -1631,10 +1691,15 @@ export function useRoomSceneEditor({
       });
 
     // 매 프레임 실행되는 렌더 루프. OrbitControls damping 갱신, 카메라를 가리는 벽/문/창문
-    // 투명 처리, 카메라 각도 배지 갱신, 렌더링까지 담당한다.
+    // 투명 처리, 카메라 각도 배지 갱신, 렌더링까지 담당한다. Skyview 전환 애니메이션이
+    // 진행 중이면(updateCameraTransition이 true 반환) 그 프레임엔 일반 controls.update()를
+    // 건너뛴다 — 안 그러면 OrbitControls의 내부 상태가 전환 중 직접 설정한 카메라 값과
+    // 충돌한다.
     function animate() {
       frameId = requestAnimationFrame(animate);
-      controls.update();
+      if (!updateCameraTransition(viewControllerRef.current)) {
+        controls.update();
+      }
       updateViewFacingWalls(wallColliders, camera, referenceRoots);
       if (cameraAngleBadge) {
         cameraAngleBadge.textContent = formatCameraViewAngle(camera);
