@@ -14,18 +14,18 @@ import useProjectStats from "../hooks/useProjectStats";
 const STEPS = [
   {
     img: "/images/steps/step1.gif",
+    title: "앱으로 방 스캔해서 내보내기",
+    desc: "앱으로 내 방을 LiDAR 스캔하고 3D 파일로 내보내요",
+  },
+  {
+    img: "/images/steps/step2.gif",
     title: "새 프로젝트 생성",
     desc: "프로젝트를 만들어 공간 작업을 시작해요",
   },
   {
-    img: "/images/steps/step2.gif",
-    title: "새 룸 만들기",
-    desc: "프로젝트 안에 방(룸)을 추가해요",
-  },
-  {
     img: "/images/steps/step3.gif",
-    title: "스캔한 3D 업로드",
-    desc: "LiDAR로 스캔한 내 방 3D 파일을 업로드해요",
+    title: "새 룸 만들기",
+    desc: "스캔한 3D 파일을 업로드해 룸을 추가해요",
   },
   {
     img: "/images/steps/step4.gif",
