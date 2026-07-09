@@ -29,8 +29,8 @@ function applyCameraView(camera, controls, view) {
 
 // 카메라를 방 전체가 내려다보이는 위치(정통 위에서 아래로)로 옮긴다.
 // 방의 bounding box 크기와 FOV로 적당한 높이를 계산해서 전체가 화면에 들어오게 한다.
-function applySkyviewCamera(viewController) {
-  const { camera, controls, worldGroup } = viewController;
+function computeSkyviewCameraState(viewController) {
+  const { camera, controls, worldGroup, roomYawOffsetDegrees } = viewController;
   const bounds = new THREE.Box3().setFromObject(worldGroup);
   if (bounds.isEmpty()) return null;
 
