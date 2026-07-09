@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "spatium-frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "spatium-frontend", "start"],
+      "port": 3000,
+      "autoPort": true
+    }
+  ]
+}

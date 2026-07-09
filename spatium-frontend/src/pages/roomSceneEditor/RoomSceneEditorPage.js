@@ -3,7 +3,6 @@ import { useRoomSceneEditor } from "./hooks/useRoomSceneEditor";
 import "./RoomSceneEditorPage.css";
 
 const ROTATION_STOPS = [-180, -90, 0, 90, 180];
-const ROTATION_SNAP_THRESHOLD = 4;
 const REPLACEABLE_TYPES = new Set(["object", "door", "window"]);
 
 // 슬라이더 값이 90도 단위 지점(-180/-90/0/90/180) 근처(±4도)면 그 값으로 스냅시킨다.
@@ -23,8 +22,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     isSkyview = false,
     showMeasurements = false,
     wallColor = null,
+    floorColor = null,
     roomScene = null,
     onSceneChanged,
+    onFloorColorLoaded,
   },
   ref,
 ) {
@@ -48,8 +49,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     isSkyview,
     showMeasurements,
     wallColor,
+    floorColor,
     roomScene,
     onSceneChanged,
+    onFloorColorLoaded,
   });
 
   // 선택된 오브젝트 종류에 따라 어떤 컨트롤을 보여줄지 결정한다.
@@ -63,7 +66,15 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
   const canShowElevationControl = selectedItem?.sourceType === "object";
 
   const handleRotationChange = (event) => {
-    setSelectedRotationDegrees(snapRotation(Number(event.target.value)));
+    setSelectedRotationDegrees(Number(event.target.value));
+  };
+
+  const handleElevationChange = (event) => {
+    setSelectedElevationCm(Number(event.target.value));
+  };
+
+  const handleDeleteAsOpening = () => {
+    deleteSelectedReference(false);
   };
 
   const handleElevationChange = (event) => {
@@ -147,7 +158,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
         <div className="room-scene-editor-selection-controls">
           <div className="room-scene-editor-rotation-panel">
             <div className="room-scene-editor-rotation-value">
-              {selectedRotationDegrees}
+              회전 : {selectedRotationDegrees}도
             </div>
             <div className="room-scene-editor-rotation-track-wrap">
               <input
@@ -173,7 +184,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
           {canShowElevationControl && selectedMaxElevationCm > 0 && (
             <div className="room-scene-editor-elevation-panel">
               <div className="room-scene-editor-elevation-value">
-                {selectedElevationCm} cm
+                바닥과의 높이 : {selectedElevationCm}cm
               </div>
               <div className="room-scene-editor-elevation-track-wrap">
                 <input

@@ -286,7 +286,12 @@ export function createRoomModelFromJson(roomJson) {
 // 최종 metadata JSON을 만든다. objects/doors/windows는 현재 씬 기준으로 통째로 교체하고,
 // _spatiumRoom(방 mesh 자체)도 다시 직렬화해서 넣는다 — 이렇게 저장된 JSON은 원본 USD
 // 모델 없이도 다시 열어서 편집을 이어갈 수 있다("replayable").
-export function createReplayableMetadataJson(metadata, editedItems, roomModel) {
+export function createReplayableMetadataJson(
+  metadata,
+  editedItems,
+  roomModel,
+  floorColor = null,
+) {
   const nextMetadata = cloneJsonValue(metadata) || {};
   const originalObjects = nextMetadata.objects || [];
   const originalDoors = nextMetadata.doors || [];
@@ -342,6 +347,7 @@ export function createReplayableMetadataJson(metadata, editedItems, roomModel) {
     ) ||
     nextMetadata._spatiumRoom ||
     null;
+  nextMetadata._spatiumFloorColor = floorColor || null;
   nextMetadata._spatiumExport = {
     version: 1,
     exportedAt: new Date().toISOString(),

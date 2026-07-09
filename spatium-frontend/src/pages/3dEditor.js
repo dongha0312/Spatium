@@ -17,6 +17,7 @@ import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
 import { getRoomList, getRoomSceneData } from "../springApi/RoomSpringBootApi";
 import useLogout from "../hooks/useLogout";
 import useProjectStats from "../hooks/useProjectStats";
+import { FLOOR_COLORS } from "./roomSceneEditor/scene/floorColor";
 
 const FURNITURE_CATALOG_URL = "/data/furniture_catalog.json";
 
@@ -52,6 +53,8 @@ function ThreeDEditor() {
   const [isSkyview, setIsSkyview] = useState(false);
   const [wallColor, setWallColor] = useState(null);
   const [wallColorPickerOpen, setWallColorPickerOpen] = useState(false);
+  const [floorColor, setFloorColor] = useState(null);
+  const [floorColorPickerOpen, setFloorColorPickerOpen] = useState(false);
   const [showMeasurements, setShowMeasurements] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -406,10 +409,12 @@ function ThreeDEditor() {
   const toggleSkyview = () => {
     setIsSkyview((prev) => !prev);
     setWallColorPickerOpen(false);
+    setFloorColorPickerOpen(false);
   };
 
   const toggleWallColorPicker = () => {
     setWallColorPickerOpen((prev) => !prev);
+    setFloorColorPickerOpen(false);
   };
 
   const handleSelectWallColor = (color) => {
@@ -417,9 +422,21 @@ function ThreeDEditor() {
     setWallColorPickerOpen(false);
   };
 
+  const toggleFloorColorPicker = () => {
+    setFloorColorPickerOpen((prev) => !prev);
+    setWallColorPickerOpen(false);
+  };
+
+  const handleSelectFloorColor = (color) => {
+    setFloorColor(color);
+    setFloorColorPickerOpen(false);
+    handleSceneChanged();
+  };
+
   const toggleMeasurements = () => {
     setShowMeasurements((prev) => !prev);
     setWallColorPickerOpen(false);
+    setFloorColorPickerOpen(false);
   };
 
   const handleCancel = () => {
@@ -670,8 +687,10 @@ function ThreeDEditor() {
                   isSkyview={isSkyview}
                   showMeasurements={showMeasurements}
                   wallColor={wallColor}
+                  floorColor={floorColor}
                   roomScene={roomScene}
                   onSceneChanged={handleSceneChanged}
+                  onFloorColorLoaded={setFloorColor}
                 />
               )}
             </div>
@@ -712,7 +731,7 @@ function ThreeDEditor() {
               <div className="ed-viewbar-icon-wrap">
                 <button
                   type="button"
-                  className={`ed-viewbar-icon-btn${
+                  className={`ed-viewbar-btn${
                     wallColorPickerOpen ? " ed-viewbar-active" : ""
                   }`}
                   onClick={toggleWallColorPicker}
@@ -735,6 +754,7 @@ function ThreeDEditor() {
                       stroke="none"
                     />
                   </svg>
+                  벽 색상
                 </button>
 
                 {wallColorPickerOpen && (
@@ -757,9 +777,54 @@ function ThreeDEditor() {
                 )}
               </div>
 
+              <div className="ed-viewbar-icon-wrap">
+                <button
+                  type="button"
+                  className={`ed-viewbar-btn${
+                    floorColorPickerOpen ? " ed-viewbar-active" : ""
+                  }`}
+                  onClick={toggleFloorColorPicker}
+                  aria-label="바닥 색상 변경"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <rect x="3" y="3" width="8" height="8" rx="1.2" />
+                    <rect x="13" y="3" width="8" height="8" rx="1.2" />
+                    <rect x="3" y="13" width="8" height="8" rx="1.2" />
+                    <rect x="13" y="13" width="8" height="8" rx="1.2" />
+                  </svg>
+                  바닥 색상
+                </button>
+
+                {floorColorPickerOpen && (
+                  <div className="ed-wallcolor-popover">
+                    {FLOOR_COLORS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        className={`ed-wallcolor-swatch${
+                          floorColor === color
+                            ? " ed-wallcolor-swatch-active"
+                            : ""
+                        }`}
+                        style={{ background: color }}
+                        onClick={() => handleSelectFloorColor(color)}
+                        aria-label={`Floor color ${color}`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <button
                 type="button"
-                className={`ed-viewbar-icon-btn${showMeasurements ? " ed-viewbar-active" : ""}`}
+                className={`ed-viewbar-btn${showMeasurements ? " ed-viewbar-active" : ""}`}
                 onClick={toggleMeasurements}
                 aria-label="측정 모드"
                 title="측정 모드"
@@ -787,6 +852,7 @@ function ThreeDEditor() {
                     transform="rotate(-15 12 12)"
                   />
                 </svg>
+                측정 모드
               </button>
             </div>
           </div>

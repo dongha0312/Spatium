@@ -63,10 +63,11 @@ export function disposeScene(scene) {
 }
 
 // 카메라를 대상 오브젝트 전체가 한눈에 보이는 위치로 이동시킨다 (초기 로딩 후 방 전체를
-// 보여줄 때 사용).
+// 보여줄 때 사용). 반환값(초기 프레이밍 거리)은 휠 줌아웃 최대 거리 제한(maxDistance)을
+// 정하는 데 쓰인다.
 export function frameObject(camera, controls, object) {
   const bounds = new THREE.Box3().setFromObject(object);
-  if (bounds.isEmpty()) return;
+  if (bounds.isEmpty()) return null;
 
   const center = bounds.getCenter(new THREE.Vector3());
   const size = bounds.getSize(new THREE.Vector3());
@@ -83,6 +84,7 @@ export function frameObject(camera, controls, object) {
   camera.updateProjectionMatrix();
   controls.target.copy(center);
   controls.update();
+  return distance;
 }
 
 // metadata의 item(가구/문/창문)에 저장된 transform 행렬을 position/quaternion/scale로 분해한다.

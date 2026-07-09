@@ -118,12 +118,45 @@ export function normalizeRotationDegrees(degrees) {
   return Math.round(normalized);
 }
 
-// 오브젝트의 현재 Y축 회전(quaternion)을 -180~180도 정수로 변환한다.
-export function rotationDegreesFromObject(object) {
+// 오브젝트의 현재 Y축 회전(quaternion)을 -180~180도 정수로 변환한다. roomYawOffsetDegrees를
+// 주면 그만큼 뺀 "방 기준 상대 각도"를 돌려준다(estimateRoomYawOffsetDegrees 참고).
+export function rotationDegreesFromObject(object, roomYawOffsetDegrees = 0) {
   if (!object) return 0;
 
   const euler = new THREE.Euler().setFromQuaternion(object.quaternion, "YXZ");
-  return normalizeRotationDegrees(THREE.MathUtils.radToDeg(euler.y));
+  return normalizeRotationDegrees(
+    THREE.MathUtils.radToDeg(euler.y) - roomYawOffsetDegrees,
+  );
+}
+
+// 방 외곽선(outlineSegments)으로부터 "방이 월드 좌표축에서 얼마나 돌아가 있는지"를
+// 추정한다(-45~45도). LiDAR/ARKit 스캔은 중력(Y축)만 정렬하고 좌우(X/Z) 방향은 스캔
+// 시작 시점 기기 방향 기준이라, 방의 실제 벽 방향이 월드 축의 0/90/180도와 정확히 안
+// 맞을 수 있다. 이 오프셋을 회전 각도 표시/입력에 반영하면 "0/90/180"이 실제로 벽에
+// 딱 붙는 각도가 된다.
+export function estimateRoomYawOffsetDegrees(outlineSegments) {
+  if (!outlineSegments?.length) return 0;
+
+  let sinSum = 0;
+  let cosSum = 0;
+
+  outlineSegments.forEach((segment) => {
+    const dx = segment.end.x - segment.start.x;
+    const dz = segment.end.z - segment.start.z;
+    const length = Math.hypot(dx, dz);
+    if (length < 1e-6) return;
+
+    // 벽 방향은 90도 주기로만 의미가 있다(반대 방향/수직 벽 모두 같은 정렬 오프셋을
+    // 나타냄). 각도를 4배로 만들어(90도 주기 -> 360도 주기) 표준 원형 평균(atan2)을
+    // 구한 뒤 다시 4로 나누면, 여러 벽의 방향을 길이 가중 평균낸 "정렬 오프셋"이 나온다.
+    const angle = Math.atan2(dx, dz) * 4;
+    sinSum += Math.sin(angle) * length;
+    cosSum += Math.cos(angle) * length;
+  });
+
+  if (!sinSum && !cosSum) return 0;
+
+  return THREE.MathUtils.radToDeg(Math.atan2(sinSum, cosSum) / 4);
 }
 
 // 수평 방향 벡터를 Y축 yaw 각도(도)로 변환한다.
