@@ -1516,6 +1516,7 @@ export function useRoomSceneEditor({
           // 회전 슬라이더로 각도를 직접 지정한다. 슬라이더 값은 "방 기준 상대 각도"이므로
           // roomYawOffsetRef를 더해 월드 절대 각도로 바꿔서 적용한다. 마찬가지로 벽 충돌 시
           // 되돌린다.
+          // 회전 슬라이더로 각도를 직접 지정한다. 마찬가지로 벽 충돌 시 되돌린다.
           setSelectedRotationDegrees: (degrees) => {
             const object = selectedObjectRef.current;
             if (!isReplaceableObject(object)) return false;
@@ -1589,10 +1590,7 @@ export function useRoomSceneEditor({
           // 재생성 + 기존 가구 재보정까지) reference를 제거하고, 아니면 그냥 제거만 한다.
           deleteSelectedReference: (fillWithWall) => {
             const object = selectedObjectRef.current;
-            if (
-              !object ||
-              !REFERENCE_CATEGORIES.has(object.userData.sourceType)
-            ) {
+            if (!object || !REFERENCE_CATEGORIES.has(object.userData.sourceType)) {
               return false;
             }
 
@@ -1614,9 +1612,7 @@ export function useRoomSceneEditor({
             setReplaceMode(false);
             syncSceneState(null);
             markSceneChanged();
-            setStatus(
-              fillWithWall ? "벽으로 메웠습니다." : "개구부로 남겼습니다.",
-            );
+            setStatus(fillWithWall ? "벽으로 메웠습니다." : "개구부로 남겼습니다.");
             window.setTimeout(() => setStatus(""), 900);
             return true;
           },
@@ -1701,6 +1697,7 @@ export function useRoomSceneEditor({
     // 진행 중이면(updateCameraTransition이 true 반환) 그 프레임엔 일반 controls.update()를
     // 건너뛴다 — 안 그러면 OrbitControls의 내부 상태가 전환 중 직접 설정한 카메라 값과
     // 충돌한다.
+    // 투명 처리, 카메라 각도 배지 갱신, 렌더링까지 담당한다.
     function animate() {
       frameId = requestAnimationFrame(animate);
       if (!updateCameraTransition(viewControllerRef.current)) {

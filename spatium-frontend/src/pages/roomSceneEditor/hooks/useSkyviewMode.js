@@ -15,15 +15,22 @@ export function captureCameraView(camera, controls) {
   };
 }
 
-// Skyview 카메라가 있어야 할 상태(위치/타깃/up/near/far)를 계산만 한다(적용은 안 함).
-// 방이 스캔 당시 월드 축에서 몇 도 돌아가 있는지(roomYawOffsetDegrees)만큼 up 벡터를
-// 같이 돌려서, 화면에서 봤을 때 방 벽이 기울어지지 않고 똑바로 보이게 한다.
-// up 벡터는 두 방향(정방향/반대 방향) 중 현재 카메라가 보고 있는 쪽에 가까운 벽이 화면
-// 아래쪽에 오는 쪽으로 고른다 — 그래야 반대편 시점에서 스카이뷰로 전환할 때 up 벡터가
-// 거의 180도를 뒤집으며 요동치지 않고, 항상 가까운 쪽 벽이 아래로 가는 자연스러운 방향
-// 중에서 더 가까운(회전량이 적은) 쪽으로 전환된다.
-function computeSkyviewCameraState(viewController) {
-  const { camera, worldGroup, roomYawOffsetDegrees } = viewController;
+// 저장해둔 카메라 스냅샷으로 되돌린다.
+function applyCameraView(camera, controls, view) {
+  camera.position.copy(view.position);
+  camera.up.copy(view.up);
+  camera.near = view.near;
+  camera.far = view.far;
+  camera.updateProjectionMatrix();
+  controls.target.copy(view.target);
+  controls.enableRotate = true;
+  controls.update();
+}
+
+// 카메라를 방 전체가 내려다보이는 위치(정통 위에서 아래로)로 옮긴다.
+// 방의 bounding box 크기와 FOV로 적당한 높이를 계산해서 전체가 화면에 들어오게 한다.
+function applySkyviewCamera(viewController) {
+  const { camera, controls, worldGroup } = viewController;
   const bounds = new THREE.Box3().setFromObject(worldGroup);
   if (bounds.isEmpty()) return null;
 

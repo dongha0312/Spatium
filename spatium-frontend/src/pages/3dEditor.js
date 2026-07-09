@@ -736,6 +736,7 @@ function ThreeDEditor() {
                   }`}
                   onClick={toggleWallColorPicker}
                   aria-label="벽 색상 변경"
+                  title="벽 색상 변경"
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -826,6 +827,7 @@ function ThreeDEditor() {
                 className={`ed-viewbar-btn${showMeasurements ? " ed-viewbar-active" : ""}`}
                 onClick={toggleMeasurements}
                 aria-label="측정 모드"
+                title="측정 모드"
               >
                 <svg
                   viewBox="0 0 24 24"
