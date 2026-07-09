@@ -356,6 +356,57 @@ export function createEditableFurnitureModel(modelTemplate, item, index) {
   return { root, pickTargets: [hitBox] };
 }
 
+// 문/창문을 "개구부로 삭제"했을 때 그 자리에 남기는 마커를 만든다. 벽에 뚫린 구멍
+// 자체는 이미 존재하므로 모델 없이 클릭 가능한 hitBox와 항상 보이는 테두리만 만든다.
+// 나중에 카탈로그에서 문/창문을 선택해 이 마커를 "교체"하면 그 자리에 다시 채워진다.
+export function createOpeningMarker(item, index) {
+  const dimensions = item.dimensions || {};
+  const targetSize = new THREE.Vector3(
+    Math.max(dimensions.x || 0.1, 0.04),
+    Math.max(dimensions.y || 0.1, 0.04),
+    Math.max(dimensions.z || 0.04, 0.04),
+  );
+  const localObb = createCenteredLocalObb(targetSize);
+  const root = new THREE.Group();
+  const transform = decomposeRoomTransform(item);
+  const hitBox = createCollisionHitBox(localObb, sceneColor("openingReference"));
+  const edge = createCollisionBoxLine(localObb, 0.55);
+
+  root.name = `opening-${index + 1}`;
+  root.position.copy(transform.position);
+  root.quaternion.copy(transform.quaternion);
+  root.scale.copy(transform.scale);
+
+  edge.material.color.set(sceneColor("openingReference"));
+  edge.visible = true;
+
+  root.userData = {
+    editable: false,
+    category: "opening",
+    roomItem: { ...item, category: "opening" },
+    sourceType: "opening",
+    sourceIndex: index,
+    localObb,
+    edgeLine: edge,
+    baseEdgeColor: new THREE.Color(sceneColor("openingReference")),
+    selectedEdgeColor: new THREE.Color(sceneColor("selectedEdge")),
+    collisionColor: new THREE.Color(sceneColor("collision")),
+    collisions: [],
+    initialPosition: transform.position.clone(),
+    initialQuaternion: transform.quaternion.clone(),
+    initialScale: transform.scale.clone(),
+    lastValidPosition: transform.position.clone(),
+    lastValidQuaternion: transform.quaternion.clone(),
+    lastValidScale: transform.scale.clone(),
+  };
+
+  hitBox.userData.editableRoot = root;
+  edge.userData.editableRoot = root;
+
+  root.add(hitBox, edge);
+  return { root, pickTargets: [hitBox] };
+}
+
 // 문 reference 오브젝트를 만든다 (editable:false, sourceType:"door"). 두께/위치는
 // fitReferenceToWallThickness로 속한 벽에 맞춰 보정하고, 유리 재질은 투명 처리한다.
 export function createDoorModel(doorTemplate, item, index, wallColliders = []) {

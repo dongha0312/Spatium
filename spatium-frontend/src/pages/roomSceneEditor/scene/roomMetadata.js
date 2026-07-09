@@ -296,12 +296,18 @@ export function createReplayableMetadataJson(
   const originalObjects = nextMetadata.objects || [];
   const originalDoors = nextMetadata.doors || [];
   const originalWindows = nextMetadata.windows || [];
+  const originalOpenings = nextMetadata.openings || [];
   const objectEdits = editedItems.filter(
     (item) => item.sourceType === "object",
   );
   const doorEdits = editedItems.filter((item) => item.sourceType === "door");
   const windowEdits = editedItems.filter(
     (item) => item.sourceType === "window",
+  );
+  // 개구부(문/창문을 "개구부로 삭제"해서 남은 빈 구멍 마커)도 저장해둬야 다음에
+  // 방을 다시 열었을 때 그 자리에 문/창문을 채워 넣을 수 있다.
+  const openingEdits = editedItems.filter(
+    (item) => item.sourceType === "opening",
   );
 
   const applyReferenceEdit = (edit, originalItems) => {
@@ -339,6 +345,9 @@ export function createReplayableMetadataJson(
   );
   nextMetadata.windows = windowEdits.map((edit) =>
     applyReferenceEdit(edit, originalWindows),
+  );
+  nextMetadata.openings = openingEdits.map((edit) =>
+    applyReferenceEdit(edit, originalOpenings),
   );
   nextMetadata._spatiumRoom =
     serializeRoomModelToJson(

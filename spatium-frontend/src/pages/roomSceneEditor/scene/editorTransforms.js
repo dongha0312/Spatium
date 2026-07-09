@@ -91,9 +91,21 @@ export function createFurnitureItemFromCatalog(
   };
 }
 
+// metadata에 저장된 가구 하나의 y값이 실제 방 바닥 높이와 이 이상 어긋나면(오염된 저장
+// 데이터 등) 신뢰하지 않는다. 예: 예전 버전 버그로 특정 가구가 바닥에서 수 미터 떨어진
+// 채 저장된 경우, 그 값을 기준으로 삼으면 그 이후 추가되는 모든 가구가 같이 떠버린다.
+const FLOOR_Y_MISMATCH_TOLERANCE = 0.5; // meters
+
 // 방의 바닥 Y좌표를 추정한다. metadata에 저장된 가구들의 (위치 - 높이/2) 중 최솟값을
-// 우선 쓰고, 가구가 하나도 없으면 방 모델의 bounding box 최저점을 쓴다.
-export function estimateFloorY(metadataObjects, roomModel) {
+// 우선 쓰되, roomFloorY(호출자가 넘겨주는, 실제 바닥 mesh 기준의 신뢰할 수 있는 높이)와
+// 너무 어긋나면(오염된 데이터로 보고) roomFloorY로 대체한다. 가구가 하나도 없으면
+// 처음부터 roomFloorY를 쓴다.
+// roomFloorY는 방 전체 bounding box의 최저점이 아니라 calculateRoomMeasurements()가
+// 고른 "가장 넓은 바닥 면적 그룹"의 높이여야 한다 — 방 모델에 섞여 들어간 작은 오염된
+// mesh(과거 버그로 잘못 저장된 벽 메움 등) 하나가 전체 bounding box를 끌어내리는 것을
+// 막기 위함이다.
+export function estimateFloorY(metadataObjects, roomFloorY) {
+  const hasRoomFloorY = Number.isFinite(roomFloorY);
   const objectFloorYs = (metadataObjects || [])
     .map((item) => {
       const y = Number(item.transform?.columns?.[3]?.[1]);
@@ -104,12 +116,19 @@ export function estimateFloorY(metadataObjects, roomModel) {
     })
     .filter((value) => value != null);
 
-  if (objectFloorYs.length) {
-    return Math.min(...objectFloorYs);
+  if (!objectFloorYs.length) {
+    return hasRoomFloorY ? roomFloorY : 0;
   }
 
-  const bounds = new THREE.Box3().setFromObject(roomModel);
-  return bounds.isEmpty() ? 0 : bounds.min.y;
+  const candidateFloorY = Math.min(...objectFloorYs);
+  if (
+    hasRoomFloorY &&
+    Math.abs(candidateFloorY - roomFloorY) > FLOOR_Y_MISMATCH_TOLERANCE
+  ) {
+    return roomFloorY;
+  }
+
+  return candidateFloorY;
 }
 
 // 각도를 -180 ~ 180 범위로 정규화한다 (예: 190 -> -170).
@@ -179,14 +198,16 @@ export function formatCameraViewAngle(camera) {
   return `View Yaw ${yaw}째 / Pitch ${pitch}째`;
 }
 
-// 교체(Replace) 가능한 오브젝트인지 판단한다: 이동 가능한 일반 가구이거나, 문/창문이면 된다.
+// 교체(Replace) 가능한 오브젝트인지 판단한다: 이동 가능한 일반 가구이거나, 문/창문이거나,
+// (문/창문을 채워 넣을 수 있는) 개구부 마커면 된다.
 export function isReplaceableObject(object) {
   if (!object) return false;
 
   return (
     canTransformObject(object) ||
     object.userData.sourceType === "door" ||
-    object.userData.sourceType === "window"
+    object.userData.sourceType === "window" ||
+    object.userData.sourceType === "opening"
   );
 }
 

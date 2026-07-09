@@ -37,12 +37,14 @@ import {
   createDoorModel,
   createEditableFurniture,
   createEditableFurnitureModel,
+  createOpeningMarker,
   createWallInfillMesh,
   createWindowModel,
 } from "../scene/objectFactory";
 import {
   createWallColliderVisuals,
   createWallColliders,
+  isUsdFloorMesh,
   prepareRoomModel,
 } from "../scene/wallColliders";
 import { calculateRoomMeasurements } from "../scene/roomMeasurements";
@@ -58,6 +60,7 @@ import {
   normalizedReferenceDimensions,
   REFERENCE_CATEGORIES,
   rotationDegreesFromObject,
+  roundedTransform,
 } from "../scene/editorTransforms";
 import {
   createDimensionLabel,
@@ -146,6 +149,10 @@ export function useRoomSceneEditor({
     with: [],
   });
   const canSaveJson = Boolean(sourceMetadataRef.current);
+  // 가구 추가 시 "바닥 클릭 배치" 모드. ref는 pointerdown 핸들러 안에서 즉시 참조하기
+  // 위함이고, state는 안내 배너/커서 표시 등 화면 갱신용이다.
+  const pendingPlacementRef = useRef(null);
+  const [isPlacingFurniture, setIsPlacingFurniture] = useState(false);
 
   function markSceneChanged() {
     onSceneChangedRef.current?.();
@@ -174,6 +181,22 @@ export function useRoomSceneEditor({
   useEffect(() => {
     onFloorColorLoadedRef.current = onFloorColorLoaded;
   }, [onFloorColorLoaded]);
+
+  // 가구 배치 모드 중 ESC로 취소할 수 있게 한다.
+  useEffect(() => {
+    if (!isPlacingFurniture) return undefined;
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        cancelFurniturePlacement();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isPlacingFurniture]);
 
   // 오브젝트 하나의 최신 상태를 selectedItem/editedItems React state에 반영한다.
   function updateEditedItem(object) {
@@ -204,8 +227,9 @@ export function useRoomSceneEditor({
     markSceneChanged();
   }
 
-  // 카탈로그 가구 클릭 시 호출된다. 교체 모드면 선택된 오브젝트를 교체하고, 아니면
-  // 새 가구를 추가한다(customDimensions가 있으면 그 크기로, 새로 추가되는 경우에만 적용).
+  // 카탈로그 가구 클릭 시 호출된다. 교체 모드면 선택된 오브젝트를 즉시 교체하고, 아니면
+  // "바닥 클릭 배치" 모드를 시작한다(customDimensions가 있으면 그 크기로 새로 추가될
+  // 가구를 만든다). 실제 배치는 사용자가 바닥을 클릭한 시점에 이뤄진다.
   async function addFurniture(catalogItem, customDimensions) {
     if (!sceneActionsRef.current) {
       setError("3D 편집기가 아직 준비되지 않았습니다.");
@@ -219,7 +243,16 @@ export function useRoomSceneEditor({
       return replaced;
     }
 
-    return sceneActionsRef.current.addFurniture(catalogItem, customDimensions);
+    return sceneActionsRef.current.beginPlaceFurniture(
+      catalogItem,
+      customDimensions,
+    );
+  }
+
+  // 진행 중인 "바닥 클릭 배치" 모드를 취소한다(ESC 키, 취소 버튼용).
+  function cancelFurniturePlacement() {
+    if (!sceneActionsRef.current) return false;
+    return sceneActionsRef.current.cancelPlaceFurniture();
   }
 
   // 선택된 일반 가구를 삭제한다 (문/창문에는 적용 안 됨).
@@ -343,9 +376,17 @@ export function useRoomSceneEditor({
     const wallColliders = [];
     const root = containerRef.current;
 
-    // 가구 이동/회전/충돌 판정에서는 벽뿐 아니라 문/창문도 장애물로 취급한다.
+    // 가구 이동/회전/충돌 판정에서는 벽뿐 아니라 문/창문도 장애물로 취급한다. 개구부
+    // 마커(sourceType: "opening")는 빈 구멍일 뿐 실제 장애물이 아니므로 제외한다 —
+    // 문/창문으로 채워지기 전까지는 가구가 그 자리를 자유롭게 통과할 수 있어야 한다.
     function activeColliders() {
-      return wallColliders.concat(referenceCollidersFromRoots(referenceRoots));
+      return wallColliders.concat(
+        referenceCollidersFromRoots(
+          referenceRoots.filter(
+            (root) => root.userData.sourceType !== "opening",
+          ),
+        ),
+      );
     }
 
     const width = root.clientWidth || window.innerWidth;
@@ -1018,12 +1059,41 @@ export function useRoomSceneEditor({
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    // 클릭/터치 시작. 회전 핸들을 먼저 검사하고(controlPickTargets), 아니면 일반
-    // 가구/문/창문(pickTargets)을 검사해서 선택하고 이동 드래그를 시작한다.
+    // roomModel의 바닥 mesh만 모아 배치 클릭 raycast 대상으로 쓴다(가구가 벽/천장
+    // 클릭으로 방 밖에 놓이지 않도록).
+    function collectFloorMeshes() {
+      const floorMeshes = [];
+      roomModelRef.current?.traverse((object) => {
+        if (object.isMesh && isUsdFloorMesh(object)) {
+          floorMeshes.push(object);
+        }
+      });
+      return floorMeshes;
+    }
+
+    // 클릭/터치 시작. 가구 배치 모드 중이면 바닥 클릭으로 배치를 확정하고, 아니면
+    // 회전 핸들을 먼저 검사하고(controlPickTargets), 아니면 일반 가구/문/창문
+    // (pickTargets)을 검사해서 선택하고 이동 드래그를 시작한다.
     function handlePointerDown(event) {
       if (event.button !== 0) return;
 
       setPointerRay(event);
+
+      if (pendingPlacementRef.current) {
+        const floorHits = raycaster.intersectObjects(
+          collectFloorMeshes(),
+          true,
+        );
+        if (floorHits.length) {
+          sceneActionsRef.current?.resolvePendingPlacement(
+            floorHits[0].point,
+          );
+        } else {
+          setStatus("가구를 놓을 바닥을 클릭하세요.");
+        }
+        stopSceneEvent(event);
+        return;
+      }
 
       const controlHits = raycaster
         .intersectObjects(controlPickTargets, false)
@@ -1172,7 +1242,16 @@ export function useRoomSceneEditor({
         }
         const roomBoundsBox = new THREE.Box3().setFromObject(roomModel);
         const roomCenter = roomBoundsBox.getCenter(new THREE.Vector3());
-        floorY = estimateFloorY(metadata.objects, roomModel);
+        // roomMeasurements.center.y는 "가장 넓은 바닥 면적 그룹"의 높이라서, 방 모델에
+        // 섞여 들어간 작은 오염 mesh 하나가 bounding box 전체를 끌어내리는 것에 영향받지
+        // 않는다. roomMeasurements가 없을 때만(빈 방 등) bounding box 최저점으로 대체한다.
+        const measuredFloorY = roomMeasurements?.center?.y;
+        const roomFloorY = Number.isFinite(measuredFloorY)
+          ? measuredFloorY
+          : roomBoundsBox.isEmpty()
+            ? 0
+            : roomBoundsBox.min.y;
+        floorY = estimateFloorY(metadata.objects, roomFloorY);
         ceilingY = roomBoundsBox.isEmpty() ? floorY : roomBoundsBox.max.y;
         wallColliders.push(...createWallColliders(roomModel));
         applyRoomWallColor(wallColliders, wallColorRef.current);
@@ -1324,8 +1403,10 @@ export function useRoomSceneEditor({
         // 이 훅 바깥쪽 wrapper 함수들(addFurniture, rotateSelectedObject 등)이 호출하는
         // 실제 구현체 모음. 씬이 준비된 이후에만 존재하므로, wrapper들은 항상 null 체크한다.
         sceneActionsRef.current = {
-          // 카탈로그에서 새 가구를 추가한다. 문/창문 카테고리는 거부한다(교체로만 가능).
-          addFurniture: async (catalogItem, customDimensions) => {
+          // 카탈로그에서 새 가구를 추가하는 "바닥 클릭 배치" 모드를 시작한다. 문/창문
+          // 카테고리는 거부한다(교체로만 가능). 실제 배치는 resolvePendingPlacement에서
+          // 이뤄진다.
+          beginPlaceFurniture: (catalogItem, customDimensions) => {
             if (!catalogItem) return false;
             if (REFERENCE_CATEGORIES.has(catalogItem.category)) {
               setStatus("");
@@ -1335,25 +1416,56 @@ export function useRoomSceneEditor({
               return false;
             }
 
+            pendingPlacementRef.current = { catalogItem, customDimensions };
+            setIsPlacingFurniture(true);
             setError("");
-            setStatus(`Adding ${catalogItem.name || "furniture"}...`);
+            setStatus("가구를 놓을 위치를 바닥에서 클릭하세요.");
+            renderer.domElement.style.cursor = "crosshair";
+            return true;
+          },
+          // 진행 중인 배치 모드를 취소한다.
+          cancelPlaceFurniture: () => {
+            if (!pendingPlacementRef.current) return false;
+            pendingPlacementRef.current = null;
+            setIsPlacingFurniture(false);
+            setStatus("");
+            renderer.domElement.style.cursor = "default";
+            return true;
+          },
+          // 배치 모드 중 바닥 클릭 지점(point, world space)에 대기 중이던 가구를 만든다.
+          resolvePendingPlacement: async (point) => {
+            const pending = pendingPlacementRef.current;
+            if (!pending) return false;
+
+            pendingPlacementRef.current = null;
+            setIsPlacingFurniture(false);
+            renderer.domElement.style.cursor = "default";
+            setError("");
+            setStatus(`Adding ${pending.catalogItem.name || "furniture"}...`);
 
             try {
-              const effectiveCatalogItem = customDimensions
-                ? { ...catalogItem, dimensions: customDimensions }
-                : catalogItem;
+              const effectiveCatalogItem = pending.customDimensions
+                ? { ...pending.catalogItem, dimensions: pending.customDimensions }
+                : pending.catalogItem;
               const dimensions = normalizedDimensions(
                 effectiveCatalogItem.dimensions,
               );
-              const target = controls.target.clone();
               const position = new THREE.Vector3(
-                target.x,
+                point.x,
                 floorY + dimensions.y / 2,
-                target.z,
+                point.z,
+              );
+              // 새 가구는 "방 기준 회전 0도"(roomYawOffsetDegrees, 즉 방 벽에 맞춰
+              // 정렬된 각도)로 놓는다. world quaternion identity를 그대로 쓰면 방이
+              // 축에서 틀어져 있을 때 회전값이 0이 아닌 값으로 표시된다.
+              const quaternion = new THREE.Quaternion().setFromAxisAngle(
+                upAxis,
+                THREE.MathUtils.degToRad(roomYawOffsetDegrees),
               );
               const item = createFurnitureItemFromCatalog(
                 effectiveCatalogItem,
                 position,
+                quaternion,
               );
               const objectIndex = nextObjectIndex;
               nextObjectIndex += 1;
@@ -1388,6 +1500,7 @@ export function useRoomSceneEditor({
             if (!catalogItem || !isReplaceableObject(object)) return false;
 
             const sourceType = object.userData.sourceType;
+            const isOpening = sourceType === "opening";
             if (
               sourceType === "object" &&
               REFERENCE_CATEGORIES.has(catalogItem.category)
@@ -1404,13 +1517,18 @@ export function useRoomSceneEditor({
               setError("문과 창문은 문/창문 모델로만 교체할 수 있습니다.");
               return false;
             }
+            if (isOpening && !REFERENCE_CATEGORIES.has(catalogItem.category)) {
+              setStatus("");
+              setError("개구부에는 문/창문 모델만 채울 수 있습니다.");
+              return false;
+            }
 
             setError("");
             setStatus(`Replacing with ${catalogItem.name || "furniture"}...`);
 
             try {
               const isReferenceReplacement =
-                REFERENCE_CATEGORIES.has(sourceType);
+                REFERENCE_CATEGORIES.has(sourceType) || isOpening;
               const nextSourceType = isReferenceReplacement
                 ? catalogItem.category
                 : sourceType;
@@ -1587,7 +1705,9 @@ export function useRoomSceneEditor({
             return true;
           },
           // 선택된 문/창문을 삭제한다. fillWithWall이면 그 자리를 벽으로 메운 뒤(콜라이더
-          // 재생성 + 기존 가구 재보정까지) reference를 제거하고, 아니면 그냥 제거만 한다.
+          // 재생성 + 기존 가구 재보정까지) reference를 제거한다. 아니면 문/창문 모델만
+          // 지우고, 나중에 다시 채워 넣을 수 있도록 그 자리에 선택 가능한 개구부 마커를
+          // 남긴다(카탈로그에서 문/창문을 골라 "교체"하면 그 마커가 채워진다).
           deleteSelectedReference: (fillWithWall) => {
             const object = selectedObjectRef.current;
             if (!object || !REFERENCE_CATEGORIES.has(object.userData.sourceType)) {
@@ -1605,12 +1725,46 @@ export function useRoomSceneEditor({
               wallColliders.push(...createWallColliders(roomModel));
               applyRoomWallColor(wallColliders, wallColorRef.current);
               initializeWallConstraints(editableRoots, activeColliders());
+              removeReferenceObject(object);
+              selectedObjectRef.current = null;
+              setReplaceMode(false);
+              syncSceneState(null);
+            } else {
+              const openingHalfSize = object.userData.localObb?.halfSize;
+              const openingDimensions = openingHalfSize
+                ? {
+                    x: openingHalfSize.x * 2,
+                    y: openingHalfSize.y * 2,
+                    z: openingHalfSize.z * 2,
+                  }
+                : object.userData.roomItem?.dimensions;
+              const openingItem = {
+                name:
+                  object.userData.sourceType === "door"
+                    ? "문 개구부"
+                    : "창문 개구부",
+                category: "opening",
+                dimensions: openingDimensions,
+                transform: roundedTransform(
+                  object.position,
+                  object.quaternion,
+                  object.scale,
+                ),
+              };
+              const insertAt = removeReferenceObject(object);
+              const openingIndex = referenceRoots.filter(
+                (root) => root.userData.sourceType === "opening",
+              ).length;
+              const opening = createOpeningMarker(openingItem, openingIndex);
+
+              initializeReferenceFacingNormal(opening.root, roomCenter);
+              setReplaceMode(false);
+              addReferenceToScene(
+                opening,
+                insertAt >= 0 ? insertAt : referenceRoots.length,
+              );
             }
 
-            removeReferenceObject(object);
-            selectedObjectRef.current = null;
-            setReplaceMode(false);
-            syncSceneState(null);
             markSceneChanged();
             setStatus(fillWithWall ? "벽으로 메웠습니다." : "개구부로 남겼습니다.");
             window.setTimeout(() => setStatus(""), 900);
@@ -1634,17 +1788,22 @@ export function useRoomSceneEditor({
             createReferenceFromItem(item, index, "window"),
           ),
         );
+        // 개구부(문/창문을 "개구부로 삭제"해서 남은 빈 구멍) 마커. GLB 로딩이 필요 없어
+        // Promise.all 없이 바로 만든다.
+        const openingItems = (metadata.openings || []).map((item, index) =>
+          createOpeningMarker(item, index),
+        );
 
         if (!isMounted) {
-          [...doorItems, ...windowItems].forEach((item) =>
+          [...doorItems, ...windowItems, ...openingItems].forEach((item) =>
             disposeScene(item.root),
           );
           return;
         }
 
-        // 문/창문을 씬에 등록하고, 카메라 각도에 따라 흐려지는 처리에 필요한
+        // 문/창문/개구부를 씬에 등록하고, 카메라 각도에 따라 흐려지는 처리에 필요한
         // roomFacingNormal을 계산해둔다.
-        [...doorItems, ...windowItems].forEach((item) => {
+        [...doorItems, ...windowItems, ...openingItems].forEach((item) => {
           initializeReferenceFacingNormal(item.root, roomCenter);
           if (showReferenceLabels) {
             const debugLabel = createReferenceDebugLabel();
@@ -1759,6 +1918,7 @@ export function useRoomSceneEditor({
       roomMeasurementsRef.current = null;
       viewControllerRef.current = null;
       sceneActionsRef.current = null;
+      pendingPlacementRef.current = null;
       setCollisionSummary({ hasCollision: false, with: [] });
       controls.dispose();
       disposeScene(scene);
@@ -1774,6 +1934,7 @@ export function useRoomSceneEditor({
     roomScene,
     selectedObjectRef,
     setError,
+    setIsPlacingFurniture,
     setReplaceMode,
     setSelectedItem,
     setSelectedRotationDegreesState,
@@ -1791,11 +1952,13 @@ export function useRoomSceneEditor({
     selectedMaxElevationCm,
     editedItems,
     isReplacingSelected,
+    isPlacingFurniture,
     collisionSummary,
     canResetSelected,
     canDeleteSelected,
     canSaveJson,
     addFurniture,
+    cancelFurniturePlacement,
     deleteSelectedObject,
     deleteSelectedReference,
     rotateSelectedObject,

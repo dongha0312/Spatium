@@ -228,6 +228,18 @@
     "path": "/testdata/default_3d_models/window.glb"
   },
   {
+    "id": "tong_glass",
+    "name" : "통유리",
+    "group" : "창문",
+    "category" : "window",
+    "dimensions": {
+      "x": 0.9,
+      "y": 1,
+      "z": 0.1
+    },
+    "path": "/testdata/3d_models/window/glass.glb"
+  },
+  {
     "id": "single_window",
     "name": "싱글 창문",
     "group": "창문",
@@ -252,5 +264,17 @@
       "z": 0.1
     },
     "path": "/testdata/3d_models/window/double_window.glb"
+  },
+  {
+    "id": "default_stairs",
+    "name": "계단",
+    "group": "계단",
+    "category": "stairs",
+    "dimensions": {
+      "x": 1.2,
+      "y": 2.8,
+      "z": 4.59
+    },
+    "path": "/testdata/default_3d_models/stairs.glb"
   }
 ]

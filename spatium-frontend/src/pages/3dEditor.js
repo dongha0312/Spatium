@@ -19,7 +19,7 @@ import useLogout from "../hooks/useLogout";
 import useProjectStats from "../hooks/useProjectStats";
 import { FLOOR_COLORS } from "./roomSceneEditor/scene/floorColor";
 
-const FURNITURE_CATALOG_URL = "/data/furniture_catalog.json";
+const FURNITURE_CATALOG_URL = "/testdata/furniture_catalog.json";
 
 const WALL_COLORS = ["#F5F0EA", "#E8DCC8", "#C4956A", "#3A3A3A"];
 
@@ -1006,13 +1006,14 @@ function ThreeDEditor() {
                 <h3>기본 흐름</h3>
                 <ol>
                   <li>
-                    왼쪽 목록에서 가구를 클릭하면 가로/세로/높이를 입력하는
-                    창이 뜹니다. 크기를 정하고 추가하면 현재 시점 근처에
-                    배치됩니다.
+                    왼쪽 목록에서 가구를 클릭하면 가로/세로/높이를 입력하는 창이
+                    뜹니다. 크기를 정하고 추가를 누르면 배치 모드가 시작되며,
+                    바닥에서 원하는 위치를 클릭하면 그 자리에 놓입니다. ESC 또는
+                    취소 버튼으로 배치를 취소할 수 있습니다.
                   </li>
                   <li>
-                    배치된 가구를 클릭한 뒤 드래그해서 바닥 위 위치를
-                    조정합니다.
+                    배치된 가구를 클릭한 뒤 드래그해서 바닥 위 위치를 다시
+                    조정할 수 있습니다.
                   </li>
                   <li>선택 패널의 회전 슬라이더로 각도를 조정합니다.</li>
                   <li>
@@ -1041,14 +1042,19 @@ function ThreeDEditor() {
                     교체됩니다.
                   </li>
                   <li>
-                    가구의 삭제버튼은 가구만 지웁니다. 문과 창문은 벽에
-                    고정되어 있어 높이 조정은 지원하지 않습니다.
+                    가구의 삭제버튼은 가구만 지웁니다. 문과 창문은 벽에 고정되어
+                    있어 높이 조정은 지원하지 않습니다.
                   </li>
                   <li>
-                    문이나 창문을 선택하면 "개구부로 삭제"와 "벽으로 메우기"
-                    두 가지 삭제 방법이 나타납니다. 개구부로 삭제하면 벽에
-                    뚫린 구멍은 그대로 남고, 벽으로 메우면 그 자리가 막힌
-                    벽이 됩니다.
+                    문이나 창문을 선택하면 "개구부로 삭제"와 "벽으로 메우기" 두
+                    가지 삭제 방법이 나타납니다. 개구부로 삭제하면 벽에 뚫린
+                    구멍은 그대로 남고, 벽으로 메우면 그 자리가 막힌 벽이
+                    됩니다.
+                  </li>
+                  <li>
+                    개구부로 남겨둔 자리를 클릭하면 다시 선택할 수 있고,
+                    "채우기" 버튼을 누른 뒤 왼쪽 목록에서 문이나 창문을
+                    고르면 그 자리에 채워집니다.
                   </li>
                 </ul>
               </section>

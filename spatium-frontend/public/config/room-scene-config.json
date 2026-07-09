@@ -15,7 +15,8 @@
     "television": "/testdata/default_3d_models/television.glb",
     "toilet": "/testdata/default_3d_models/toilet.glb",
     "washerDryer": "/testdata/default_3d_models/washerDryer.glb",
-    "window": "/testdata/default_3d_models/window.glb"
+    "window": "/testdata/default_3d_models/window.glb",
+    "stairs": "/testdata/default_3d_models/stairs.glb"
   },
   "colors": {
     "category": {
@@ -33,6 +34,7 @@
       "television": "#4f5861",
       "toilet": "#cfd8df",
       "washerDryer": "#aeb8c2",
+      "stairs" : "#9aa0a6",
       "object": "#9aa0a6"
     },
     "collision": "#d94b4b",
@@ -47,6 +49,7 @@
     "roomMaterialDefault": "#d8d2c4",
     "doorReference": "#d9903d",
     "windowReference": "#4ba3c7",
+    "openingReference": "#8a8f98",
     "selectionHandle": "#17211d"
   },
   "referenceFallbackThickness": {
