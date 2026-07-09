@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 function formatFileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -17,6 +19,35 @@ function FileDropzone({
   placeholder,
   extHint,
 }) {
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const droppedFiles = e.dataTransfer.files;
+    if (!droppedFiles || droppedFiles.length === 0) return;
+
+    if (inputRef?.current) {
+      inputRef.current.files = droppedFiles;
+    }
+
+    onChange({ target: { files: droppedFiles } });
+  };
+
   return (
     <>
       <label>{label}</label>
@@ -28,7 +59,13 @@ function FileDropzone({
         className="mp-dz-input"
         onChange={onChange}
       />
-      <label htmlFor={id} className={`mp-dropzone${file ? " is-filled" : ""}`}>
+      <label
+        htmlFor={id}
+        className={`mp-dropzone${file ? " is-filled" : ""}${isDragOver ? " is-dragover" : ""}`}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
         <span className="mp-dz-icon">{icon}</span>
         <span className="mp-dz-text">
           <span className="mp-dz-title">{file ? file.name : placeholder}</span>

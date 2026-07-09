@@ -867,6 +867,11 @@
   background: #fff;
 }
 
+.mp-dropzone.is-dragover {
+  border-color: var(--ga);
+  background: #FCF6EF;
+}
+
 .mp-dz-icon {
   width: 36px;
   height: 36px;
