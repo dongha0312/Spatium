@@ -731,12 +731,11 @@ function ThreeDEditor() {
               <div className="ed-viewbar-icon-wrap">
                 <button
                   type="button"
-                  className={`ed-viewbar-icon-btn${
+                  className={`ed-viewbar-btn${
                     wallColorPickerOpen ? " ed-viewbar-active" : ""
                   }`}
                   onClick={toggleWallColorPicker}
                   aria-label="벽 색상 변경"
-                  title="벽 색상 변경"
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -754,6 +753,7 @@ function ThreeDEditor() {
                       stroke="none"
                     />
                   </svg>
+                  벽 색상
                 </button>
 
                 {wallColorPickerOpen && (
@@ -779,12 +779,11 @@ function ThreeDEditor() {
               <div className="ed-viewbar-icon-wrap">
                 <button
                   type="button"
-                  className={`ed-viewbar-icon-btn${
+                  className={`ed-viewbar-btn${
                     floorColorPickerOpen ? " ed-viewbar-active" : ""
                   }`}
                   onClick={toggleFloorColorPicker}
                   aria-label="바닥 색상 변경"
-                  title="바닥 색상 변경"
                 >
                   <svg
                     viewBox="0 0 24 24"
@@ -799,6 +798,7 @@ function ThreeDEditor() {
                     <rect x="3" y="13" width="8" height="8" rx="1.2" />
                     <rect x="13" y="13" width="8" height="8" rx="1.2" />
                   </svg>
+                  바닥 색상
                 </button>
 
                 {floorColorPickerOpen && (
@@ -823,10 +823,9 @@ function ThreeDEditor() {
 
               <button
                 type="button"
-                className={`ed-viewbar-icon-btn${showMeasurements ? " ed-viewbar-active" : ""}`}
+                className={`ed-viewbar-btn${showMeasurements ? " ed-viewbar-active" : ""}`}
                 onClick={toggleMeasurements}
                 aria-label="측정 모드"
-                title="측정 모드"
               >
                 <svg
                   viewBox="0 0 24 24"
@@ -851,6 +850,7 @@ function ThreeDEditor() {
                     transform="rotate(-15 12 12)"
                   />
                 </svg>
+                측정 모드
               </button>
             </div>
           </div>

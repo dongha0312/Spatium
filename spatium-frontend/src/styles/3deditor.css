@@ -1064,19 +1064,20 @@
   white-space: nowrap;
 }
 
-/* 하단 뷰 툴바 (IKEA 3D 플래너 참고) */
+/* 하단 뷰 툴바 */
 .ed-viewbar {
   position: absolute;
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  background: #fff;
-  border-radius: 999px;
+  background: var(--sur);
+  border: 1px solid var(--bd);
+  border-radius: 14px;
   padding: 6px;
   display: flex;
   align-items: center;
   gap: 2px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .2);
+  box-shadow: 0 10px 28px rgba(28, 18, 9, .22);
   z-index: 5;
 }
 
@@ -1085,30 +1086,31 @@
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: transparent;
   border: none;
   font-size: 12px;
   font-weight: 600;
-  color: #374151;
+  color: var(--t2);
   cursor: pointer;
   font-family: inherit;
   white-space: nowrap;
+  transition: background .15s, color .15s;
 }
 
 .ed-viewbar-btn:hover {
-  background: #F3F4F6;
+  background: var(--bg);
 }
 
 .ed-viewbar-btn.ed-viewbar-active {
-  background: #EFEAE3;
-  color: var(--g);
+  background: linear-gradient(135deg, var(--ga), var(--g));
+  color: #fff;
 }
 
 .ed-viewbar-divider {
   width: 1px;
   height: 22px;
-  background: #E5E7EB;
+  background: var(--bd);
   margin: 0 4px;
   flex-shrink: 0;
 }
@@ -1117,40 +1119,19 @@
   position: relative;
 }
 
-.ed-viewbar-icon-btn {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  background: transparent;
-  border: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #374151;
-  cursor: pointer;
-}
-
-.ed-viewbar-icon-btn:hover {
-  background: #F3F4F6;
-}
-
-.ed-viewbar-icon-btn.ed-viewbar-active {
-  background: #EFEAE3;
-  color: var(--g);
-}
-
 /* 벽 색깔 팝오버 */
 .ed-wallcolor-popover {
   position: absolute;
   bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
-  background: #fff;
+  background: var(--sur);
+  border: 1px solid var(--bd);
   border-radius: 12px;
   padding: 10px;
   display: flex;
   gap: 6px;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .2);
+  box-shadow: 0 10px 28px rgba(28, 18, 9, .22);
   z-index: 6;
 }
 
