@@ -359,6 +359,8 @@
 .as-body {
   flex: 1;
   display: flex;
+  align-items: center;
+  justify-content: center;
   min-height: 0;
 }
 
@@ -419,7 +421,7 @@
 }
 
 .as-main {
-  flex: 1;
+  width: 100%;
   padding: 32px 40px;
   overflow-y: auto;
   max-width: 640px;

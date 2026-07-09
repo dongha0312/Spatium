@@ -339,16 +339,6 @@ function AccountSettings() {
 
       {/* 본문 */}
       <div className="as-body">
-        {/* 좌측 사이드바 */}
-        <div className="as-sidebar">
-          <div className="as-sidebar-label">설정</div>
-          <button className="as-sb-item as-active">계정 설정</button>
-          <div className="as-sb-divider"></div>
-          <button className="as-sb-item as-danger" onClick={scrollToWithdraw}>
-            회원 탈퇴
-          </button>
-        </div>
-
         {/* 메인 영역 */}
         <div className="as-main">
           <div className="as-section">
