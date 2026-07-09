@@ -16,10 +16,7 @@ final class AuthTokenStore: ObservableObject {
     private static let service = "com.spatium.auth"
     private static let accessAccount = "accessToken"
     private static let refreshAccount = "refreshToken"
-<<<<<<< HEAD
     private static let authMethodAccount = "authMethod"
-=======
->>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
 
     @Published private(set) var isLoggedIn: Bool
 
@@ -35,7 +32,6 @@ final class AuthTokenStore: ObservableObject {
         Self.read(account: Self.refreshAccount)
     }
 
-<<<<<<< HEAD
     /// 로그인 시점에 저장해 둔 계정 인증 수단. 회원 탈퇴의 본인 재확인 분기에 사용합니다.
     /// (액세스 토큰 JWT/프로필 응답에는 provider 정보가 없어 로그인 경로별로 직접 기록합니다.)
     var authMethod: AccountAuthMethod? {
@@ -57,8 +53,6 @@ final class AuthTokenStore: ObservableObject {
         }
     }
 
-=======
->>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
     func save(_ tokens: AuthTokens) {
         Self.write(tokens.accessToken, account: Self.accessAccount)
         Self.write(tokens.refreshToken, account: Self.refreshAccount)
@@ -68,10 +62,7 @@ final class AuthTokenStore: ObservableObject {
     func clear() {
         Self.delete(account: Self.accessAccount)
         Self.delete(account: Self.refreshAccount)
-<<<<<<< HEAD
         Self.delete(account: Self.authMethodAccount)
-=======
->>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
         isLoggedIn = false
     }
 

@@ -91,18 +91,12 @@ struct UserService {
         )
     }
 
-<<<<<<< HEAD
     /// 회원 탈퇴. 서버가 본인 재확인을 요구하므로 일반 계정은 `password`,
     /// 소셜 계정은 새로 발급받은 `idToken`을 함께 보냅니다. (둘 중 해당하는 것만)
     func deleteAccount(password: String? = nil, idToken: String? = nil) async throws {
         let _: SpatiumAPIEnvelope<EmptyAPIData> = try await client.send(
             method: "DELETE", path: "/api/users/me",
             body: AccountDeleteRequest(password: password, idToken: idToken)
-=======
-    func deleteAccount() async throws {
-        let _: SpatiumAPIEnvelope<EmptyAPIData> = try await client.send(
-            method: "DELETE", path: "/api/users/me"
->>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
         )
         AuthTokenStore.shared.clear()
     }

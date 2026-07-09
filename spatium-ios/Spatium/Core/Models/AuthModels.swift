@@ -46,7 +46,6 @@ enum SocialProvider: String, Codable {
     case kakao = "KAKAO"
 }
 
-<<<<<<< HEAD
 /// 현재 로그인된 계정의 인증 수단. 회원 탈퇴 시 본인 재확인 방식
 /// (일반=비밀번호, 소셜=소셜 재로그인)을 고르는 데 사용합니다.
 enum AccountAuthMethod: Equatable {
@@ -62,8 +61,6 @@ struct AccountDeleteRequest: Encodable {
     var idToken: String?
 }
 
-=======
->>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
 /// 로그인: POST /api/auth/sessions
 struct LoginRequest: Encodable {
     var email: String
