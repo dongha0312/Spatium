@@ -322,7 +322,7 @@ function AccountSettings() {
               className="as-mypage-btn"
               onClick={handleGoMypage}
             >
-              마이페이지
+              내 공간
             </button>
             {/* 닉네임 클릭 : 우측 "내 정보" 패널 열기 */}
             <AvatarButton
