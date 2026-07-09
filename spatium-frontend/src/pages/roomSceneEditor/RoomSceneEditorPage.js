@@ -5,15 +5,6 @@ import "./RoomSceneEditorPage.css";
 const ROTATION_STOPS = [-180, -90, 0, 90, 180];
 const REPLACEABLE_TYPES = new Set(["object", "door", "window"]);
 
-// 슬라이더 값이 90도 단위 지점(-180/-90/0/90/180) 근처(±4도)면 그 값으로 스냅시킨다.
-function snapRotation(value) {
-  const nearest = ROTATION_STOPS.reduce((closest, stop) =>
-    Math.abs(stop - value) < Math.abs(closest - value) ? stop : closest,
-  );
-
-  return Math.abs(nearest - value) <= ROTATION_SNAP_THRESHOLD ? nearest : value;
-}
-
 // Three.js 씬(useRoomSceneEditor)을 렌더링하는 뷰포트 + 선택된 오브젝트의 정보 패널/
 // 회전·높이 슬라이더/교체·삭제 툴바를 그리는 컴포넌트. 상위(3dEditor.js)는 ref를 통해
 // addFurniture/저장/삭제 같은 액션을 호출한다.
@@ -67,14 +58,6 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
 
   const handleRotationChange = (event) => {
     setSelectedRotationDegrees(Number(event.target.value));
-  };
-
-  const handleElevationChange = (event) => {
-    setSelectedElevationCm(Number(event.target.value));
-  };
-
-  const handleDeleteAsOpening = () => {
-    deleteSelectedReference(false);
   };
 
   const handleElevationChange = (event) => {
