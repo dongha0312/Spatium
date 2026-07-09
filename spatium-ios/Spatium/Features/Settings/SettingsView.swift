@@ -50,6 +50,10 @@ private struct AccountSection: View {
     @State private var profile: UserProfile?
     @State private var showLogin = false
     @State private var showDeleteConfirm = false
+<<<<<<< HEAD
+=======
+    @State private var accountActionError: String?
+>>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
 
     var body: some View {
         SettingsGroup(title: "계정") {
@@ -63,6 +67,15 @@ private struct AccountSection: View {
                 DestructiveSettingsButton(systemImage: "trash", title: "회원 탈퇴") {
                     showDeleteConfirm = true
                 }
+<<<<<<< HEAD
+=======
+                if let accountActionError {
+                    Text(accountActionError)
+                        .font(.caption2)
+                        .foregroundStyle(SpatiumTheme.coral)
+                        .padding(.top, 2)
+                }
+>>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
             } else {
                 Button {
                     showLogin = true
@@ -100,13 +113,42 @@ private struct AccountSection: View {
             })
         }
         .sheet(isPresented: $showDeleteConfirm) {
+<<<<<<< HEAD
             DeleteAccountSheet(authMethod: tokenStore.authMethod)
+=======
+            ConfirmSheet(
+                title: "정말 탈퇴하시겠어요?",
+                message: "모든 프로젝트와 데이터가 삭제되며 되돌릴 수 없습니다.",
+                confirmTitle: "탈퇴하기",
+                onConfirm: deleteAccount
+            )
+>>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
         }
     }
 
     private func logout() {
         Task { try? await AuthService().logout() }
     }
+<<<<<<< HEAD
+=======
+
+    private func deleteAccount() {
+        accountActionError = nil
+        Task {
+            do {
+                if AuthTokenStore.shared.accessToken?.hasPrefix("mock_") == true {
+                    // mock 세션(시뮬레이터 로그인)은 서버에 계정이 없으므로 로컬만 정리한다.
+                    AuthTokenStore.shared.clear()
+                } else {
+                    try await UserService().deleteAccount()
+                }
+            } catch {
+                // 실패를 삼키면 사용자는 탈퇴된 줄 알게 되므로 반드시 표시한다.
+                accountActionError = "탈퇴하지 못했어요: \(error.localizedDescription)"
+            }
+        }
+    }
+>>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
 }
 
 /// 스캔/씬 캐시 사용량 표시와 비우기. (다운로드한 방 파일은 다시 받으면 되므로 안전)

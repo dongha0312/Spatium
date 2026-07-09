@@ -25,6 +25,7 @@ struct ContentView: View {
                     || ProcessInfo.processInfo.arguments.contains("-UITestHome") {
             // 스크린샷 검증용: 로그인 게이트를 건너뛰고 메인 탭(설정 또는 홈)으로 바로 진입.
             MainTabView()
+<<<<<<< HEAD
         } else if ProcessInfo.processInfo.arguments.contains("-UITestDeleteLocal") {
             // 스크린샷 검증용: 회원 탈퇴 시트(일반 계정)를 바로 띄운다.
             Color.clear.sheet(isPresented: .constant(true)) { DeleteAccountSheet(authMethod: .local) }
@@ -34,6 +35,8 @@ struct ContentView: View {
         } else if ProcessInfo.processInfo.arguments.contains("-UITestDeleteUnknown") {
             // 스크린샷 검증용: 유형 불명(nil) — 비밀번호 + 소셜 재인증을 모두 제공하는 시트.
             Color.clear.sheet(isPresented: .constant(true)) { DeleteAccountSheet(authMethod: nil) }
+=======
+>>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
         } else {
             gate
         }

@@ -30,7 +30,10 @@ struct AuthService {
         )
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
         tokenStore.save(AuthTokens(accessToken: data.accessToken, refreshToken: resolveRefreshToken(from: data)))
+<<<<<<< HEAD
         tokenStore.saveAuthMethod(.local)
+=======
+>>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
         return data.user
     }
 
@@ -73,7 +76,10 @@ struct AuthService {
                 profileImageUrl: nil
             )
             tokenStore.save(AuthTokens(accessToken: "mock_access_token", refreshToken: "mock_refresh_token"))
+<<<<<<< HEAD
             tokenStore.saveAuthMethod(.social(request.provider))
+=======
+>>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
             return dummyUser
         }
 
@@ -84,7 +90,10 @@ struct AuthService {
         )
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
         tokenStore.save(AuthTokens(accessToken: data.accessToken, refreshToken: resolveRefreshToken(from: data)))
+<<<<<<< HEAD
         tokenStore.saveAuthMethod(.social(request.provider))
+=======
+>>>>>>> 177b907 (iOS: 다크모드 리디자인 및 로그인·3D 에디터·프로젝트 기능 추가)
         return data.user
     }
 
