@@ -10,7 +10,7 @@ const Footer = () => {
       <Link to="/cookie-policy">쿠키 정책</Link>
       <span className="site-footer-sep">·</span>
       <Link to="/privacy-consent">개인정보처리방침</Link>
-      <span className="site-footer-copy"> &nbsp; © SPATIUM 2026</span>
+      <span className="site-footer-copy"> &nbsp; © SPATIUM 2026 All rights reserved.</span>
     </div>
   );
 };

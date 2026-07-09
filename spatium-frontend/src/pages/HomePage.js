@@ -131,7 +131,7 @@ function HomePage() {
                 className="hp-mypage-btn"
                 onClick={handleGoMypage}
               >
-                마이페이지
+                내 공간
               </button>
               {/* 닉네임 클릭 : 우측 "내 정보" 패널 열기 */}
               <AvatarButton
@@ -199,8 +199,8 @@ function HomePage() {
       </div>
       <Footer />
 
-      {/* 개발용 바로가기 (배포 전 제거 예정) */}
-      <div
+      {/* 개발용 바로가기 (배포 전 제거 예정) 일단 주석만 해놓겠습니다~*/}
+      {/* <div
         style={{
           padding: "24px 32px",
           background: "var(--bg)",
@@ -233,7 +233,7 @@ function HomePage() {
             [개인정보 수집·이용 동의 페이지 바로가기]
           </a>
         </p>
-      </div>
+      </div> */}
 
       {/* 닉네임 클릭 시 열리는 "내 정보" 우측 패널 */}
       <AccountPanel
