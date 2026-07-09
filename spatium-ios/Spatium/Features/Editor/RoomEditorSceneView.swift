@@ -378,7 +378,9 @@ struct RoomEditorSceneView: UIViewRepresentable {
             let roomCenter = SCNVector3(roomBounds.centerX, 0, roomBounds.centerZ)
             for furniture in layout.furnitures {
                 let renderFurniture = displayFurniture(for: furniture)
-                let node = modelLoader.makeNode(for: renderFurniture)
+                let node = RoomEditorViewModel.isWallInfill(furniture)
+                    ? makeWallInfillNode(for: renderFurniture)
+                    : modelLoader.makeNode(for: renderFurniture)
                 // 문/창문은 두께가 거의 0이라 벽 메시와 같은 평면에 놓이면 z-fighting(카메라 이동 시
                 // 번쩍이며 깨지는 현상)이 생깁니다. 방 안쪽으로 아주 살짝 띄워 평면 겹침을 없앱니다.
                 if Self.isDoorOrWindow(furniture) {
@@ -397,6 +399,28 @@ struct RoomEditorSceneView: UIViewRepresentable {
             }
             applySelection(itemID: viewModel.selectedItemID)
             refreshViewFacingTransparencyTargets()
+        }
+
+        /// 벽 메우기 패널 노드 — 문/창문을 '벽으로 메우기'로 지운 자리를 GLB 대신 벽 색 박스로 막습니다.
+        /// pivot을 바닥에 둬 가구 모델과 같은 규약(position.y = 바닥면)으로 배치하고, 크기는
+        /// 스케일을 반영해 박스 치수에 직접 반영합니다. 일반 가구로 취급돼 사람 뷰 충돌·측정에 함께 잡힙니다.
+        private func makeWallInfillNode(for furniture: PlacedFurniture) -> SCNNode {
+            let width = CGFloat(max(Float(furniture.width ?? 0.9), 0.05) * max(Float(furniture.scale.x), 0.001))
+            let height = CGFloat(max(Float(furniture.height ?? 2.0), 0.05) * max(Float(furniture.scale.y), 0.001))
+            let depth = CGFloat(max(Float(furniture.depth ?? 0.1), 0.05) * max(Float(furniture.scale.z), 0.001))
+            let box = SCNBox(width: width, height: height, length: depth, chamferRadius: 0)
+            let material = SCNMaterial()
+            material.diffuse.contents = UIColor(hexString: viewModel.wallColorHex)
+            material.locksAmbientWithDiffuse = true
+            box.materials = [material]
+
+            let node = SCNNode(geometry: box)
+            node.name = "furniture-\(furniture.itemId)"
+            // pivot을 아래로 내려 박스 바닥이 position.y에 오게 한다(placeholder 규약과 동일).
+            node.pivot = SCNMatrix4MakeTranslation(0, Float(-height / 2), 0)
+            node.position = SCNVector3(Float(furniture.position.x), Float(furniture.position.y), Float(furniture.position.z))
+            node.eulerAngles.y = Float(furniture.rotation.y)
+            return node
         }
 
         func applyCamera(mode: RoomViewMode, animated: Bool) {
@@ -646,12 +670,14 @@ struct RoomEditorSceneView: UIViewRepresentable {
             max(sceneBounds.width, sceneBounds.depth, 3) * 1.05
         }
 
-        /// 회전 슬라이더 조작을 전체 리빌드 없이 선택 노드에 즉시 반영합니다.
+        /// 회전·높이 슬라이더 조작을 전체 리빌드 없이 선택 노드에 즉시 반영합니다.
         func syncSelectedRotation(from layout: RoomLayout, selectedID: Int?) {
             guard let selectedID,
                   let item = layout.furnitures.first(where: { $0.itemId == selectedID }),
                   let node = furnitureContainer.childNode(withName: "furniture-\(selectedID)", recursively: false) else { return }
             node.eulerAngles.y = Float(item.rotation.y)
+            // 높이(수직) 슬라이더 값을 바로 반영. x/z는 드래그가 관리하므로 y만 맞춘다.
+            node.position.y = Float(item.position.y)
         }
 
         func applySelection(itemID: Int?) {

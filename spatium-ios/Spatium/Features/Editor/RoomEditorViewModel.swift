@@ -260,6 +260,76 @@ final class RoomEditorViewModel: ObservableObject {
         return abs(nearest - value) <= 4 ? nearest : value
     }
 
+    // MARK: - 참조(문/창문)·벽 메우기 판별
+
+    /// 벽 메우기 패널을 나타내는 modelName 마커. 렌더러는 이 값을 보고 GLB 대신 벽 색 박스를 세운다.
+    static let wallInfillModelName = "__wall_infill"
+
+    static func isWallInfill(_ furniture: PlacedFurniture) -> Bool {
+        furniture.modelName == wallInfillModelName
+    }
+
+    /// 문/창문(벽 참조)인지. 씬의 판별과 동일하게 이름/모델명 기반으로 본다.
+    static func isReference(_ furniture: PlacedFurniture) -> Bool {
+        isDoorOrWindowName(furniture.furnitureName) || isDoorOrWindowName(furniture.modelName)
+    }
+
+    static func isDoorOrWindowName(_ name: String?) -> Bool {
+        guard let name else { return false }
+        return name.localizedCaseInsensitiveContains("door") ||
+            name.localizedCaseInsensitiveContains("window") ||
+            name.localizedCaseInsensitiveContains("문") ||
+            name.localizedCaseInsensitiveContains("창문")
+    }
+
+    /// 선택 항목이 문/창문인지 — 제거 시 '개구부로 남기기 / 벽으로 메우기' 선택을 띄웁니다.
+    var selectedIsReference: Bool {
+        guard let item = selectedFurniture else { return false }
+        return Self.isReference(item)
+    }
+
+    // MARK: - 높이(수직) 조정 — 프런트엔드 setSelectedElevationCm 대응
+
+    /// 선택 가구를 바닥에서 띄운 높이(cm). 바닥에 놓이면 0.
+    var selectedElevationCm: Double {
+        guard let item = selectedFurniture else { return 0 }
+        return ((item.position.y - floorY) * 100).rounded()
+    }
+
+    /// 높이 슬라이더 최댓값(cm) — 가구 윗면이 천장에 닿기 직전. 문/창문·벽 패널은 대상 아님.
+    var selectedMaxElevationCm: Double {
+        guard selectedSupportsElevation, let item = selectedFurniture else { return 0 }
+        let ceiling = layout.space?.ceilingHeight ?? 2.4
+        let height = item.height ?? 0.5
+        return max(0, ((ceiling - height) * 100).rounded())
+    }
+
+    /// 선택 가구가 높이 조정 대상인지(일반 가구만 — 문/창문·벽 패널 제외).
+    var selectedSupportsElevation: Bool {
+        guard let item = selectedFurniture else { return false }
+        return !Self.isReference(item) && !Self.isWallInfill(item)
+    }
+
+    /// 바닥에서 띄운 높이(cm)를 절대값으로 지정합니다. 0~천장 범위로 clamp.
+    /// 슬라이더 연속 조작이라 전체 리빌드 없이 노드만 갱신되도록 sceneRevision은 올리지 않습니다.
+    func setSelectedElevation(cm: Double) {
+        guard selectedSupportsElevation,
+              let item = selectedFurniture,
+              let index = layout.furnitures.firstIndex(where: { $0.itemId == item.itemId }) else { return }
+        let clamped = min(max(cm, 0), selectedMaxElevationCm)
+        layout.furnitures[index].position.y = floorY + clamped / 100
+        hasUnsavedChanges = true
+
+        guard !isOffline, item.itemId > 0 else { return }
+        Task {
+            try? await editorService.updateTransform(itemID: item.itemId, transform: FurnitureTransform(
+                position: layout.furnitures[index].position,
+                rotation: item.rotation,
+                scale: item.scale
+            ))
+        }
+    }
+
     /// 벽 색상 변경(4종 팝오버). 씬을 다시 지어 벽/배경에 반영합니다.
     func setWallColor(_ hex: String) {
         layout.space?.wallColor = hex
@@ -331,6 +401,36 @@ final class RoomEditorViewModel: ObservableObject {
         Task {
             try? await editorService.deleteFurniture(itemID: deletedID)
         }
+    }
+
+    /// 선택된 문/창문을 벽으로 메웁니다(개구부 채우기). 프런트엔드 `deleteSelectedReference(true)` 대응.
+    /// 문/창문을 제거하고 그 자리에 같은 크기·자세의 벽 색 패널을 세워 구멍을 막습니다.
+    /// (`deleteSelected()`가 프런트엔드의 `deleteSelectedReference(false)` = 개구부로 남기기에 해당)
+    func fillOpeningWithWall() {
+        guard let item = selectedFurniture, Self.isReference(item),
+              let index = layout.furnitures.firstIndex(where: { $0.itemId == item.itemId }) else { return }
+        let infill = PlacedFurniture(
+            itemId: takeLocalItemID(),
+            furnitureId: 0,
+            furnitureName: "벽",
+            position: item.position,
+            rotation: item.rotation,
+            scale: item.scale,
+            width: item.width,
+            depth: max(item.depth ?? 0.1, 0.1),
+            height: item.height,
+            modelName: Self.wallInfillModelName
+        )
+        layout.furnitures.remove(at: index)
+        layout.furnitures.append(infill)
+        hasUnsavedChanges = true
+        selectedItemID = nil
+        isMovingSelectedFurniture = false
+        sceneRevision += 1
+
+        // 원래 문/창문이 서버 아이템이면 서버에서도 제거한다(벽 패널은 저장 metadata로 함께 나간다).
+        guard !isOffline, item.itemId > 0 else { return }
+        Task { try? await editorService.deleteFurniture(itemID: item.itemId) }
     }
 
     func toggleViewMode() {

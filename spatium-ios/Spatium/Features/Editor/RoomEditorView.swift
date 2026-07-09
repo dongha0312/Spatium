@@ -19,6 +19,8 @@ struct RoomEditorView: View {
     @State private var priceBannerVisible = true
     @State private var wallPickerOpen = false
     @State private var showViewHelp = false
+    /// 문/창문 제거 시 '개구부로 남기기 / 벽으로 메우기' 선택 다이얼로그.
+    @State private var showDeleteOptions = false
 
     private static let wallColors = ["#F5F0EA", "#E8DCC8", "#C4956A", "#3A3A3A"]
 
@@ -133,14 +135,7 @@ struct RoomEditorView: View {
             Spacer()
 
             HStack(spacing: 7) {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(LinearGradient(colors: [SpatiumTheme.accentLight, SpatiumTheme.accent], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 18, height: 18)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
-                            .stroke(.white, lineWidth: 1.6)
-                            .frame(width: 7, height: 7)
-                    )
+                BrandMark(size: 18)
                 Text("SPATIUM")
                     .font(.caption.weight(.black))
                     .tracking(4)
@@ -626,6 +621,15 @@ struct RoomEditorView: View {
                     onChange: { viewModel.setSelectedRotation(degrees: $0) }
                 )
 
+                // 높이(수직) 한 줄 — 일반 가구만, 천장까지 여유가 있을 때만 표시.
+                if viewModel.selectedSupportsElevation && viewModel.selectedMaxElevationCm > 0 {
+                    ElevationSlider(
+                        cm: viewModel.selectedElevationCm,
+                        maxCm: viewModel.selectedMaxElevationCm,
+                        onChange: { viewModel.setSelectedElevation(cm: $0) }
+                    )
+                }
+
                 // 교체 / 제거 한 줄
                 HStack(spacing: 8) {
                     SelectionToolButton(
@@ -639,8 +643,13 @@ struct RoomEditorView: View {
                         showReplacePanel = true
                     }
                     SelectionToolButton(title: "제거", systemImage: "trash", tint: SpatiumTheme.coral) {
-                        Haptics.impact(.rigid)
-                        viewModel.deleteSelected()
+                        // 문/창문은 '개구부로 남기기 / 벽으로 메우기'를 물어보고, 일반 가구는 바로 제거.
+                        if viewModel.selectedIsReference {
+                            showDeleteOptions = true
+                        } else {
+                            Haptics.impact(.rigid)
+                            viewModel.deleteSelected()
+                        }
                     }
                 }
             }
@@ -649,6 +658,19 @@ struct RoomEditorView: View {
         .background(SpatiumTheme.elevatedSurface, in: RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous).stroke(SpatiumTheme.border.opacity(0.65), lineWidth: 1))
         .shadow(color: SpatiumTheme.shadow.opacity(0.2), radius: 12, y: 5)
+        .confirmationDialog("문/창문 제거", isPresented: $showDeleteOptions, titleVisibility: .visible) {
+            Button("개구부로 남기기") {
+                Haptics.impact(.rigid)
+                viewModel.deleteSelected()
+            }
+            Button("벽으로 메우기") {
+                Haptics.impact(.rigid)
+                viewModel.fillOpeningWithWall()
+            }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("자리를 개구부(빈 공간)로 남길지, 벽으로 메울지 선택하세요.")
+        }
     }
 
     private static func dimensionSummary(_ f: PlacedFurniture) -> String {
@@ -826,6 +848,31 @@ private struct RotationSlider: View {
     }
 }
 
+/// 0 ~ 최대(천장) 높이 슬라이더. 선택한 가구를 바닥에서 수직으로 띄웁니다.
+private struct ElevationSlider: View {
+    let cm: Double
+    let maxCm: Double
+    let onChange: (Double) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.up.and.down")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(SpatiumTheme.accent)
+            Slider(
+                value: Binding(get: { cm }, set: { onChange($0) }),
+                in: 0...max(maxCm, 1),
+                step: 1
+            )
+            .tint(SpatiumTheme.accent)
+            Text("\(Int(cm))cm")
+                .font(.caption2.weight(.black).monospacedDigit())
+                .foregroundStyle(SpatiumTheme.accent)
+                .frame(width: 48, alignment: .trailing)
+        }
+    }
+}
+
 private struct SelectionToolButton: View {
     let title: String
     let systemImage: String
@@ -944,7 +991,9 @@ private struct ViewHelpSheet: View {
             helpRow(systemImage: "hand.tap", text: "가구를 탭 — 선택 / 빈 곳을 탭 — 선택 해제")
             helpRow(systemImage: "arrow.up.and.down.and.arrow.left.and.right", text: "선택 후 '이동'을 켜고 가구를 드래그 — 벽에 닿으면 딱 붙어요")
             helpRow(systemImage: "rotate.right", text: "선택하면 나오는 슬라이더로 회전")
+            helpRow(systemImage: "arrow.up.and.down", text: "높이 슬라이더로 가구를 바닥에서 띄우기 (천장까지)")
             helpRow(systemImage: "arrow.triangle.2.circlepath", text: "교체 버튼으로 다른 가구로 바꾸기")
+            helpRow(systemImage: "door.left.hand.open", text: "문·창문을 제거하면 개구부로 남길지 벽으로 메울지 고를 수 있어요")
         }
     }
 

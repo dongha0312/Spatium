@@ -356,11 +356,7 @@ private struct DeveloperSettingsSheet: View {
 private struct SettingsAppHeader: View {
     var body: some View {
         HStack(spacing: 14) {
-            Image("SpatiumLogo")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 58, height: 58)
-                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+            BrandMark(size: 58)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("Spatium")

@@ -124,7 +124,9 @@ struct LoginView: View {
 
     private var header: some View {
         VStack(spacing: 6) {
-            BrandMark(size: 32)
+            // 앱 공용 로고(큐브). 어두운 배경에서도 크림 타일 덕분에 또렷하게 보인다.
+            BrandMark(size: 52)
+                .padding(.bottom, 2)
             Text("Spatium에 로그인")
                 .font(.title3.weight(.black))
                 .foregroundStyle(SpatiumTheme.text)
