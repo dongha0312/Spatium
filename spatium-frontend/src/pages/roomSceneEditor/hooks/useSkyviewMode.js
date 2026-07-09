@@ -15,22 +15,10 @@ export function captureCameraView(camera, controls) {
   };
 }
 
-// 저장해둔 카메라 스냅샷으로 되돌린다.
-function applyCameraView(camera, controls, view) {
-  camera.position.copy(view.position);
-  camera.up.copy(view.up);
-  camera.near = view.near;
-  camera.far = view.far;
-  camera.updateProjectionMatrix();
-  controls.target.copy(view.target);
-  controls.enableRotate = true;
-  controls.update();
-}
-
 // 카메라를 방 전체가 내려다보이는 위치(정통 위에서 아래로)로 옮긴다.
 // 방의 bounding box 크기와 FOV로 적당한 높이를 계산해서 전체가 화면에 들어오게 한다.
 function applySkyviewCamera(viewController) {
-  const { camera, controls, worldGroup } = viewController;
+  const { camera, worldGroup, roomYawOffsetDegrees } = viewController;
   const bounds = new THREE.Box3().setFromObject(worldGroup);
   if (bounds.isEmpty()) return null;
 
@@ -168,7 +156,7 @@ export function applySkyviewMode(viewController, isSkyview, options = {}) {
       viewController.defaultView = captureCameraView(camera, controls);
     }
     viewController.isInSkyview = true;
-    const skyState = computeSkyviewCameraState(viewController);
+    const skyState = applySkyviewCamera(viewController);
     if (!skyState) return;
 
     // Skyview 높이가 휠 줌아웃 한도(maxDistance, 초기 프레이밍 거리)보다 멀면 카메라가
