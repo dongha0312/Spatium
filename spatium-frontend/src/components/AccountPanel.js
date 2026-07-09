@@ -79,12 +79,6 @@ function AccountPanel({
           >
             로그아웃
           </button>
-          <button
-            className={`${prefix}-panel-foot-btn ${prefix}-panel-main`}
-            onClick={onAccountClick}
-          >
-            계정설정
-          </button>
         </div>
       </div>
     </>

@@ -71,12 +71,12 @@
 }
 
 .lg-btn-out {
-  padding: 7px 18px;
+  padding: 10px 18px;
   border-radius: 8px;
   background: var(--sur);
   border: 1px solid var(--bd);
   color: var(--t2);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   cursor: pointer;
   text-decoration: none;
