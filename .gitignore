@@ -62,3 +62,7 @@ fastlane/screenshots/**/*.png
 fastlane/test_output
 
 .idea/
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
