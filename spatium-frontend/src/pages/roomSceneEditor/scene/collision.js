@@ -5,6 +5,77 @@ const WALL_PARALLEL_RELAXATION = 0;
 const WALL_ALIGNMENT_RELAXATION_ANGLE = Math.PI / 4;
 const WALL_SLIDE_CONTACT_DISTANCE = 0.08;
 const WALL_MOVEMENT_MARGIN = 1e-4;
+// 드래그 한 이벤트당 스윕 스텝 수 상한. 가구가 벽에 막힌 채 커서만 멀리 나가면 요청
+// 이동량(커서 목표 - 현재 위치)이 수 미터로 커져 스텝 수가 폭증하는 것을 막는다.
+// 상한을 넘는 이동분은 다음 pointermove에서 현재 위치 기준으로 다시 계산되므로 잘라도 된다.
+const SWEEP_MAX_STEPS = 32;
+// broad-phase 스윕 AABB에 더하는 기본 여유. 스텝 크기/경계 epsilon보다 충분히 커서,
+// 후보에서 빠진 벽이 이번 이벤트의 이동 범위 안에서 충돌할 수 없음을 보장한다.
+const SWEEP_BROADPHASE_MARGIN = 0.3;
+
+// 아래 재사용 벡터들은 충돌 판정 핫패스(드래그 중 스텝×벽 수만큼 호출)에서 호출마다
+// Vector3를 새로 만들지 않기 위한 모듈 스코프 임시 객체다. 각 함수는 자기 전용 temp만
+// 쓰고 결과를 스칼라나 즉시 소비되는 값으로 반환하므로, 호출이 중첩되어도 안전하다.
+const projectionBasisX = new THREE.Vector3();
+const projectionBasisY = new THREE.Vector3();
+const projectionBasisZ = new THREE.Vector3();
+const faceAngleNormal = new THREE.Vector3();
+const faceAngleBasisX = new THREE.Vector3();
+const faceAngleBasisY = new THREE.Vector3();
+const faceAngleBasisZ = new THREE.Vector3();
+const polygonBasisX = new THREE.Vector3();
+const polygonBasisY = new THREE.Vector3();
+const polygonBasisZ = new THREE.Vector3();
+const polygonCorner = new THREE.Vector3();
+const solidBasisX = new THREE.Vector3();
+const solidBasisY = new THREE.Vector3();
+const solidBasisZ = new THREE.Vector3();
+const solidOffset = new THREE.Vector3();
+const sweepAabb = new THREE.Box3();
+const sweepShiftedMin = new THREE.Vector3();
+const sweepShiftedMax = new THREE.Vector3();
+
+// OBB를 감싸는 월드 축 정렬 AABB를 구한다. Matrix3는 column-major이므로
+// elements[j*3+i]가 j번째 기저축의 i번째 성분이다.
+function obbWorldAabb(obb, target) {
+  const e = obb.rotation.elements;
+  const hx = obb.halfSize.x;
+  const hy = obb.halfSize.y;
+  const hz = obb.halfSize.z;
+  const ex = Math.abs(e[0]) * hx + Math.abs(e[3]) * hy + Math.abs(e[6]) * hz;
+  const ey = Math.abs(e[1]) * hx + Math.abs(e[4]) * hy + Math.abs(e[7]) * hz;
+  const ez = Math.abs(e[2]) * hx + Math.abs(e[5]) * hy + Math.abs(e[8]) * hz;
+  target.min.set(obb.center.x - ex, obb.center.y - ey, obb.center.z - ez);
+  target.max.set(obb.center.x + ex, obb.center.y + ey, obb.center.z + ez);
+  return target;
+}
+
+// 콜라이더의 월드 AABB(broad-phase용). 벽 콜라이더는 정적이고, 문/창문 콜라이더도
+// 캐시된 목록이 유지되는 동안은 움직이지 않으므로 첫 계산 후 콜라이더 객체에 저장한다.
+// 콜라이더가 재생성되는 시점(벽으로 메우기, activeColliders 캐시 무효화)에는 객체 자체가
+// 새로 만들어지므로 따로 무효화할 필요가 없다.
+function colliderWorldAabb(wall) {
+  if (!wall.worldAabb) {
+    wall.worldAabb = obbWorldAabb(wall.obb, new THREE.Box3());
+  }
+  return wall.worldAabb;
+}
+
+// broad-phase: 오브젝트 OBB의 AABB를 이동 벡터와 여유(margin)만큼 확장한 "스윕 영역"과
+// 겹치는 콜라이더만 추려낸다. 멀리 있는 벽들은 AABB 비교 한 번으로 탈락하므로,
+// 스텝 루프의 정밀 판정(다각형 투영/SAT) 대상이 근처 벽 몇 개로 줄어든다.
+function collidersNearSweep(objectObb, movement, wallColliders, margin) {
+  obbWorldAabb(objectObb, sweepAabb);
+  sweepShiftedMin.copy(sweepAabb.min).add(movement);
+  sweepShiftedMax.copy(sweepAabb.max).add(movement);
+  sweepAabb.expandByPoint(sweepShiftedMin);
+  sweepAabb.expandByPoint(sweepShiftedMax);
+  sweepAabb.expandByScalar(margin);
+
+  return wallColliders.filter((wall) =>
+    sweepAabb.intersectsBox(colliderWorldAabb(wall)),
+  );
+}
 
 // 벡터를 콘솔 디버그 로그용으로 짧게 반올림한다.
 function vectorSummary(vector) {
@@ -29,7 +100,12 @@ function wallDebugSummary(wall) {
 }
 
 function shouldLogWallDiagnostics() {
-  return optionalConfigBoolean(["wallConstraints", "logWallDiagnostics"], true);
+  // 드래그 중 pointermove마다 console.debug가 찍히면(DevTools가 열려 있을 때 특히)
+  // 그 자체가 큰 비용이라 기본값은 끔. 필요하면 scene config에서 켠다.
+  return optionalConfigBoolean(
+    ["wallConstraints", "logWallDiagnostics"],
+    false,
+  );
 }
 
 // 디버그 로그용 표시 이름 (예: "chair 2").
@@ -124,15 +200,16 @@ export function getIntersectingWalls(object, wallColliders) {
 // OBB를 주어진 축(axis)에 투영했을 때의 "반지름"(중심에서 투영된 경계까지 거리)을 구한다.
 // SAT(분리축 정리) 기반 충돌 판정의 기본 연산.
 export function projectionRadiusForObb(obb, axis) {
-  const xAxis = new THREE.Vector3();
-  const yAxis = new THREE.Vector3();
-  const zAxis = new THREE.Vector3();
-  obb.rotation.extractBasis(xAxis, yAxis, zAxis);
+  obb.rotation.extractBasis(
+    projectionBasisX,
+    projectionBasisY,
+    projectionBasisZ,
+  );
 
   return (
-    Math.abs(axis.dot(xAxis)) * obb.halfSize.x +
-    Math.abs(axis.dot(yAxis)) * obb.halfSize.y +
-    Math.abs(axis.dot(zAxis)) * obb.halfSize.z
+    Math.abs(axis.dot(projectionBasisX)) * obb.halfSize.x +
+    Math.abs(axis.dot(projectionBasisY)) * obb.halfSize.y +
+    Math.abs(axis.dot(projectionBasisZ)) * obb.halfSize.z
   );
 }
 
@@ -141,17 +218,17 @@ export function projectionRadiusForObb(obb, axis) {
 export function objectWallFaceNormalAngle(objectObb, wall) {
   if (!wall.roomFacingNormal) return Math.PI / 2;
 
-  const normal = wall.roomFacingNormal.clone().normalize();
-  const axes = [
-    new THREE.Vector3(),
-    new THREE.Vector3(),
-    new THREE.Vector3(),
-  ];
-  objectObb.rotation.extractBasis(axes[0], axes[1], axes[2]);
+  faceAngleNormal.copy(wall.roomFacingNormal).normalize();
+  objectObb.rotation.extractBasis(
+    faceAngleBasisX,
+    faceAngleBasisY,
+    faceAngleBasisZ,
+  );
 
-  const bestAlignment = axes.reduce(
-    (best, axis) => Math.max(best, Math.abs(axis.normalize().dot(normal))),
-    0,
+  const bestAlignment = Math.max(
+    Math.abs(faceAngleBasisX.normalize().dot(faceAngleNormal)),
+    Math.abs(faceAngleBasisY.normalize().dot(faceAngleNormal)),
+    Math.abs(faceAngleBasisZ.normalize().dot(faceAngleNormal)),
   );
 
   return Math.acos(THREE.MathUtils.clamp(bestAlignment, -1, 1));
@@ -235,24 +312,21 @@ function convexHull2D(points) {
 // 오브젝트 OBB의 8개 꼭짓점을 벽 평면(heightAxis/lengthAxis 2D 좌표계)에 투영해서
 // 2D 다각형(convex hull)을 만든다.
 function projectedObbPolygon2D(objectObb, heightAxis, lengthAxis) {
-  const xAxis = new THREE.Vector3();
-  const yAxis = new THREE.Vector3();
-  const zAxis = new THREE.Vector3();
-  objectObb.rotation.extractBasis(xAxis, yAxis, zAxis);
+  objectObb.rotation.extractBasis(polygonBasisX, polygonBasisY, polygonBasisZ);
 
   const projectedCorners = [];
   [-1, 1].forEach((xSign) => {
     [-1, 1].forEach((ySign) => {
       [-1, 1].forEach((zSign) => {
-        const corner = objectObb.center
-          .clone()
-          .addScaledVector(xAxis, objectObb.halfSize.x * xSign)
-          .addScaledVector(yAxis, objectObb.halfSize.y * ySign)
-          .addScaledVector(zAxis, objectObb.halfSize.z * zSign);
+        polygonCorner
+          .copy(objectObb.center)
+          .addScaledVector(polygonBasisX, objectObb.halfSize.x * xSign)
+          .addScaledVector(polygonBasisY, objectObb.halfSize.y * ySign)
+          .addScaledVector(polygonBasisZ, objectObb.halfSize.z * zSign);
 
         projectedCorners.push({
-          height: corner.dot(heightAxis),
-          length: corner.dot(lengthAxis),
+          height: polygonCorner.dot(heightAxis),
+          length: polygonCorner.dot(lengthAxis),
         });
       });
     });
@@ -556,32 +630,34 @@ function pushObjectOutOfWalls(object, wallColliders) {
 
 // roomFacingNormal이 없는 벽(또는 문/창문)에 대해, 벽의 가장 얇은 축(두께 방향)을 찾아
 // 그 방향으로 오브젝트까지 남은 여유 거리를 계산한다 ("solid" 충돌 판정의 기반).
+// 반환하는 normal은 모듈 스코프 재사용 벡터라서, 호출 측은 다음 wallSolidClearance
+// 호출 전에 값을 소비해야 한다(현재 호출부는 모두 즉시 사용).
 function wallSolidClearance(objectObb, wall) {
-  const axes = [
-    new THREE.Vector3(),
-    new THREE.Vector3(),
-    new THREE.Vector3(),
-  ];
-  const halfSizes = [
-    wall.obb.halfSize.x,
-    wall.obb.halfSize.y,
-    wall.obb.halfSize.z,
-  ];
-  const thicknessIndex =
-    halfSizes[0] <= halfSizes[1] && halfSizes[0] <= halfSizes[2]
-      ? 0
-      : halfSizes[1] <= halfSizes[2]
-        ? 1
-        : 2;
+  const hx = wall.obb.halfSize.x;
+  const hy = wall.obb.halfSize.y;
+  const hz = wall.obb.halfSize.z;
 
-  wall.obb.rotation.extractBasis(axes[0], axes[1], axes[2]);
+  wall.obb.rotation.extractBasis(solidBasisX, solidBasisY, solidBasisZ);
 
-  const axis = axes[thicknessIndex].normalize();
-  const offset = objectObb.center.clone().sub(wall.obb.center);
-  const normal = axis.multiplyScalar(offset.dot(axis) >= 0 ? 1 : -1);
+  let axis;
+  let thicknessHalfSize;
+  if (hx <= hy && hx <= hz) {
+    axis = solidBasisX;
+    thicknessHalfSize = hx;
+  } else if (hy <= hz) {
+    axis = solidBasisY;
+    thicknessHalfSize = hy;
+  } else {
+    axis = solidBasisZ;
+    thicknessHalfSize = hz;
+  }
+
+  axis.normalize();
+  solidOffset.copy(objectObb.center).sub(wall.obb.center);
+  const normal = axis.multiplyScalar(solidOffset.dot(axis) >= 0 ? 1 : -1);
   const objectRadius = projectionRadiusForObb(objectObb, normal);
   const clearance =
-    Math.abs(offset.dot(axis)) - halfSizes[thicknessIndex] - objectRadius;
+    Math.abs(solidOffset.dot(axis)) - thicknessHalfSize - objectRadius;
 
   return { normal, clearance };
 }
@@ -601,6 +677,8 @@ function adjustedMovementForObbBeforeWallCollision(
   }
 
   const adjusted = movement.clone();
+  // 스텝×벽 수만큼 OBB를 clone하지 않도록, 함수당 하나만 만들어 copy로 재사용한다.
+  const movedObb = objectObb.clone();
 
   for (let pass = 0; pass < 4; pass += 1) {
     let changed = false;
@@ -610,7 +688,7 @@ function adjustedMovementForObbBeforeWallCollision(
         return;
       }
 
-      const movedObb = objectObb.clone();
+      movedObb.copy(objectObb);
       movedObb.center.add(adjusted);
       if (!objectOverlapsWallSpan(movedObb, wall)) return;
 
@@ -647,7 +725,7 @@ function adjustedMovementForObbBeforeWallCollision(
     });
 
     wallColliders.forEach((wall) => {
-      const movedObb = objectObb.clone();
+      movedObb.copy(objectObb);
       movedObb.center.add(adjusted);
       if (!objectOverlapsWallSpan(movedObb, wall)) return;
       if (
@@ -709,14 +787,40 @@ export function constrainedMovementBeforeWallCollision(
       wallConfigNumber("colliderHalfThickness") * 2,
     ),
   );
-  const stepCount = Math.max(1, Math.ceil(totalDistance / stepSize));
-  const requestedStep = movement.clone().multiplyScalar(1 / stepCount);
   const objectObb = worldObbForObject(object);
-  const constrained = new THREE.Vector3();
   const blockedWalls = [];
   const blockedWallSet = new Set();
 
   object.userData.blockedWallColliders = blockedWalls;
+
+  // broad-phase: 이번 이동의 스윕 영역과 겹치는 콜라이더만 정밀 검사한다.
+  // 후보가 하나도 없으면(빈 공간 드래그) 스텝 루프 없이 요청 이동을 그대로 허용한다.
+  const broadphaseMargin =
+    Math.max(SWEEP_BROADPHASE_MARGIN, stepSize * 2) +
+    wallConfigNumber("boundaryEpsilon") +
+    wallConfigNumber("boundarySpanPadding");
+  const nearbyColliders = collidersNearSweep(
+    objectObb,
+    movement,
+    wallColliders,
+    broadphaseMargin,
+  );
+
+  if (!nearbyColliders.length) {
+    return movement.clone();
+  }
+
+  // 스텝 수 상한. 상한을 넘는 요청(벽에 막힌 채 커서만 멀리 나간 경우)은 이동량 자체를
+  // 상한 거리로 잘라서, 스텝 크기(터널링 방지 기준)는 유지한 채 스텝 수만 제한한다.
+  const maxDistance = stepSize * SWEEP_MAX_STEPS;
+  const clampScale =
+    totalDistance > maxDistance ? maxDistance / totalDistance : 1;
+  const stepCount = Math.max(
+    1,
+    Math.ceil((totalDistance * clampScale) / stepSize),
+  );
+  const requestedStep = movement.clone().multiplyScalar(clampScale / stepCount);
+  const constrained = new THREE.Vector3();
 
   const rememberBlockedWall = (wall, details) => {
     if (blockedWallSet.has(wall)) return;
@@ -736,7 +840,7 @@ export function constrainedMovementBeforeWallCollision(
     const adjustedStep = adjustedMovementForObbBeforeWallCollision(
       objectObb,
       requestedStep,
-      wallColliders,
+      nearbyColliders,
       rememberBlockedWall,
     );
 

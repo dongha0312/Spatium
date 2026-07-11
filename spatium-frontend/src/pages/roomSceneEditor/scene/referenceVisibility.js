@@ -14,6 +14,11 @@ export function createReferenceDebugLabel() {
 // 카메라 시야를 가리는 문/창문을 반투명하게 만든다(hidden=true). 원래 상태(opacity 등)는
 // 처음 호출될 때 material.userData에 저장해두고, hidden=false가 되면 그 값으로 복원한다.
 export function applyReferencePreviewVisibility(reference, hidden) {
+  // 매 프레임 호출되므로, hidden 상태가 지난번과 같으면 traverse/material 갱신을
+  // 통째로 건너뛴다. 교체로 새로 만들어진 오브젝트는 이 값이 없어 항상 첫 적용을 탄다.
+  if (reference.userData.spatiumPreviewHidden === hidden) return;
+  reference.userData.spatiumPreviewHidden = hidden;
+
   const debugLabel = reference.userData.debugLabel;
 
   reference.traverse?.((child) => {

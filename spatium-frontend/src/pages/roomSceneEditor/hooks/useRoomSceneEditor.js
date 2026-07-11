@@ -26,12 +26,15 @@ import {
 import {
   canTransformObject,
   constrainedMovementBeforeWallCollision,
+  getIntersectingWalls,
   hasWallCollision,
   initializeWallConstraints,
   objectIntersectsWalls,
   referenceCollidersFromRoots,
   refreshCollisionState,
   rememberValidTransform,
+  setFurnitureVisualState,
+  shouldCheckFurnitureCollision,
 } from "../scene/collision";
 import {
   createDoorModel,
@@ -379,14 +382,33 @@ export function useRoomSceneEditor({
     // 가구 이동/회전/충돌 판정에서는 벽뿐 아니라 문/창문도 장애물로 취급한다. 개구부
     // 마커(sourceType: "opening")는 빈 구멍일 뿐 실제 장애물이 아니므로 제외한다 —
     // 문/창문으로 채워지기 전까지는 가구가 그 자리를 자유롭게 통과할 수 있어야 한다.
+    //
+    // 문/창문은 편집 중 움직이지 않으므로 결과(world OBB 계산 포함)를 캐시한다.
+    // 벽 콜라이더나 문/창문 목록이 바뀌는 지점(추가/삭제/교체/벽으로 메우기/초기 로딩)에서
+    // 반드시 invalidateActiveColliders()를 호출해야 한다.
+    let cachedActiveColliders = null;
+    // 벽/문/창문 구성이 바뀌면 다음 프레임에 벽 투명 처리(updateViewFacingWalls)를
+    // 강제로 1회 실행하기 위한 플래그. 평소에는 카메라가 움직인 프레임에만 실행된다.
+    let viewFacingWallsDirty = true;
+
+    function invalidateActiveColliders() {
+      cachedActiveColliders = null;
+      // 콜라이더가 바뀌는 시점(문/창문 추가·삭제·교체, 벽으로 메우기, 초기 로딩)은
+      // 벽/문/창문 투명 처리를 다시 계산해야 하는 시점과 정확히 일치하므로 함께 무효화한다.
+      viewFacingWallsDirty = true;
+    }
+
     function activeColliders() {
-      return wallColliders.concat(
-        referenceCollidersFromRoots(
-          referenceRoots.filter(
-            (root) => root.userData.sourceType !== "opening",
+      if (!cachedActiveColliders) {
+        cachedActiveColliders = wallColliders.concat(
+          referenceCollidersFromRoots(
+            referenceRoots.filter(
+              (root) => root.userData.sourceType !== "opening",
+            ),
           ),
-        ),
-      );
+        );
+      }
+      return cachedActiveColliders;
     }
 
     const width = root.clientWidth || window.innerWidth;
@@ -927,7 +949,7 @@ export function useRoomSceneEditor({
 
       object.updateWorldMatrix(true, false);
       rememberValidTransform(object);
-      syncSceneState(object);
+      syncDragState(object);
     }
 
     // pointerup/cancel 시 드래그를 종료하고 변경사항이 있었음을 상위에 알린다.
@@ -970,16 +992,37 @@ export function useRoomSceneEditor({
       );
     }
 
+    // 직전에 그린 벽 진단 시각화가 어떤 벽 조합이었는지 기록해서, 같은 조합이면
+    // geometry 생성/파기를 건너뛴다(드래그 중 매 pointermove마다 호출되기 때문).
+    let lastWallDiagnosticsKey = "";
+
+    function wallDiagnosticsKey(object) {
+      const keyFor = (walls) =>
+        uniqueWalls(walls)
+          .map(
+            (wall) => `${wall.object?.uuid || ""}:${wall.triangleStart ?? ""}`,
+          )
+          .join(",");
+      return `${keyFor(object.userData.intersectingWallColliders)}|${keyFor(
+        object.userData.blockedWallColliders,
+      )}`;
+    }
+
     // 선택된 오브젝트가 현재 겹치고 있거나(intersecting) 이동이 막혔던(blocked) 벽을
     // showWallDiagnostics 설정이 켜져 있을 때만 시각화한다.
     function updateWallDiagnostics(object = selectedObjectRef.current) {
+      const showDiagnostics =
+        Boolean(object) &&
+        optionalConfigBoolean(
+          ["wallConstraints", "showWallDiagnostics"],
+          true,
+        );
+      const key = showDiagnostics ? wallDiagnosticsKey(object) : "";
+      if (key === lastWallDiagnosticsKey) return;
+
+      lastWallDiagnosticsKey = key;
       clearWallDiagnostics();
-      if (
-        !object ||
-        !optionalConfigBoolean(["wallConstraints", "showWallDiagnostics"], true)
-      ) {
-        return;
-      }
+      if (!showDiagnostics) return;
 
       addWallDiagnosticVisuals(object.userData.intersectingWallColliders, {
         name: "IntersectingWallDiagnosticLayer",
@@ -1040,6 +1083,26 @@ export function useRoomSceneEditor({
       });
       updateWallDiagnostics(selectedObject);
       updateSelectionOverlay(selectedObject);
+    }
+
+    // 드래그(이동/회전) 중 매 pointermove마다 호출되는 경량 동기화. 움직이는 오브젝트
+    // 하나의 충돌 상태/시각 표시(빨간 하이라이트), 벽 진단, 선택 오버레이만 갱신한다.
+    // 전체 가구 재계산 + React state 동기화(syncSceneState)는 비용이 커서
+    // endActiveInteraction(pointerup)으로 미룬다 — 드래그 중에는 다른 가구가 움직이지
+    // 않고, 정보 패널에 표시되는 값(치수/각도/높이)도 이동으로는 바뀌지 않기 때문에
+    // 화면에 보이는 결과는 동일하다.
+    function syncDragState(object) {
+      if (shouldCheckFurnitureCollision(object)) {
+        const intersectingWalls = getIntersectingWalls(
+          object,
+          activeColliders(),
+        );
+        object.userData.intersectingWallColliders = intersectingWalls;
+        object.userData.collisions = intersectingWalls.length ? ["wall"] : [];
+        setFurnitureVisualState(object, selectedObjectRef.current);
+      }
+      updateWallDiagnostics(object);
+      updateSelectionOverlay(object);
     }
 
     // 오브젝트를 선택 상태로 만든다(또는 null로 선택 해제). 교체 모드는 항상 해제된다.
@@ -1254,6 +1317,7 @@ export function useRoomSceneEditor({
         floorY = estimateFloorY(metadata.objects, roomFloorY);
         ceilingY = roomBoundsBox.isEmpty() ? floorY : roomBoundsBox.max.y;
         wallColliders.push(...createWallColliders(roomModel));
+        invalidateActiveColliders();
         applyRoomWallColor(wallColliders, wallColorRef.current);
         // 이전에 저장된 바닥 색상이 있으면(부모의 floorColor prop보다 우선) 그걸 복원한다.
         // 부모는 마운트 시점에 이 값을 알 수 없으므로(useState(null)로 시작), 로드가 끝난
@@ -1379,6 +1443,7 @@ export function useRoomSceneEditor({
           referenceLayer.add(reference.root);
           referenceRoots.splice(insertAt, 0, reference.root);
           pickTargets.push(...reference.pickTargets);
+          invalidateActiveColliders();
           selectObject(reference.root);
         }
 
@@ -1387,6 +1452,7 @@ export function useRoomSceneEditor({
           const objectIndex = referenceRoots.indexOf(object);
           if (objectIndex >= 0) {
             referenceRoots.splice(objectIndex, 1);
+            invalidateActiveColliders();
           }
 
           for (let index = pickTargets.length - 1; index >= 0; index -= 1) {
@@ -1723,6 +1789,7 @@ export function useRoomSceneEditor({
               roomModel.add(infill);
               wallColliders.length = 0;
               wallColliders.push(...createWallColliders(roomModel));
+              invalidateActiveColliders();
               applyRoomWallColor(wallColliders, wallColorRef.current);
               initializeWallConstraints(editableRoots, activeColliders());
               removeReferenceObject(object);
@@ -1816,6 +1883,7 @@ export function useRoomSceneEditor({
           referenceRoots.push(item.root);
           pickTargets.push(...item.pickTargets);
         });
+        invalidateActiveColliders();
 
         // 문/창문까지 전부 로드된 뒤 마지막으로 한 번 더 벽 제약을 적용한다 — 이제
         // activeColliders()에 문/창문도 포함되므로, 초기 가구가 문/창문과 겹쳐 있으면
@@ -1857,12 +1925,28 @@ export function useRoomSceneEditor({
     // 건너뛴다 — 안 그러면 OrbitControls의 내부 상태가 전환 중 직접 설정한 카메라 값과
     // 충돌한다.
     // 투명 처리, 카메라 각도 배지 갱신, 렌더링까지 담당한다.
+    // 직전 프레임의 카메라 자세. 카메라가 안 움직인 프레임에는 벽/문/창문 투명 처리를
+    // 통째로 건너뛰기 위한 비교 기준이다. 초기값은 실제 카메라와 절대 같을 수 없는 값으로
+    // 둬서 첫 프레임엔 반드시 실행되게 한다.
+    const lastCameraPosition = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const lastCameraQuaternion = new THREE.Quaternion();
+
     function animate() {
       frameId = requestAnimationFrame(animate);
       if (!updateCameraTransition(viewControllerRef.current)) {
         controls.update();
       }
-      updateViewFacingWalls(wallColliders, camera, referenceRoots);
+      // 벽 투명 처리는 카메라 시점의 함수이므로, 카메라가 움직였거나(회전/이동/전환 애니메이션)
+      // 벽·문/창문 구성이 바뀐(viewFacingWallsDirty) 프레임에만 다시 계산한다.
+      const cameraMoved =
+        !lastCameraPosition.equals(camera.position) ||
+        !lastCameraQuaternion.equals(camera.quaternion);
+      if (cameraMoved || viewFacingWallsDirty) {
+        lastCameraPosition.copy(camera.position);
+        lastCameraQuaternion.copy(camera.quaternion);
+        viewFacingWallsDirty = false;
+        updateViewFacingWalls(wallColliders, camera, referenceRoots);
+      }
       if (cameraAngleBadge) {
         cameraAngleBadge.textContent = formatCameraViewAngle(camera);
       }
