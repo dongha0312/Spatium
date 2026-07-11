@@ -67,22 +67,13 @@ private struct ProjectLibrarySummary: View {
                     Spacer()
                 }
 
-                Button(action: onCreateProject) {
-                    Label("새 프로젝트", systemImage: "folder.badge.plus")
-                        .font(.headline.weight(.bold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(
-                            LinearGradient(
-                                colors: [SpatiumTheme.accent, SpatiumTheme.accentLight],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .foregroundStyle(.white)
-                        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
-                }
-                .buttonStyle(.pressable)
+                ActionCTAButton(
+                    title: "새 프로젝트",
+                    subtitle: "방을 모아 관리할 새 공간을 만드세요",
+                    systemImage: "folder.badge.plus",
+                    tint: SpatiumTheme.accent,
+                    action: onCreateProject
+                )
             }
         }
     }

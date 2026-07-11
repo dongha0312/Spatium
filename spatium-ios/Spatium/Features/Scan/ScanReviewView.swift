@@ -12,7 +12,13 @@ struct EmptyScanView: View {
                 message: "새 방을 스캔하면 RoomPlan 결과를 확인하고 서버로 업로드할 수 있습니다."
             )
 
-            PrimaryButton(title: "방 스캔 시작", systemImage: "camera.viewfinder", action: onStartScan)
+            ActionCTAButton(
+                title: "방 스캔 시작",
+                subtitle: "카메라로 공간을 스캔해 3D 도면을 만드세요",
+                systemImage: "camera.viewfinder",
+                tint: SpatiumTheme.sky,
+                action: onStartScan
+            )
         }
     }
 }
@@ -132,9 +138,9 @@ private struct ScanStatusHeader: View {
             Button(action: onStartScan) {
                 Image(systemName: "arrow.clockwise")
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(SpatiumTheme.accent)
+                    .foregroundStyle(SpatiumTheme.sky)
                     .frame(width: 44, height: 44)
-                    .background(SpatiumTheme.accent.opacity(0.09))
+                    .background(SpatiumTheme.sky.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
             }
             .buttonStyle(.pressable)

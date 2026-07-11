@@ -22,14 +22,16 @@ struct AppFooter: View {
                             .font(.system(size: 10, weight: selectedTab == tab ? .semibold : .regular))
                             .foregroundStyle(selectedTab == tab ? SpatiumTheme.accent : SpatiumTheme.soft)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 7)
+                    .frame(minWidth: 54)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
                     .background(
                         selectedTab == tab
                             ? SpatiumTheme.elevatedSurface
                             : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
                     )
+                    .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
