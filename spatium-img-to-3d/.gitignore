@@ -1,0 +1,17 @@
+.venv/
+.uv-cache/
+*.egg-info/
+__pycache__/
+*.pyc
+.env
+
+models/
+vendor/TripoSR/
+vendor/weights/
+
+storage/outputs/
+storage/processed/
+storage/tmp/
+storage/jobs/
+
+.venv-triposr/
