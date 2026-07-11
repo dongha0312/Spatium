@@ -586,9 +586,10 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
             // 사람 뷰는 기본 카메라 컨트롤을 끄고(updateUIView) 전용 제스처로 움직인다.
             if mode != .person, let controller = sceneView?.defaultCameraController {
-                // 뷰 이동을 자연스럽게: 방 중심을 축으로 도는 턴테이블 방식(수평 유지, 구르기 없음)
-                // + 관성. 기본(arcball)은 임의 피벗으로 기울어지고 뒤집혀 어지럽다.
-                controller.interactionMode = .orbitTurntable
+                // 스카이뷰는 평면도 역할이므로 회전/기울기를 완전히 막고 평행 이동만 허용한다.
+                // 핀치 확대·축소는 SCNView 기본 카메라 컨트롤이 계속 처리한다.
+                // 일반 3D 뷰만 방 중심을 축으로 도는 턴테이블 회전을 사용한다.
+                controller.interactionMode = mode == .skyView ? .pan : .orbitTurntable
                 controller.target = sceneCenter
                 controller.automaticTarget = false
                 controller.inertiaEnabled = true
