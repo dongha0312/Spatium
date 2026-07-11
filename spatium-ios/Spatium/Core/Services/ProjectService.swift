@@ -192,6 +192,7 @@ struct ProjectService {
         var roomName: String
         var items: [EditableScanItem]
         var usdzURL: URL?
+        var floorColor: String?
     }
 
     private struct RoomSceneData: Decodable {
@@ -214,7 +215,12 @@ struct ProjectService {
 
         let items = data.metadata?.items() ?? []
         let usdzURL = try Self.writeSceneModel(base64: data.model?.dataBase64, roomID: roomID)
-        return RoomSceneResult(roomName: data.roomName, items: items, usdzURL: usdzURL)
+        return RoomSceneResult(
+            roomName: data.roomName,
+            items: items,
+            usdzURL: usdzURL,
+            floorColor: data.metadata?.floorColor
+        )
     }
 
     /// base64 usdz를 캐시에 파일로 복원해 편집기 메시로 쓸 수 있게 합니다.

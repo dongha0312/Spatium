@@ -71,7 +71,17 @@ final class RoomEditorViewModel: ObservableObject {
 
     /// 스캔 결과로 바로 여는 3D 에디터. 실제 스캔 메시(usdzURL) 위에
     /// 감지된 객체를 편집 가능한 가구로 올려 시작합니다.
-    init(scanItems: [EditableScanItem], roomName: String, usdzURL: URL?, area: Double, ceilingHeight: Double, roomID: String? = nil, projectID: String? = nil, projectName: String? = nil) {
+    init(
+        scanItems: [EditableScanItem],
+        roomName: String,
+        usdzURL: URL?,
+        initialFloorColor: String? = nil,
+        area: Double,
+        ceilingHeight: Double,
+        roomID: String? = nil,
+        projectID: String? = nil,
+        projectName: String? = nil
+    ) {
         self.roomID = roomID ?? "local-scan"
         self.projectID = projectID
         self.projectName = projectName
@@ -88,7 +98,8 @@ final class RoomEditorViewModel: ObservableObject {
                 name: roomName,
                 area: max(area, 4),
                 ceilingHeight: ceilingHeight,
-                wallColor: "#F2EDE5"
+                wallColor: "#F2EDE5",
+                floorColor: initialFloorColor
             ),
             furnitures: []
         )
@@ -344,6 +355,17 @@ final class RoomEditorViewModel: ObservableObject {
 
     var wallColorHex: String { layout.space?.wallColor ?? "#F2EDE5" }
 
+    /// 프런트엔드 FLOOR_COLORS 선택값. nil이면 스캔 원본 바닥 재질을 유지합니다.
+    var floorColorHex: String? { layout.space?.floorColor }
+
+    func setFloorColor(_ hex: String) {
+        guard layout.space?.floorColor?.caseInsensitiveCompare(hex) != .orderedSame else { return }
+        layout.space?.floorColor = hex
+        hasUnsavedChanges = true
+        // 스캔 방은 바닥 mesh만 증분 tint하고, 박스 방은 바닥을 다시 만듭니다.
+        sceneRevision += 1
+    }
+
     /// 뷰 모드를 직접 지정(Skyview/사람 뷰 토글).
     func setViewMode(_ mode: RoomViewMode) {
         guard viewMode != mode else { return }
@@ -447,7 +469,13 @@ final class RoomEditorViewModel: ObservableObject {
         var doors: [EditableScanItem] = []
         var windows: [EditableScanItem] = []
         var openings: [EditableScanItem] = []
+        var floorColor: String?
         var editedObjects: [EditableScanItem]
+
+        enum CodingKeys: String, CodingKey {
+            case objects, doors, windows, openings, editedObjects
+            case floorColor = "_spatiumFloorColor"
+        }
     }
 
     /// 서버에 저장된 룸인지(= 업로드 완료되어 projectID + 서버 roomID가 있는지).
@@ -527,7 +555,10 @@ final class RoomEditorViewModel: ObservableObject {
             return item
         }
 
-        let metadata = ExportedRoomMetadata(editedObjects: editedObjects)
+        let metadata = ExportedRoomMetadata(
+            floorColor: layout.space?.floorColor,
+            editedObjects: editedObjects
+        )
         let data = try JSONEncoder.prettyPrinted.encode(metadata)
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("edited-room-\(UUID().uuidString).json")

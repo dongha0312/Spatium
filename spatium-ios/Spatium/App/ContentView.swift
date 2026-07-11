@@ -10,8 +10,19 @@ struct ContentView: View {
 
     var body: some View {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("-UITestEditor"),
-           let scan = TestRoomData.scans.first,
+        let arguments = ProcessInfo.processInfo.arguments
+        let requestedScanID: String? = {
+            guard let index = arguments.firstIndex(of: "-UITestScan"),
+                  arguments.indices.contains(index + 1) else {
+                return nil
+            }
+            return arguments[index + 1]
+        }()
+        let testScan = TestRoomData.scans.first(where: { $0.id == requestedScanID })
+            ?? TestRoomData.scans.first
+
+        if arguments.contains("-UITestEditor"),
+           let scan = testScan,
            let test = scan.load() {
             // 스크린샷 검증용: 로그인 없이 내장 테스트 스캔으로 3D 에디터를 바로 연다.
             RoomEditorView(

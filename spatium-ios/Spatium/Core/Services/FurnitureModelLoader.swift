@@ -9,6 +9,16 @@ protocol FurnitureModelLoader {
 }
 
 struct TestDataFurnitureModelLoader: FurnitureModelLoader {
+    private struct ModelBounds {
+        let min: SCNVector3
+        let max: SCNVector3
+    }
+
+    private struct ModelTemplate {
+        let node: SCNNode
+        let bounds: ModelBounds?
+    }
+
     private static let palette: [UIColor] = [
         UIColor(red: 0.77, green: 0.58, blue: 0.42, alpha: 1),
         UIColor(red: 0.55, green: 0.41, blue: 0.25, alpha: 1),
@@ -52,8 +62,8 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
             paletteIndex: item.displayName.hashValue,
             preferredModel: item.modelName
         )
-        // RoomPlan 좌표(positionY)는 객체의 '중심' 높이인데 모델 pivot은 바닥이므로,
-        // 절반 높이만큼 내려 바닥에 닿게 배치합니다. (그러지 않으면 공중에 떠 보임)
+        // RoomPlan 좌표(positionY)는 객체의 중심 높이인데 모델 pivot은 바닥이므로,
+        // 절반 높이만큼 내려 바닥에 닿게 배치합니다.
         node.position = SCNVector3(item.positionX, item.positionY - item.height / 2, item.positionZ)
         node.eulerAngles.y = Float(item.detectedRotationY + item.rotationY)
         return node
@@ -69,13 +79,23 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
         paletteIndex: Int,
         preferredModel: String?
     ) -> SCNNode {
-        // 사용자가 고른 모델이 있으면 그것을, 없으면 카테고리 기본 모델(default_3d_models)을 씁니다.
         let fileName = preferredModel ?? FurnitureCatalog.defaultModelName(matching: "\(name) \(category)")
+        // 감지 카테고리가 모호해도 선택된 GLB 파일명이 door/window이면 참조 모델로 처리한다.
+        let isReferenceModel = isDoorOrWindow("\(category) \(preferredModel ?? "")")
 
         if let fileName,
            let modelURL = Bundle.main.url(forResource: fileName, withExtension: "glb"),
-           let modelNode = loadModelNode(from: modelURL) {
-            prepareModelNode(modelNode, identifier: identifier, width: width, height: height, depth: depth)
+           let modelTemplate = loadModelTemplate(from: modelURL) {
+            let modelNode = modelTemplate.node.clone()
+            prepareModelNode(
+                modelNode,
+                identifier: identifier,
+                width: width,
+                height: height,
+                depth: depth,
+                templateBounds: modelTemplate.bounds,
+                makesMaterialsIndependent: isReferenceModel
+            )
             return modelNode
         }
 
@@ -88,24 +108,22 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
         )
     }
 
-    /// 한 번 로드한 GLB는 노드 템플릿으로 캐시하고, 사용할 때 clone합니다.
-    /// (GLTFKit2 파싱이 무거워, 씬 재생성마다 다시 로드하면 삭제/추가가 매우 느려짐)
-    private static var nodeCache: [String: SCNNode] = [:]
+    /// 프런트엔드의 `loadModelTemplates() → clone(true)`와 같은 방식입니다.
+    /// GLTFKit2 파싱과 인스턴스마다의 hierarchy bounds 순회를 한 번으로 제한합니다.
+    private static var nodeCache: [String: ModelTemplate] = [:]
 
-    private func loadModelNode(from url: URL) -> SCNNode? {
+    private func loadModelTemplate(from url: URL) -> ModelTemplate? {
         let key = url.path
-        if let template = Self.nodeCache[key] {
-            return template.clone()
-        }
-        if let asset = try? GLTFAsset(url: url, options: [:]) {
-            let scene = SCNScene(gltfAsset: asset)
-            if !scene.rootNode.childNodes.isEmpty {
-                let container = containerNode(from: scene)
-                Self.nodeCache[key] = container
-                return container.clone()
-            }
-        }
-        return nil
+        if let template = Self.nodeCache[key] { return template }
+
+        guard let asset = try? GLTFAsset(url: url, options: [:]) else { return nil }
+        let scene = SCNScene(gltfAsset: asset)
+        guard !scene.rootNode.childNodes.isEmpty else { return nil }
+
+        let container = containerNode(from: scene)
+        let template = ModelTemplate(node: container, bounds: hierarchyBoundingBox(container))
+        Self.nodeCache[key] = template
+        return template
     }
 
     private func containerNode(from scene: SCNScene) -> SCNNode {
@@ -113,93 +131,77 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
         for child in scene.rootNode.childNodes {
             container.addChildNode(child.clone())
         }
-        removeHelperGeometry(from: container)
+        removeModelArtifacts(from: container)
         return container
     }
 
-    /// 일부 GLB에는 실제 가구가 아닌 축/가이드/프리뷰 UI 메시가 같이 들어 있다.
-    /// 이 노드들은 화면에 보이면 안 되고 bounding box도 왜곡하므로, 원본 노드명을 덮기 전에 제거한다.
-    private func removeHelperGeometry(from node: SCNNode) {
+    /// 프런트엔드 `removeReferenceModelArtifacts()`와 같은 GLB 부산물 제거.
+    /// 넓은 키워드 매칭 대신 번들에 실제 존재하는 UI-kit 잔여물만 지워 모델 본체를 보존합니다.
+    private func removeModelArtifacts(from node: SCNNode) {
         for child in node.childNodes {
-            if shouldRemoveHelperBranch(child) {
+            if isModelArtifact(child) {
                 child.removeFromParentNode()
             } else {
-                removeHelperGeometry(from: child)
+                removeModelArtifacts(from: child)
             }
         }
     }
 
-    private func shouldRemoveHelperBranch(_ node: SCNNode) -> Bool {
-        if isHelperGeometryNode(node) { return true }
-        // 예: ikea_desk.glb의 "Solid 25"는 실제 가구가 아니라 Sci-Fi UI 패널들의
-        // 검은/회색 받침 메시다. 자식에 helper 마커가 있으면 이런 일반 컨테이너도 같이 제거한다.
-        return containsHelperMarker(in: node) && isGenericHelperContainer(node)
+    private func isModelArtifact(_ node: SCNNode) -> Bool {
+        let nodeName = node.name ?? ""
+        let isArtifactName = nodeName.localizedCaseInsensitiveContains("Blender Bros Sci-Fi UI Pack") ||
+            nodeName.caseInsensitiveCompare("Solid 25") == .orderedSame
+        let hasArtifactMaterial = (node.geometry?.materials ?? []).contains { material in
+            let name = material.name?.trimmingCharacters(in: CharacterSet(charactersIn: ".")) ?? ""
+            return name.localizedCaseInsensitiveContains("Blender Bros Sci-Fi UI Pack") ||
+                name.caseInsensitiveCompare("Black plastic PL") == .orderedSame ||
+                name.caseInsensitiveCompare("Monitor Screen") == .orderedSame
+        }
+        return isArtifactName || hasArtifactMaterial
     }
 
-    private func isHelperGeometryNode(_ node: SCNNode) -> Bool {
-        let name = (node.name ?? "").lowercased()
-        let materialNames = (node.geometry?.materials ?? [])
-            .compactMap { $0.name?.lowercased() }
-            .joined(separator: " ")
-        let text = "\(name) \(materialNames)"
-
-        let helperKeywords = [
-            "axis",
-            "gizmo",
-            "helper",
-            "guide",
-            "debug",
-            "blueprint",
-            "blender bros sci-fi ui pack"
-        ]
-
-        return helperKeywords.contains { text.contains($0) }
-    }
-
-    private func containsHelperMarker(in node: SCNNode) -> Bool {
-        if isHelperGeometryNode(node) { return true }
-        return node.childNodes.contains { containsHelperMarker(in: $0) }
-    }
-
-    private func isGenericHelperContainer(_ node: SCNNode) -> Bool {
-        let name = (node.name ?? "").lowercased()
-        let genericNames = ["solid", "panel", "screen", "display", "ui", "hologram"]
-        return genericNames.contains { name.contains($0) }
-    }
-
-    private func prepareModelNode(_ node: SCNNode, identifier: String, width: Double, height: Double, depth: Double) {
-        node.name = identifier
+    private func prepareModelNode(
+        _ node: SCNNode,
+        identifier: String,
+        width: Double,
+        height: Double,
+        depth: Double,
+        templateBounds: ModelBounds?,
+        makesMaterialsIndependent: Bool
+    ) {
         setInteractionName(identifier, on: node)
-        makeGeometryAndMaterialsUnique(on: node)
+        if makesMaterialsIndependent {
+            // 문/창문은 유리 투명도처럼 인스턴스 상태가 바뀔 수 있어 재질을 독립화합니다.
+            // 일반 가구는 템플릿 geometry/material을 공유해 메모리와 복제 비용을 줄입니다.
+            makeMaterialsIndependent(on: node)
+            applyGlassTransparency(on: node)
+        }
 
-        let size = normalizeOriginAndReturnSize(node)
-        // 두께가 0에 가까우면(문/창문 등) 모델이 납작해져 앞/뒷면이 z-fighting 하므로 최소 두께를 보장.
-        let target = SCNVector3(max(width, 0.03), max(height, 0.03), max(depth, 0.03))
-        let scale = modelScale(current: size, target: target)
-        node.scale = scale
+        let size = normalizeOriginAndReturnSize(node, templateBounds: templateBounds)
+        let target = SCNVector3(max(width, 0.04), max(height, 0.04), max(depth, 0.04))
+        node.scale = modelScale(current: size, target: target)
     }
 
-    private func normalizeOriginAndReturnSize(_ node: SCNNode) -> SCNVector3 {
-        // GLB는 geometry 없는 컨테이너 노드라 node.boundingBox / flattenedClone 모두
-        // (0,0,0)을 돌려줄 수 있습니다. 자식 지오메트리들의 boundingBox를 각자 transform으로
-        // 변환해 직접 합쳐 실제 크기를 구합니다.
-        guard let (minBounds, maxBounds) = hierarchyBoundingBox(node) else {
+    private func normalizeOriginAndReturnSize(_ node: SCNNode, templateBounds: ModelBounds?) -> SCNVector3 {
+        // geometry 없는 GLB 컨테이너에서도 템플릿 생성 시 계산해 둔 실제 bounds를 사용합니다.
+        guard let bounds = templateBounds ?? hierarchyBoundingBox(node) else {
             return SCNVector3(0, 0, 0)
         }
         let size = SCNVector3(
-            maxBounds.x - minBounds.x,
-            maxBounds.y - minBounds.y,
-            maxBounds.z - minBounds.z
+            bounds.max.x - bounds.min.x,
+            bounds.max.y - bounds.min.y,
+            bounds.max.z - bounds.min.z
         )
-        let centerX = (minBounds.x + maxBounds.x) / 2
-        let centerZ = (minBounds.z + maxBounds.z) / 2
-        node.pivot = SCNMatrix4MakeTranslation(centerX, minBounds.y, centerZ)
+        node.pivot = SCNMatrix4MakeTranslation(
+            (bounds.min.x + bounds.max.x) / 2,
+            bounds.min.y,
+            (bounds.min.z + bounds.max.z) / 2
+        )
         return size
     }
 
-    /// 노드 로컬 좌표계 기준으로 모든 하위 지오메트리를 감싸는 bounding box.
-    /// (node 자신의 transform은 아직 설정 전이므로 제외하고 로컬 기준으로 계산합니다.)
-    private func hierarchyBoundingBox(_ root: SCNNode) -> (min: SCNVector3, max: SCNVector3)? {
+    /// 노드 로컬 좌표계 기준으로 모든 하위 geometry를 감싸는 bounding box.
+    private func hierarchyBoundingBox(_ root: SCNNode) -> ModelBounds? {
         var found = false
         var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
         var hi = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
@@ -215,28 +217,26 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
                     .init(bMin.x, bMax.y, bMax.z, 1), .init(bMax.x, bMax.y, bMax.z, 1)
                 ]
                 for corner in corners {
-                    let p = world * corner
-                    lo = simd_min(lo, SIMD3(p.x, p.y, p.z))
-                    hi = simd_max(hi, SIMD3(p.x, p.y, p.z))
+                    let point = world * corner
+                    lo = simd_min(lo, SIMD3(point.x, point.y, point.z))
+                    hi = simd_max(hi, SIMD3(point.x, point.y, point.z))
                     found = true
                 }
             }
-            for child in node.childNodes {
-                accumulate(child, world)
-            }
+            node.childNodes.forEach { accumulate($0, world) }
         }
 
-        // root 자신의 transform은 무시(로컬 기준)하고, 자식부터 누적.
         if root.geometry != nil {
             accumulate(root, matrix_identity_float4x4)
         } else {
-            for child in root.childNodes {
-                accumulate(child, matrix_identity_float4x4)
-            }
+            root.childNodes.forEach { accumulate($0, matrix_identity_float4x4) }
         }
 
         guard found else { return nil }
-        return (SCNVector3(lo.x, lo.y, lo.z), SCNVector3(hi.x, hi.y, hi.z))
+        return ModelBounds(
+            min: SCNVector3(lo.x, lo.y, lo.z),
+            max: SCNVector3(hi.x, hi.y, hi.z)
+        )
     }
 
     private func modelScale(current: SCNVector3, target: SCNVector3) -> SCNVector3 {
@@ -249,22 +249,37 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
 
     private func setInteractionName(_ name: String, on node: SCNNode) {
         node.name = name
-        for child in node.childNodes {
-            setInteractionName(name, on: child)
-        }
+        node.childNodes.forEach { setInteractionName(name, on: $0) }
     }
 
-    private func makeGeometryAndMaterialsUnique(on node: SCNNode) {
+    /// SceneKit은 material assignment가 geometry 객체를 통해 이뤄지므로, 재질 상태를 바꿀
+    /// 노드에서만 geometry/material을 함께 복제합니다.
+    private func makeMaterialsIndependent(on node: SCNNode) {
         if let geometry = node.geometry?.copy() as? SCNGeometry {
-            geometry.materials = geometry.materials.map { material in
+            geometry.materials = geometry.materials.map { (material) in
                 (material.copy() as? SCNMaterial) ?? material
             }
             node.geometry = geometry
         }
+        node.childNodes.forEach { makeMaterialsIndependent(on: $0) }
+    }
 
-        for child in node.childNodes {
-            makeGeometryAndMaterialsUnique(on: child)
+    /// GLB가 OPAQUE로 내보낸 창 유리 재질을 프런트엔드와 같은 투명도로 보정합니다.
+    private func applyGlassTransparency(on node: SCNNode) {
+        node.geometry?.materials.forEach { material in
+            guard material.name?.localizedCaseInsensitiveContains("glass") == true else { return }
+            material.transparency = 0.1
+            material.blendMode = .alpha
+            material.writesToDepthBuffer = false
         }
+        node.childNodes.forEach { applyGlassTransparency(on: $0) }
+    }
+
+    private func isDoorOrWindow(_ category: String) -> Bool {
+        category.localizedCaseInsensitiveContains("door") ||
+            category.localizedCaseInsensitiveContains("window") ||
+            category.localizedCaseInsensitiveContains("문") ||
+            category.localizedCaseInsensitiveContains("창문")
     }
 
     private func makePlaceholderNode(
@@ -274,8 +289,15 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
         depth: Double,
         paletteIndex: Int
     ) -> SCNNode {
-        // 최소 두께 보장: 납작한 폴백 박스가 앞/뒷면 z-fighting을 일으키지 않게 함.
-        let box = SCNBox(width: CGFloat(max(width, 0.03)), height: CGFloat(max(height, 0.03)), length: CGFloat(max(depth, 0.03)), chamferRadius: 0.02)
+        let resolvedWidth = max(width, 0.04)
+        let resolvedHeight = max(height, 0.04)
+        let resolvedDepth = max(depth, 0.04)
+        let box = SCNBox(
+            width: CGFloat(resolvedWidth),
+            height: CGFloat(resolvedHeight),
+            length: CGFloat(resolvedDepth),
+            chamferRadius: 0.02
+        )
         let material = SCNMaterial()
         material.diffuse.contents = Self.palette[Self.paletteIndex(from: paletteIndex)]
         material.locksAmbientWithDiffuse = true
@@ -283,7 +305,7 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
 
         let node = SCNNode(geometry: box)
         node.name = identifier
-        node.pivot = SCNMatrix4MakeTranslation(0, Float(-height / 2), 0)
+        node.pivot = SCNMatrix4MakeTranslation(0, Float(-resolvedHeight / 2), 0)
         return node
     }
 

@@ -17,9 +17,12 @@ struct RoomPlanExportJSON: Decodable {
     let windows: [Entry]
     /// 사용자가 편집기에서 확정한 객체(이동/회전/교체/추가/삭제 반영). 있으면 이걸 우선 사용한다.
     let editedObjects: [EditableScanItem]?
+    /// 프런트엔드가 저장하는 선택 바닥색. 없으면 원본 USDZ 바닥 재질을 유지합니다.
+    let floorColor: String?
 
     enum CodingKeys: String, CodingKey {
         case objects, doors, windows, editedObjects
+        case floorColor = "_spatiumFloorColor"
     }
 
     init(from decoder: Decoder) throws {
@@ -28,6 +31,7 @@ struct RoomPlanExportJSON: Decodable {
         doors = (try? c.decode([Entry].self, forKey: .doors)) ?? []
         windows = (try? c.decode([Entry].self, forKey: .windows)) ?? []
         editedObjects = try? c.decode([EditableScanItem].self, forKey: .editedObjects)
+        floorColor = try? c.decode(String.self, forKey: .floorColor)
     }
 
     private static func matrix(_ transform: Transform) -> simd_float4x4 {
