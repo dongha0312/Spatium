@@ -7,6 +7,7 @@ from app.config import OUTPUT_DIR, PROCESSED_DIR, settings
 from app.providers.local_triposr import LocalTripoSRProvider
 from app.providers.local_stable_fast_3d import LocalStableFast3DProvider
 from app.services.grounded_sam2 import GroundedSam2Service
+from app.services.glb_orientation import orient_glb_for_threejs
 from app.services.yolo_segmentation import YoloSegmentationService
 from app.ui import INDEX_HTML
 
@@ -124,6 +125,12 @@ async def image_to_3d(
                 "provider must be 'local_triposr' or "
                 "'local_stable_fast_3d'."
             ),
+        )
+
+    if settings.auto_orient_glb_for_threejs:
+        output_bytes = orient_glb_for_threejs(
+            output_bytes,
+            rotation_x_degrees=settings.glb_rotation_x_degrees,
         )
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

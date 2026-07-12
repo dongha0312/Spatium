@@ -92,6 +92,12 @@ class Settings:
     grounded_sam2_timeout_seconds: int = int(
         os.getenv("GROUNDED_SAM2_TIMEOUT_SECONDS", "600")
     )
+    auto_orient_glb_for_threejs: bool = os.getenv(
+        "AUTO_ORIENT_GLB_FOR_THREEJS", "true"
+    ).strip().lower() in {"1", "true", "yes", "on"}
+    glb_rotation_x_degrees: float = float(
+        os.getenv("GLB_ROTATION_X_DEGREES", "-90")
+    )
     max_upload_bytes: int = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 
 
