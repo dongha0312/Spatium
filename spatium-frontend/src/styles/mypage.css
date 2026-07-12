@@ -1,7 +1,7 @@
 .mp-root {
   --g: #5C3D2E;
   --ga: #C4956A;
-  --t: #1C1209;  
+  --t: #1C1209;
   --t2: #5A4535;
   --t3: #A08878;
   --bd: #DDD3C6;
@@ -194,6 +194,11 @@
   color: var(--t2);
   font-weight: 500;
   transition: all .15s;
+}
+
+/* '내 공간' 목록의 프로젝트 항목이 서로 붙어 보이지 않도록 여백을 둔다. */
+.mp-sb-item+.mp-sb-item {
+  margin-top: 4px;
 }
 
 .mp-sb-item:hover {
@@ -597,6 +602,7 @@
     opacity: 0;
     transform: translateX(32px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -772,10 +778,12 @@
   .mp-sidebar {
     width: 64px;
   }
+
   .mp-sb-label,
   .mp-sb-item span:not(.mp-sb-dot) {
     display: none;
   }
+
   .mp-panel {
     width: 100%;
   }
