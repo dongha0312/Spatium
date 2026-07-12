@@ -68,6 +68,7 @@ function MyPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [panelOpen, setPanelOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState("project");
   const [user, setUser] = useState(DEFAULT_USER);
   const [projects, setProjects] = useState([]);
   const [expandedProjectIds, setExpandedProjectIds] = useState(() => new Set());
@@ -431,32 +432,49 @@ function MyPage() {
 
       <div className="mp-body">
         <div className="mp-sidebar">
-          <div className="mp-sb-sec">
-            <span className="mp-sb-label">내 공간</span>
-            {projects.map((project) => (
-              <div key={project.id} className="mp-sb-item mp-active">
-                <div className="mp-sb-dot"></div>
-                <span>{project.name}</span>
-              </div>
-            ))}
-          </div>
-          <div className="mp-sb-divider"></div>
           <button
-            className="mp-sb-btn"
-            onClick={() => openProjectModal("project")}
+            type="button"
+            className={`mp-tab-btn ${
+              activeTab === "project" ? "mp-tab-active" : ""
+            }`}
+            onClick={() => setActiveTab("project")}
           >
-            + 새 프로젝트
+            내 프로젝트
+          </button>
+          <button
+            type="button"
+            className={`mp-tab-btn ${
+              activeTab === "furniture" ? "mp-tab-active" : ""
+            }`}
+            onClick={() => setActiveTab("furniture")}
+          >
+            내 가구관리
           </button>
         </div>
 
         <div className="mp-main">
+          {activeTab === "furniture" ? (
+            <div>
+              <div className="mp-main-title">내 가구관리</div>
+              <div className="mp-main-sub">준비 중인 기능입니다.</div>
+            </div>
+          ) : (
           <div>
-            <div style={{ marginBottom: 22 }}>
+            <div className="mp-main-head" style={{ marginBottom: 22 }}>
               <div className="mp-main-title">최근 룸</div>
-              <div className="mp-main-sub">
-                {loading
-                  ? "불러오는 중..."
-                  : `총 ${totalRoomCount}개의 룸이 있습니다`}
+              <div className="mp-main-head-row">
+                <div className="mp-main-sub">
+                  {loading
+                    ? "불러오는 중..."
+                    : `총 ${totalRoomCount}개의 룸이 있습니다`}
+                </div>
+                <button
+                  type="button"
+                  className="mp-new-project-btn"
+                  onClick={() => openProjectModal("project")}
+                >
+                  + 새 프로젝트
+                </button>
               </div>
               {apiError && <div className="mp-modal-help">{apiError}</div>}
             </div>
@@ -622,6 +640,7 @@ function MyPage() {
               })}
             </div>
           </div>
+          )}
 
           {/* 내 정보 오른쪽 모달*/}
           <AccountPanel
