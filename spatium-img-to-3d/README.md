@@ -110,16 +110,76 @@ The response contains a `download_url`, for example:
 
 ## Providers
 
-Default free provider:
+The UI can select either local provider. Existing clients that omit the
+`provider` form field continue to use TripoSR.
+
+Default local TripoSR provider:
 
 ```env
-IMAGE_TO_3D_PROVIDER=huggingface
-HF_SPACE_ID=frogleo/Image-to-3D
+IMAGE_TO_3D_PROVIDER=local_triposr
 ```
 
-Optional paid provider:
+Free local Stable Fast 3D provider:
+
+1. Accept the gated model license at
+   <https://huggingface.co/stabilityai/stable-fast-3d>.
+2. Copy `.env.example` to `.env` and put your Hugging Face read token there:
 
 ```env
-IMAGE_TO_3D_PROVIDER=stability
-STABILITY_API_KEY=sk-...
+HF_TOKEN=hf_your_real_token
 ```
+
+3. Run the one-time installer in WSL:
+
+```bash
+chmod +x scripts/setup_local_sf3d.sh scripts/check_local_sf3d.sh
+./scripts/setup_local_sf3d.sh
+./scripts/check_local_sf3d.sh
+```
+
+4. Restart the API and choose `Stable Fast 3D (무료 로컬 모델)` in the UI.
+
+The token is only used to download the gated model weights. Generation then
+runs on the server GPU and does not call or charge the Stability Platform API.
+Do not use `STABILITY_API_KEY` for this local provider.
+
+Optional defaults can be changed in `.env`:
+
+```env
+LOCAL_SF3D_REPO_DIR=vendor/stable-fast-3d
+LOCAL_SF3D_PYTHON=.venv-sf3d/bin/python
+LOCAL_SF3D_MODEL_PATH=vendor/weights/stable-fast-3d
+LOCAL_SF3D_DEVICE=cuda
+```
+
+## GroundingDINO + SAM2 segmentation
+
+YOLO remains the default, so existing API clients keep working unchanged.
+For natural-language object selection (including Korean), install the isolated
+segmentation environment once in WSL:
+
+```bash
+chmod +x scripts/setup_grounded_sam2.sh scripts/check_grounded_sam2.sh
+bash scripts/setup_grounded_sam2.sh
+bash scripts/check_grounded_sam2.sh
+```
+
+This downloads three free local models: OPUS-MT Korean-to-English translation,
+GroundingDINO Tiny detection, and SAM2.1 Hiera Small segmentation. The API runs
+them in a separate process, which exits before TripoSR or Stable Fast 3D starts
+and releases its GPU memory.
+
+Preview a Korean natural-language target:
+
+```bash
+curl -X POST http://127.0.0.1:8000/v1/remove-background \
+  -F "image=@/path/to/room.jpg" \
+  -F "segmentation_provider=grounded_sam2" \
+  -F "object_query=회색 사무용 의자"
+```
+
+Generate a GLB in one request by adding the same fields to
+`/v1/image-to-3d` and selecting either `provider=local_triposr` or
+`provider=local_stable_fast_3d`. If a user already confirmed the transparent
+PNG preview, upload that PNG with `remove_background=false` to avoid running
+segmentation twice.

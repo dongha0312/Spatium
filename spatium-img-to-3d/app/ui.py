@@ -31,6 +31,8 @@ INDEX_HTML = """<!doctype html>
     .error { background: #fff0ec; border: 1px solid #f0c9bc; color: #83321d; }
     .result a { color: #0c624f; font-weight: 700; }
     .pipeline { margin: 0 0 18px; padding: 11px; border-left: 3px solid #176b5b; background: #f2f7f4; color: #456057; font-size: 12px; line-height: 1.55; }
+    .is-hidden { display: none; }
+    .help { margin: -7px 0 14px; color: #6c7774; font-size: 12px; line-height: 1.45; }
     @media (max-width: 860px) { main { width: min(100% - 24px, 1140px); padding-top: 20px; } .layout { grid-template-columns: 1fr; } .preview { min-height: 400px; } }
   </style>
 </head>
@@ -38,7 +40,7 @@ INDEX_HTML = """<!doctype html>
   <main>
     <header>
       <h1>Image to 3D</h1>
-      <p>로컬 YOLO와 TripoSR로 GPU에서 GLB 모델을 생성합니다.</p>
+      <p>객체 분리 모델과 3D 생성 모델을 선택해 로컬 GPU에서 GLB를 생성합니다.</p>
     </header>
 
     <section class="layout">
@@ -48,12 +50,28 @@ INDEX_HTML = """<!doctype html>
       </div>
 
       <form id="uploadForm" class="surface panel">
-        <p class="pipeline">사진 → YOLO 객체 분리 → 투명 PNG 확인 → GLB 생성</p>
+        <p class="pipeline">사진 + 객체명 → YOLO 또는 GroundingDINO+SAM2 → 투명 PNG 확인 → TripoSR 또는 Stable Fast 3D → GLB</p>
         <div class="field">
           <label for="image">사진</label>
           <input id="image" name="image" type="file" accept="image/png,image/jpeg,image/webp" required>
         </div>
         <div class="field">
+          <label for="provider">3D 생성 모델</label>
+          <select id="provider" name="provider">
+            <option value="local_triposr" selected>TripoSR (기존 로컬 모델)</option>
+            <option value="local_stable_fast_3d">Stable Fast 3D (무료 로컬 모델)</option>
+          </select>
+        </div>
+        <p id="providerHelp" class="help">기존 TripoSR 환경을 사용합니다.</p>
+        <div class="field">
+          <label for="segmentation_provider">객체 분리 모델</label>
+          <select id="segmentation_provider" name="segmentation_provider">
+            <option value="yolo" selected>YOLO (빠른 기존 방식)</option>
+            <option value="grounded_sam2">GroundingDINO + SAM2 (자연어·정밀 마스크)</option>
+          </select>
+        </div>
+        <p id="segmentationHelp" class="help">정해진 가구 클래스를 빠르게 분리합니다.</p>
+        <div id="yoloTarget" class="field">
           <label for="target_class">분리할 대상</label>
           <select id="target_class" name="target_class">
             <option value="auto" selected>자동 선택 (중앙의 큰 객체)</option>
@@ -75,13 +93,35 @@ INDEX_HTML = """<!doctype html>
             <option value="window">window</option>
           </select>
         </div>
-        <div class="field">
+        <div id="groundedTarget" class="field is-hidden">
+          <label for="object_query">찾을 객체명 (한글 또는 영어)</label>
+          <input id="object_query" name="object_query" type="text" placeholder="예: 회색 사무용 의자">
+        </div>
+        <div id="triposrOptions" class="field">
           <label for="mc_resolution">메시 해상도</label>
           <select id="mc_resolution" name="mc_resolution">
             <option value="192">192</option>
             <option value="256" selected>256</option>
             <option value="320">320</option>
           </select>
+        </div>
+        <div id="sf3dOptions" class="is-hidden">
+          <div class="field">
+            <label for="texture_resolution">텍스처 해상도</label>
+            <select id="texture_resolution" name="texture_resolution">
+              <option value="512">512</option>
+              <option value="1024" selected>1024 (권장)</option>
+              <option value="2048">2048</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="remesh">리메시</label>
+            <select id="remesh" name="remesh">
+              <option value="none" selected>없음 (권장)</option>
+              <option value="triangle">Triangle</option>
+              <option value="quad">Quad</option>
+            </select>
+          </div>
         </div>
         <button id="segmentButton" class="secondary" type="button">배경 제거 미리보기</button>
         <button id="submitButton" type="submit">확인된 이미지로 3D 모델 생성</button>
@@ -96,6 +136,15 @@ INDEX_HTML = """<!doctype html>
     const form = document.getElementById("uploadForm");
     const imageInput = document.getElementById("image");
     const targetClass = document.getElementById("target_class");
+    const segmentationProvider = document.getElementById("segmentation_provider");
+    const segmentationHelp = document.getElementById("segmentationHelp");
+    const yoloTarget = document.getElementById("yoloTarget");
+    const groundedTarget = document.getElementById("groundedTarget");
+    const objectQuery = document.getElementById("object_query");
+    const providerSelect = document.getElementById("provider");
+    const providerHelp = document.getElementById("providerHelp");
+    const triposrOptions = document.getElementById("triposrOptions");
+    const sf3dOptions = document.getElementById("sf3dOptions");
     const previewImage = document.getElementById("previewImage");
     const emptyState = document.getElementById("emptyState");
     const segmentButton = document.getElementById("segmentButton");
@@ -104,6 +153,14 @@ INDEX_HTML = """<!doctype html>
     const resultBox = document.getElementById("result");
     const errorBox = document.getElementById("error");
     let preparedImage = null;
+
+    providerSelect.addEventListener("change", syncProviderOptions);
+    segmentationProvider.addEventListener("change", () => {
+      preparedImage = null;
+      syncSegmentationOptions();
+    });
+    syncProviderOptions();
+    syncSegmentationOptions();
 
     imageInput.addEventListener("change", () => {
       preparedImage = null;
@@ -118,12 +175,16 @@ INDEX_HTML = """<!doctype html>
     segmentButton.addEventListener("click", async () => {
       const file = imageInput.files[0];
       if (!file) return showError("먼저 사진을 선택하세요.");
+      if (!validateSegmentationInput()) return;
       hideNotices();
-      setBusy(true, "YOLO가 대상을 분리하는 중...");
+      const segmentationName = segmentationProvider.value === "grounded_sam2" ? "GroundingDINO+SAM2" : "YOLO";
+      setBusy(true, `${segmentationName}가 대상을 분리하는 중...`);
       try {
         const data = new FormData();
         data.append("image", file);
+        data.append("segmentation_provider", segmentationProvider.value);
         data.append("target_class", targetClass.value);
+        data.append("object_query", objectQuery.value.trim());
         const response = await fetch("/v1/remove-background", { method: "POST", body: data });
         const payload = await readPayload(response);
         if (!response.ok) throw new Error(formatError(payload));
@@ -134,7 +195,8 @@ INDEX_HTML = """<!doctype html>
         previewImage.src = URL.createObjectURL(preparedImage);
         previewImage.style.display = "block";
         emptyState.style.display = "none";
-        showResult(`배경 제거 완료: ${payload.segmented_object} (${payload.device})`);
+        const translation = payload.translated_query ? ` / 영문: ${payload.translated_query}` : "";
+        showResult(`배경 제거 완료: ${payload.segmented_object}${translation} (${payload.device})`);
       } catch (error) {
         showError(error.message);
       } finally {
@@ -146,8 +208,11 @@ INDEX_HTML = """<!doctype html>
       event.preventDefault();
       const original = imageInput.files[0];
       if (!original) return showError("먼저 사진을 선택하세요.");
+      if (!preparedImage && !validateSegmentationInput()) return;
       hideNotices();
-      setBusy(true, preparedImage ? "확인된 PNG로 3D 모델 생성 중..." : "YOLO 분리와 3D 모델 생성을 진행 중...");
+      const modelName = providerSelect.value === "local_stable_fast_3d" ? "Stable Fast 3D" : "TripoSR";
+      const segmentationName = segmentationProvider.value === "grounded_sam2" ? "GroundingDINO+SAM2" : "YOLO";
+      setBusy(true, preparedImage ? `확인된 PNG로 ${modelName} 생성 중...` : `${segmentationName} 분리와 ${modelName} 생성을 진행 중...`);
       try {
         const data = new FormData(form);
         if (preparedImage) {
@@ -156,7 +221,8 @@ INDEX_HTML = """<!doctype html>
           data.set("background_removal", "none");
         } else {
           data.set("remove_background", "true");
-          data.set("background_removal", "yolo");
+          data.set("background_removal", segmentationProvider.value);
+          data.set("segmentation_provider", segmentationProvider.value);
         }
         const response = await fetch("/v1/image-to-3d", { method: "POST", body: data });
         const payload = await readPayload(response);
@@ -174,6 +240,30 @@ INDEX_HTML = """<!doctype html>
       segmentButton.disabled = busy;
       submitButton.disabled = busy;
       statusBox.textContent = text;
+    }
+    function syncProviderOptions() {
+      const stable = providerSelect.value === "local_stable_fast_3d";
+      triposrOptions.classList.toggle("is-hidden", stable);
+      sf3dOptions.classList.toggle("is-hidden", !stable);
+      providerHelp.textContent = stable
+        ? "Stability API 과금 없이 서버 GPU에서 로컬로 실행합니다. 최초 1회 설치가 필요합니다."
+        : "기존 TripoSR 환경을 그대로 사용합니다.";
+    }
+    function syncSegmentationOptions() {
+      const grounded = segmentationProvider.value === "grounded_sam2";
+      yoloTarget.classList.toggle("is-hidden", grounded);
+      groundedTarget.classList.toggle("is-hidden", !grounded);
+      segmentationHelp.textContent = grounded
+        ? "한글 객체명을 로컬 번역 모델로 영어로 바꾼 뒤, GroundingDINO 검출과 SAM2 마스크를 순서대로 실행합니다."
+        : "정해진 가구 클래스를 빠르게 분리합니다.";
+    }
+    function validateSegmentationInput() {
+      if (segmentationProvider.value === "grounded_sam2" && !objectQuery.value.trim()) {
+        showError("GroundingDINO+SAM2를 사용할 때는 찾을 객체명을 입력하세요.");
+        objectQuery.focus();
+        return false;
+      }
+      return true;
     }
     function hideNotices() { resultBox.style.display = "none"; errorBox.style.display = "none"; }
     function showResult(html) { resultBox.innerHTML = html; resultBox.style.display = "block"; }
