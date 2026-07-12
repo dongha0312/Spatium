@@ -16,7 +16,7 @@ struct EmptyScanView: View {
                 title: "방 스캔 시작",
                 subtitle: "카메라로 공간을 스캔해 3D 도면을 만드세요",
                 systemImage: "camera.viewfinder",
-                tint: SpatiumTheme.sky,
+                tint: SpatiumTheme.accent,
                 action: onStartScan
             )
         }
@@ -141,9 +141,9 @@ private struct ScanStatusHeader: View {
             Button(action: onStartScan) {
                 Image(systemName: "arrow.clockwise")
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(SpatiumTheme.sky)
+                    .foregroundStyle(SpatiumTheme.accent)
                     .frame(width: 44, height: 44)
-                    .background(SpatiumTheme.sky.opacity(0.12))
+                    .background(SpatiumTheme.accent.opacity(0.09))
                     .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
             }
             .buttonStyle(.pressable)
