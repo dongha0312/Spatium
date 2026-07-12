@@ -264,12 +264,6 @@
   gap: 20px;
 }
 
-/* 짝을 이루지 못하고 혼자 남은 마지막 카드는 2열 폭 전체를 채운다 */
-.mp-projects-list > .mp-room-card:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-  max-width: 1520px;
-}
-
 /* 프로젝트(룸) 카드 */
 .mp-room-card {
   background: var(--sur);
