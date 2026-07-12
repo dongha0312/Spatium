@@ -1,50 +1,54 @@
 import React, { useEffect, useState } from "react";
-import { MOCK_DELAY } from "./mockData";
 
-// 4단계: SAM2 segmentation → 배경 제거 결과 확인 (목업)
-// 선택한 바운딩박스 바깥 영역을 체커보드로 덮어 "배경이 제거된" 것처럼 보여준다.
-function SegmentationStep({ image, detections, selectedId }) {
-  const [processing, setProcessing] = useState(true);
+function SegmentationStep({ image, result, status, error, onStart, onRetry, provider }) {
   const [showOriginal, setShowOriginal] = useState(false);
 
-  const box = detections?.find((b) => b.id === selectedId);
+  useEffect(() => {
+    if (status === "idle" && !result) onStart();
+  }, [onStart, result, status]);
 
   useEffect(() => {
-    setProcessing(true);
-    const id = setTimeout(() => setProcessing(false), MOCK_DELAY.segment);
-    return () => clearTimeout(id);
-  }, [selectedId]);
+    setShowOriginal(false);
+  }, [result?.id]);
 
-  if (!box) return null;
-
-  // 바운딩박스 바깥 4면(상/하/좌/우)을 체커보드 오버레이로 가린다
-  const covers = [
-    { left: 0, top: 0, width: "100%", height: `${box.y}%` },
-    { left: 0, top: `${box.y + box.h}%`, width: "100%", bottom: 0 },
-    { left: 0, top: `${box.y}%`, width: `${box.x}%`, height: `${box.h}%` },
-    { left: `${box.x + box.w}%`, top: `${box.y}%`, right: 0, height: `${box.h}%` },
-  ];
+  const confidence = Number(result?.confidence);
+  const providerLabel =
+    provider === "yolo" ? "YOLO segmentation" : "GroundingDINO + SAM2";
 
   return (
     <div className="it3-step">
-      <h2 className="it3-step-title">배경을 제거했어요</h2>
+      <h2 className="it3-step-title">
+        {status === "success" ? "배경을 제거했어요" : "가구를 분리하고 있어요"}
+      </h2>
       <p className="it3-step-desc">
-        결과가 마음에 들지 않으면 이전 단계에서 다른 후보를 선택할 수 있어요.
+        입력한 가구 이름을 기준으로 사진에서 대상을 찾아 투명 배경 PNG로 만듭니다.
       </p>
 
-      {processing ? (
+      {(status === "idle" || status === "loading") && (
         <div className="it3-loading-note">
           <span className="it3-spinner" />
-          SAM2가 선택한 가구를 분리하고 있어요…
+          {providerLabel} 모델이 가구를 분리하고 있어요…
         </div>
-      ) : (
+      )}
+
+      {status === "error" && (
+        <div className="it3-result-card">
+          <div className="it3-result-label">배경 제거 실패</div>
+          <div className="it3-result-main">{error}</div>
+          <button type="button" className="it3-btn-ghost" onClick={onRetry}>
+            다시 시도
+          </button>
+        </div>
+      )}
+
+      {status === "success" && result && (
         <>
           <div className="it3-seg-wrap it3-checker">
-            <img className="it3-seg-img" src={image.url} alt="배경이 제거된 가구" />
-            {!showOriginal &&
-              covers.map((style, i) => (
-                <div key={i} className="it3-seg-cover it3-checker" style={style} />
-              ))}
+            <img
+              className="it3-seg-img"
+              src={showOriginal ? image?.url : result.imageUrl}
+              alt={showOriginal ? "업로드한 원본" : "배경이 제거된 가구"}
+            />
           </div>
 
           <div className="it3-seg-actions">
@@ -52,17 +56,24 @@ function SegmentationStep({ image, detections, selectedId }) {
               <input
                 type="checkbox"
                 checked={showOriginal}
-                onChange={(e) => setShowOriginal(e.target.checked)}
+                onChange={(event) => setShowOriginal(event.target.checked)}
               />
               원본 사진 보기
             </label>
-            <button
-              type="button"
-              className="it3-btn-ghost"
-              onClick={() => alert("마스크 브러시 편집은 백엔드 연동 후 지원 예정이에요.")}
-            >
-              마스크 수정
-            </button>
+          </div>
+
+          <div className="it3-result-card">
+            <div className="it3-result-label">분리 결과</div>
+            <div className="it3-result-main">
+              {result.segmentedObject || result.translatedQuery || "가구"}
+            </div>
+            <p className="it3-hint">사용 모델: {providerLabel}</p>
+            {result.translatedQuery && (
+              <p className="it3-hint">변환된 검색어: {result.translatedQuery}</p>
+            )}
+            {Number.isFinite(confidence) && (
+              <p className="it3-hint">탐지 신뢰도: {(confidence * 100).toFixed(1)}%</p>
+            )}
           </div>
         </>
       )}
