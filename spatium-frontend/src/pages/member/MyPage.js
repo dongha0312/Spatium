@@ -451,15 +451,6 @@ function MyPage() {
 
       <div className="mp-body">
         <div className="mp-sidebar">
-          <div className="mp-sb-sec">
-            <span className="mp-sb-label">내 공간</span>
-            {projects.map((project) => (
-              <div key={project.id} className="mp-sb-item mp-active">
-                <div className="mp-sb-dot"></div>
-                <span>{project.name}</span>
-              </div>
-            ))}
-          </div>
           <div className="mp-sb-divider"></div>
           <button
             type="button"
@@ -488,186 +479,204 @@ function MyPage() {
               <div className="mp-main-sub">준비 중인 기능입니다.</div>
             </div>
           ) : (
-          <div>
-            <div className="mp-main-head" style={{ marginBottom: 22 }}>
-              <div className="mp-main-title">최근 룸</div>
-              <div className="mp-main-head-row">
-                <div className="mp-main-sub">
-                  {loading
-                    ? "불러오는 중..."
-                    : `총 ${totalRoomCount}개의 룸이 있습니다`}
-                </div>
-                <button
-                  type="button"
-                  className="mp-new-project-btn"
-                  onClick={() => openProjectModal("project")}
-                >
-                  + 새 프로젝트
-                </button>
-              </div>
-              {apiError && <div className="mp-modal-help">{apiError}</div>}
-            </div>
-
-            <div className="mp-projects-list">
-              {projects.map((project) => {
-                const isExpanded = expandedProjectIds.has(project.id);
-
-                return (
-                <div
-                  className={`mp-room-card ${
-                    isExpanded ? "is-expanded" : "is-collapsed"
-                  }`}
-                  key={project.id}
-                >
-                  <div className="mp-room-card-header">
-                    {editingProjectId === project.id ? (
-                      <input
-                        className="mp-room-card-title-input"
-                        value={editingName}
-                        onChange={(e) => setEditingName(e.target.value)}
-                        onBlur={saveRenameProject}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveRenameProject();
-                          if (e.key === "Escape") cancelRenameProject();
-                        }}
-                        autoFocus
-                      />
-                    ) : (
-                      <div
-                        className="mp-room-card-title"
-                        onDoubleClick={() => startRenameProject(project)}
-                        title="더블클릭하여 이름 변경"
-                      >
-                        {project.name}
-                      </div>
-                    )}
-                    <div className="mp-room-card-actions">
-                      <button
-                        type="button"
-                        className="mp-project-collapse-btn"
-                        onClick={() => toggleProjectRooms(project.id)}
-                        aria-expanded={isExpanded}
-                        aria-controls={`project-rooms-${project.id}`}
-                        title={isExpanded ? "룸 목록 접기" : "룸 목록 보기"}
-                      >
-                        <span className="mp-project-collapse-label">룸</span>
-                        <span className="mp-project-collapse-count">
-                          {project.rooms.length}
-                        </span>
-                        <svg
-                          className="mp-project-collapse-icon"
-                          aria-hidden="true"
-                          viewBox="0 0 16 16"
-                          fill="none"
-                        >
-                          <path
-                            d={isExpanded ? "M4 10L8 6L12 10" : "M4 6L8 10L12 6"}
-                            stroke="currentColor"
-                            strokeWidth="1.75"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      </button>
-                      <button
-                        className="mp-new-btn"
-                        onClick={() => openProjectModal("room", project.id)}
-                      >
-                        + 룸 만들기
-                      </button>
-                      <button
-                        type="button"
-                        className="mp-project-delete-btn"
-                        disabled={deletingProjectId === project.id}
-                        onClick={(event) => handleDeleteProject(event, project)}
-                      >
-                        {deletingProjectId === project.id
-                          ? "삭제 중..."
-                          : "삭제"}
-                      </button>
-                    </div>
+            <div>
+              <div className="mp-main-head" style={{ marginBottom: 22 }}>
+                <div className="mp-main-title">최근 룸</div>
+                <div className="mp-main-head-row">
+                  <div className="mp-main-sub">
+                    {loading
+                      ? "불러오는 중..."
+                      : `총 ${totalRoomCount}개의 룸이 있습니다`}
                   </div>
-
-                  <div
-                    id={`project-rooms-${project.id}`}
-                    className={`mp-project-rooms ${
-                      isExpanded ? "is-expanded" : ""
-                    }`}
-                    aria-hidden={!isExpanded}
-                    inert={!isExpanded ? "" : undefined}
+                  <button
+                    type="button"
+                    className="mp-new-project-btn"
+                    onClick={() => openProjectModal("project")}
                   >
-                    <div className="mp-project-rooms-inner">
-                    {project.rooms.length === 0 && (
-                      <div className="mp-empty-rooms">아직 생성된 룸이 없습니다.</div>
-                    )}
-                    {project.rooms.map((room) => {
-                    const isEditingRoom =
-                      editingRoomKey &&
-                      editingRoomKey.projectId === project.id &&
-                      editingRoomKey.roomId === room.id;
+                    + 새 프로젝트
+                  </button>
+                </div>
+                {apiError && <div className="mp-modal-help">{apiError}</div>}
+              </div>
 
-                    return (
-                      <div
-                        key={room.id}
-                        className="mp-room-row"
-                        onClick={() => {
-                          if (!isEditingRoom) handleOpenRoom(project, room);
-                        }}
-                      >
-                        <div className="mp-room-thumb">{room.thumb}</div>
-                        <div className="mp-room-info">
-                          {isEditingRoom ? (
-                            <input
-                              className="mp-room-name-input"
-                              value={editingRoomName}
-                              onClick={(event) => event.stopPropagation()}
-                              onChange={(e) =>
-                                setEditingRoomName(e.target.value)
-                              }
-                              onBlur={saveRenameRoom}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") saveRenameRoom();
-                                if (e.key === "Escape") cancelRenameRoom();
-                              }}
-                              autoFocus
-                            />
-                          ) : (
-                            <div
-                              className="mp-room-name"
-                              onClick={(event) => event.stopPropagation()}
-                              onDoubleClick={(event) => {
-                                event.stopPropagation();
-                                startRenameRoom(project, room);
-                              }}
-                              title="더블클릭하여 이름 변경"
+              <div className="mp-projects-list">
+                {projects.map((project) => {
+                  const isExpanded = expandedProjectIds.has(project.id);
+
+                  return (
+                    <div
+                      className={`mp-room-card ${
+                        isExpanded ? "is-expanded" : "is-collapsed"
+                      }`}
+                      key={project.id}
+                    >
+                      <div className="mp-room-card-header">
+                        {editingProjectId === project.id ? (
+                          <input
+                            className="mp-room-card-title-input"
+                            value={editingName}
+                            onChange={(e) => setEditingName(e.target.value)}
+                            onBlur={saveRenameProject}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveRenameProject();
+                              if (e.key === "Escape") cancelRenameProject();
+                            }}
+                            autoFocus
+                          />
+                        ) : (
+                          <div
+                            className="mp-room-card-title"
+                            onDoubleClick={() => startRenameProject(project)}
+                            title="더블클릭하여 이름 변경"
+                          >
+                            {project.name}
+                          </div>
+                        )}
+                        <div className="mp-room-card-actions">
+                          <button
+                            type="button"
+                            className="mp-project-collapse-btn"
+                            onClick={() => toggleProjectRooms(project.id)}
+                            aria-expanded={isExpanded}
+                            aria-controls={`project-rooms-${project.id}`}
+                            title={isExpanded ? "룸 목록 접기" : "룸 목록 보기"}
+                          >
+                            <span className="mp-project-collapse-label">
+                              룸
+                            </span>
+                            <span className="mp-project-collapse-count">
+                              {project.rooms.length}
+                            </span>
+                            <svg
+                              className="mp-project-collapse-icon"
+                              aria-hidden="true"
+                              viewBox="0 0 16 16"
+                              fill="none"
                             >
-                              {room.name}
+                              <path
+                                d={
+                                  isExpanded
+                                    ? "M4 10L8 6L12 10"
+                                    : "M4 6L8 10L12 6"
+                                }
+                                stroke="currentColor"
+                                strokeWidth="1.75"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </button>
+                          <button
+                            className="mp-new-btn"
+                            onClick={() => openProjectModal("room", project.id)}
+                          >
+                            + 룸 만들기
+                          </button>
+                          <button
+                            type="button"
+                            className="mp-project-delete-btn"
+                            disabled={deletingProjectId === project.id}
+                            onClick={(event) =>
+                              handleDeleteProject(event, project)
+                            }
+                          >
+                            {deletingProjectId === project.id
+                              ? "삭제 중..."
+                              : "삭제"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        id={`project-rooms-${project.id}`}
+                        className={`mp-project-rooms ${
+                          isExpanded ? "is-expanded" : ""
+                        }`}
+                        aria-hidden={!isExpanded}
+                        inert={!isExpanded ? "" : undefined}
+                      >
+                        <div className="mp-project-rooms-inner">
+                          {project.rooms.length === 0 && (
+                            <div className="mp-empty-rooms">
+                              아직 생성된 룸이 없습니다.
                             </div>
                           )}
-                          <div className="mp-room-meta">
-                            최근 수정 {room.updatedAt}
-                          </div>
+                          {project.rooms.map((room) => {
+                            const isEditingRoom =
+                              editingRoomKey &&
+                              editingRoomKey.projectId === project.id &&
+                              editingRoomKey.roomId === room.id;
+
+                            return (
+                              <div
+                                key={room.id}
+                                className="mp-room-row"
+                                onClick={() => {
+                                  if (!isEditingRoom)
+                                    handleOpenRoom(project, room);
+                                }}
+                              >
+                                <div className="mp-room-thumb">
+                                  {room.thumb}
+                                </div>
+                                <div className="mp-room-info">
+                                  {isEditingRoom ? (
+                                    <input
+                                      className="mp-room-name-input"
+                                      value={editingRoomName}
+                                      onClick={(event) =>
+                                        event.stopPropagation()
+                                      }
+                                      onChange={(e) =>
+                                        setEditingRoomName(e.target.value)
+                                      }
+                                      onBlur={saveRenameRoom}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter") saveRenameRoom();
+                                        if (e.key === "Escape")
+                                          cancelRenameRoom();
+                                      }}
+                                      autoFocus
+                                    />
+                                  ) : (
+                                    <div
+                                      className="mp-room-name"
+                                      onClick={(event) =>
+                                        event.stopPropagation()
+                                      }
+                                      onDoubleClick={(event) => {
+                                        event.stopPropagation();
+                                        startRenameRoom(project, room);
+                                      }}
+                                      title="더블클릭하여 이름 변경"
+                                    >
+                                      {room.name}
+                                    </div>
+                                  )}
+                                  <div className="mp-room-meta">
+                                    최근 수정 {room.updatedAt}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="mp-room-delete-btn"
+                                  onClick={(event) =>
+                                    handleDeleteRoom(event, project, room)
+                                  }
+                                >
+                                  삭제
+                                </button>
+                                <div className="mp-room-arrow">›</div>
+                              </div>
+                            );
+                          })}
                         </div>
-                        <button
-                          type="button"
-                          className="mp-room-delete-btn"
-                          onClick={(event) =>
-                            handleDeleteRoom(event, project, room)
-                          }
-                        >
-                          삭제
-                        </button>
-                        <div className="mp-room-arrow">›</div>
                       </div>
-                    );
-                    })}
                     </div>
-                  </div>
-                </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
-          </div>
           )}
 
           {/* 내 정보 오른쪽 모달*/}
