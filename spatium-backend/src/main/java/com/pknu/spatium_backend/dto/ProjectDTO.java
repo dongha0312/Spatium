@@ -21,6 +21,8 @@ public class ProjectDTO {
         private int roomCount;
 
         private int furnitureCount;
+
+        private String createdAt;
     }
 
     @Getter

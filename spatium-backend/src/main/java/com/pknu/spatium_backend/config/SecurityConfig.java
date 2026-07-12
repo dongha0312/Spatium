@@ -68,6 +68,8 @@ public class SecurityConfig {
                         // 토큰 재발급 (accessToken 만료 상태에서 호출되므로 인증 불필요,
                         //  refreshToken 자체 검증은 MemberService.reissueTokens가 수행)
                         .requestMatchers(HttpMethod.POST, "/api/auth/token").permitAll()
+                        // 기본 제공 가구 카탈로그는 공개 데이터라 인증 불필요
+                        .requestMatchers(HttpMethod.GET, "/api/furniture").permitAll()
                         // 그 외 전부 인증 필요
                         .anyRequest().authenticated())
                 // 미인증 요청의 401 응답을 기존 공통 에러 스펙으로 내려준다.

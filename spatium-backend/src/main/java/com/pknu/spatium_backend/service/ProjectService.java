@@ -37,7 +37,8 @@ public class ProjectService {
                         project.getProj_code(),
                         project.getProj_name(),
                         roomRepository.countByRoomProj(project.getProj_code()),
-                        0))
+                        0,
+                        project.getProj_date() != null ? project.getProj_date().toString() : null))
                 .toList();
     }
 

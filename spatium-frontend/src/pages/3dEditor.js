@@ -15,11 +15,10 @@ import { getAccessToken, getLoginSession } from "../utils/authSession";
 import { getMyInfo } from "../springApi/MemberSpringBootApi";
 import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
 import { getRoomList, getRoomSceneData } from "../springApi/RoomSpringBootApi";
+import { getFurnitureCatalog } from "../springApi/FurnitureSpringBootApi";
 import useLogout from "../hooks/useLogout";
 import useProjectStats from "../hooks/useProjectStats";
 import { FLOOR_COLORS } from "./roomSceneEditor/scene/floorColor";
-
-const FURNITURE_CATALOG_URL = "/data/furniture_catalog.json";
 
 const WALL_COLORS = ["#F5F0EA", "#E8DCC8", "#C4956A", "#3A3A3A"];
 
@@ -28,7 +27,6 @@ function normalizeCatalogItem(item) {
     ...item,
     path: item.path || item.modelUrl || null,
     modelUrl: item.modelUrl || item.path || null,
-    thumbnailUrl: item.thumbnailUrl || item.imageUrl || null,
   };
 }
 
@@ -164,15 +162,7 @@ function ThreeDEditor() {
   useEffect(() => {
     let isMounted = true;
 
-    fetch(FURNITURE_CATALOG_URL, { cache: "no-store" })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(
-            `Failed to load furniture catalog (${response.status})`,
-          );
-        }
-        return response.json();
-      })
+    getFurnitureCatalog()
       .then((data) => {
         if (isMounted) {
           setFurnitureCatalog(
@@ -651,15 +641,6 @@ function ThreeDEditor() {
                   className="ed-cat-product"
                   onClick={() => handleAddFurniture(item)}
                 >
-                  <span className="ed-cat-product-thumb">
-                    {item.thumbnailUrl ? (
-                      <img src={item.thumbnailUrl} alt="" />
-                    ) : (
-                      <span>
-                        {String(item.category || item.name || "?").slice(0, 2)}
-                      </span>
-                    )}
-                  </span>
                   <span className="ed-cat-product-body">
                     <span className="ed-cat-product-name">{item.name}</span>
                     <span className="ed-cat-product-meta">
