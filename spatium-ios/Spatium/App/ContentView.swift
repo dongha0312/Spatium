@@ -33,8 +33,9 @@ struct ContentView: View {
                 ceilingHeight: scan.ceilingHeight
             )
         } else if ProcessInfo.processInfo.arguments.contains("-UITestSettings")
-                    || ProcessInfo.processInfo.arguments.contains("-UITestHome") {
-            // 스크린샷 검증용: 로그인 게이트를 건너뛰고 메인 탭(설정 또는 홈)으로 바로 진입.
+                    || ProcessInfo.processInfo.arguments.contains("-UITestHome")
+                    || ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D") {
+            // 스크린샷 검증용: 로그인 게이트를 건너뛰고 메인 탭(설정·홈·가구만들기)으로 바로 진입.
             MainTabView()
         } else {
             gate
@@ -88,20 +89,33 @@ struct MainTabView: View {
         ZStack {
             ModernBackground().ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: 18) {
+            Group {
+                if selectedTab == .imgTo3D {
                     currentScreen
                         .id(selectedTab)
                         .transition(tabContentTransition)
+                        .frame(maxWidth: 520, maxHeight: .infinity)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                } else {
+                    ScrollView {
+                        VStack(spacing: 18) {
+                            currentScreen
+                                .id(selectedTab)
+                                .transition(tabContentTransition)
+                        }
+                        .id("main-screen-top")
+                        .frame(maxWidth: 520)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 18)
+                        .padding(.top, 18)
+                        .padding(.bottom, 28)
+                    }
+                    .scrollIndicators(.hidden)
+                    .animation(tabContentAnimation, value: selectedTab)
                 }
-                .frame(maxWidth: 520)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 18)
-                .padding(.top, 18)
-                .padding(.bottom, 28)
             }
-            .scrollIndicators(.hidden)
-            .animation(tabContentAnimation, value: selectedTab)
             .safeAreaInset(edge: .top, spacing: 0) {
                 AppHeader(selectedTab: selectedTab)
             }
@@ -142,6 +156,9 @@ struct MainTabView: View {
         .onAppear {
             if ProcessInfo.processInfo.arguments.contains("-UITestSettings") {
                 selectedTab = .settings
+            }
+            if ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D") {
+                selectedTab = .imgTo3D
             }
         }
         #endif
@@ -207,6 +224,8 @@ struct MainTabView: View {
             } else {
                 EmptyScanView(onStartScan: startNewProjectFlow)
             }
+        case .imgTo3D:
+            ImgTo3DView()
         case .settings:
             SettingsView()
         }

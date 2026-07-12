@@ -1,0 +1,441 @@
+import GLTFKit2
+import SceneKit
+import SwiftUI
+import UIKit
+
+struct ImgTo3DModelViewer: UIViewRepresentable {
+    @Binding var transform: ImgTo3DModelTransform
+    let mode: ImgTo3DViewerMode
+    let activeAxis: ImgTo3DTransformAxis
+    let snapEnabled: Bool
+    let floorSnap: Bool
+    let modelURL: URL?
+    let cameraPreset: ImgTo3DCameraPreset
+    let cameraResetToken: Int
+    let onInteractionBegan: () -> Void
+    let onModelLoaded: (ImgTo3DModelSize, String?) -> Void
+
+    func makeUIView(context: Context) -> SCNView {
+        let view = SCNView()
+        view.backgroundColor = UIColor { traits in
+            UIColor(hexString: traits.userInterfaceStyle == .dark ? "#212A2B" : "#F2EEE6")
+        }
+        view.antialiasingMode = .multisampling4X
+        view.preferredFramesPerSecond = 60
+        view.scene = context.coordinator.makeScene()
+        view.pointOfView = context.coordinator.cameraNode
+        view.allowsCameraControl = true
+        view.autoenablesDefaultLighting = false
+        view.defaultCameraController.interactionMode = .orbitTurntable
+        view.defaultCameraController.inertiaEnabled = true
+        lockCameraRoll(view)
+
+        let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
+        pan.maximumNumberOfTouches = 1
+        pan.isEnabled = false
+        view.addGestureRecognizer(pan)
+        context.coordinator.adjustmentPan = pan
+        context.coordinator.sceneView = view
+        context.coordinator.apply(transform: transform, floorSnap: floorSnap)
+        return view
+    }
+
+    func updateUIView(_ view: SCNView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        coordinator.loadModelIfNeeded(from: modelURL)
+        coordinator.resetCameraIfNeeded(token: cameraResetToken, preset: cameraPreset)
+        coordinator.apply(transform: transform, floorSnap: floorSnap)
+        coordinator.updateGizmo(mode: mode, axis: activeAxis)
+
+        let adjustsModel = mode != .orbit
+        coordinator.adjustmentPan?.isEnabled = adjustsModel
+        view.allowsCameraControl = !adjustsModel
+        view.defaultCameraController.interactionMode = .orbitTurntable
+        lockCameraRoll(view)
+    }
+
+    /// SceneKit 기본 카메라 컨트롤의 두 손가락 비틀기(roll) 제스처를 끕니다.
+    /// 턴테이블 모드도 이 제스처는 허용해서, 시점을 돌리다 보면 지평선이 옆으로 누운 채 누적됩니다.
+    private func lockCameraRoll(_ view: SCNView) {
+        view.gestureRecognizers?
+            .compactMap { $0 as? UIRotationGestureRecognizer }
+            .forEach { $0.isEnabled = false }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var parent: ImgTo3DModelViewer
+        weak var sceneView: SCNView?
+        var adjustmentPan: UIPanGestureRecognizer?
+        let cameraNode = SCNNode()
+
+        private let modelContainer = SCNNode()
+        private let gizmoNode = SCNNode()
+        private var renderedModelURL: String?
+        private var renderedCameraResetToken = 0
+        private var renderedCameraPreset: ImgTo3DCameraPreset = .perspective
+        private var panStart = ImgTo3DModelTransform.initial
+        private var panLatest = ImgTo3DModelTransform.initial
+
+        init(parent: ImgTo3DModelViewer) {
+            self.parent = parent
+        }
+
+        func makeScene() -> SCNScene {
+            let scene = SCNScene()
+            scene.rootNode.addChildNode(makeFloor())
+            scene.rootNode.addChildNode(makeGrid())
+            scene.rootNode.addChildNode(modelContainer)
+            scene.rootNode.addChildNode(gizmoNode)
+            buildTransformGizmo()
+            installPlaceholder()
+
+            let ambient = SCNNode()
+            ambient.light = SCNLight()
+            ambient.light?.type = .ambient
+            ambient.light?.intensity = 500
+            scene.rootNode.addChildNode(ambient)
+
+            let key = SCNNode()
+            key.light = SCNLight()
+            key.light?.type = .directional
+            key.light?.intensity = 1_000
+            key.eulerAngles = SCNVector3(-Float.pi / 3, Float.pi / 5, 0)
+            scene.rootNode.addChildNode(key)
+
+            cameraNode.camera = SCNCamera()
+            cameraNode.camera?.zNear = 0.01
+            cameraNode.camera?.zFar = 100
+            cameraNode.position = SCNVector3(2.4, 1.8, 2.8)
+            aimCameraAtTarget()
+            scene.rootNode.addChildNode(cameraNode)
+            return scene
+        }
+
+        func apply(transform: ImgTo3DModelTransform, floorSnap: Bool) {
+            modelContainer.eulerAngles = SCNVector3(
+                Float(transform.xDegrees * .pi / 180),
+                Float(transform.yDegrees * .pi / 180),
+                Float(transform.zDegrees * .pi / 180)
+            )
+            modelContainer.position = SCNVector3(
+                Float(transform.xPosition),
+                floorSnap ? 0 : Float(transform.yPosition),
+                Float(transform.zPosition)
+            )
+            let scale = Float(transform.scale)
+            modelContainer.scale = SCNVector3(scale, scale, scale)
+
+            // 모델 중심/최저점은 로드 시점(회전 전) 기준이라 회전하면 어긋난다.
+            // 현재 회전·스케일이 반영된 월드 AABB로 수평 중심을 유지하고, 바닥 고정 시 최저점을 다시 접지한다.
+            if let bounds = hierarchyBounds(of: modelContainer, relativeTo: nil) {
+                modelContainer.position.x += Float(transform.xPosition) - (bounds.min.x + bounds.max.x) / 2
+                modelContainer.position.z += Float(transform.zPosition) - (bounds.min.z + bounds.max.z) / 2
+                if floorSnap {
+                    modelContainer.position.y -= bounds.min.y
+                }
+            }
+            gizmoNode.position = modelContainer.position
+        }
+
+        func updateGizmo(mode: ImgTo3DViewerMode, axis: ImgTo3DTransformAxis) {
+            gizmoNode.isHidden = mode == .orbit
+            for child in gizmoNode.childNodes {
+                guard let name = child.name else { continue }
+                child.opacity = axis == .free || axis.rawValue == name ? 1 : 0.22
+            }
+        }
+
+        func resetCameraIfNeeded(token: Int, preset: ImgTo3DCameraPreset) {
+            guard token != renderedCameraResetToken || preset != renderedCameraPreset else { return }
+            renderedCameraResetToken = token
+            renderedCameraPreset = preset
+            // 카메라 컨트롤이 pointOfView를 바꿔놨어도 초기화가 항상 원래 카메라로 복구되도록.
+            sceneView?.pointOfView = cameraNode
+            switch preset {
+            case .perspective: cameraNode.position = SCNVector3(2.4, 1.8, 2.8)
+            case .front: cameraNode.position = SCNVector3(0, 0.8, 3.4)
+            case .side: cameraNode.position = SCNVector3(3.4, 0.8, 0)
+            case .top: cameraNode.position = SCNVector3(0, 4, 0.001)
+            }
+            aimCameraAtTarget()
+            sceneView?.defaultCameraController.target = SCNVector3(0, 0.45, 0)
+        }
+
+        /// look(at:)은 현재 방향에서 최단 회전만 해서 기존 기울기(roll)를 그대로 유지한다.
+        /// up 벡터를 명시해 시점 프리셋·초기화가 항상 수평이 맞는 화면으로 복구되게 한다.
+        private func aimCameraAtTarget() {
+            cameraNode.look(at: SCNVector3(0, 0.45, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
+        }
+
+        func loadModelIfNeeded(from url: URL?) {
+            let key = url?.standardizedFileURL.path
+            guard key != renderedModelURL else { return }
+            renderedModelURL = key
+
+            guard let url else {
+                installPlaceholder()
+                reportModelLoaded(size: .init(), name: nil)
+                return
+            }
+
+            let accessed = url.startAccessingSecurityScopedResource()
+            defer {
+                if accessed { url.stopAccessingSecurityScopedResource() }
+            }
+
+            do {
+                let asset = try GLTFAsset(url: url, options: [:])
+                let scene = SCNScene(gltfAsset: asset)
+                let root = SCNNode()
+                scene.rootNode.childNodes.forEach { root.addChildNode($0.clone()) }
+                guard let bounds = hierarchyBounds(of: root, relativeTo: root) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+
+                let rawSize = SCNVector3(
+                    bounds.max.x - bounds.min.x,
+                    bounds.max.y - bounds.min.y,
+                    bounds.max.z - bounds.min.z
+                )
+                let maxDimension = max(rawSize.x, rawSize.y, rawSize.z)
+                let fitScale: Float = maxDimension > 0 ? 1.2 / maxDimension : 1
+                let centerX = (bounds.min.x + bounds.max.x) / 2
+                let centerZ = (bounds.min.z + bounds.max.z) / 2
+                root.position = SCNVector3(-centerX, -bounds.min.y, -centerZ)
+                root.scale = SCNVector3(fitScale, fitScale, fitScale)
+
+                replaceModel(with: root)
+                reportModelLoaded(
+                    size: .init(
+                        width: Double(rawSize.x * fitScale),
+                        height: Double(rawSize.y * fitScale),
+                        depth: Double(rawSize.z * fitScale)
+                    ),
+                    name: url.lastPathComponent
+                )
+            } catch {
+                installPlaceholder()
+                reportModelLoaded(size: .init(), name: nil)
+            }
+        }
+
+        /// `updateUIView` 도중 SwiftUI 상태를 즉시 바꾸지 않도록 다음 메인 액터 턴에 결과를 전달합니다.
+        private func reportModelLoaded(size: ImgTo3DModelSize, name: String?) {
+            Task { @MainActor [weak self] in
+                await Task.yield()
+                self?.parent.onModelLoaded(size, name)
+            }
+        }
+
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            guard let view = sceneView else { return }
+            switch gesture.state {
+            case .began:
+                parent.onInteractionBegan()
+                panStart = parent.transform
+                panLatest = parent.transform
+                Haptics.selection()
+            case .changed:
+                let translation = gesture.translation(in: view)
+                var next = panStart
+                switch parent.mode {
+                case .orbit:
+                    return
+                case .move:
+                    // 현재 카메라의 화면 오른쪽/앞쪽 벡터를 바닥면에 투영해,
+                    // 카메라를 돌린 뒤에도 손가락이 움직인 화면 방향 그대로 모델이 따라가게 합니다.
+                    let camera = cameraNode.presentation.worldTransform
+                    var rightX = Double(camera.m11)
+                    var rightZ = Double(camera.m13)
+                    var forwardX = Double(-camera.m31)
+                    var forwardZ = Double(-camera.m33)
+                    let rightLength = max(0.001, hypot(rightX, rightZ))
+                    let forwardLength = max(0.001, hypot(forwardX, forwardZ))
+                    rightX /= rightLength
+                    rightZ /= rightLength
+                    forwardX /= forwardLength
+                    forwardZ /= forwardLength
+                    let horizontal = Double(translation.x / 180)
+                    let vertical = Double(translation.y / 180)
+                    switch parent.activeAxis {
+                    case .free:
+                        next.xPosition += horizontal * rightX + vertical * forwardX
+                        next.zPosition += horizontal * rightZ + vertical * forwardZ
+                    case .x:
+                        next.xPosition += horizontal
+                    case .y:
+                        next.yPosition = max(0, panStart.yPosition - vertical)
+                    case .z:
+                        next.zPosition += vertical
+                    }
+                case .rotate:
+                    let amount = Double(translation.x - translation.y) * 0.45
+                    switch parent.activeAxis {
+                    case .free:
+                        next.yDegrees += Double(translation.x) * 0.55
+                        next.xDegrees -= Double(translation.y) * 0.25
+                    case .x: next.xDegrees += amount
+                    case .y: next.yDegrees += amount
+                    case .z: next.zDegrees += amount
+                    }
+                case .scale:
+                    next.scale = min(2, max(0.5, panStart.scale - Double(translation.y / 220)))
+                }
+                panLatest = next
+                parent.transform = next
+            case .ended:
+                guard parent.snapEnabled else { return }
+                var snapped = panLatest
+                switch parent.mode {
+                case .orbit: return
+                case .move:
+                    snapped.xPosition = snapped.xPosition.snapped(to: 0.1)
+                    snapped.yPosition = snapped.yPosition.snapped(to: 0.1)
+                    snapped.zPosition = snapped.zPosition.snapped(to: 0.1)
+                case .rotate:
+                    snapped.xDegrees = snapped.xDegrees.snapped(to: 15)
+                    snapped.yDegrees = snapped.yDegrees.snapped(to: 15)
+                    snapped.zDegrees = snapped.zDegrees.snapped(to: 15)
+                case .scale:
+                    snapped.scale = snapped.scale.snapped(to: 0.05)
+                }
+                parent.transform = snapped
+                Haptics.selection()
+            default:
+                break
+            }
+        }
+
+        private func installPlaceholder() {
+            let geometry = SCNBox(width: 1, height: 0.8, length: 0.6, chamferRadius: 0.04)
+            let material = SCNMaterial()
+            material.diffuse.contents = UIColor(red: 0.77, green: 0.58, blue: 0.42, alpha: 1)
+            material.roughness.contents = 0.55
+            geometry.materials = [material]
+            let box = SCNNode(geometry: geometry)
+            box.position.y = 0.4
+            replaceModel(with: box)
+        }
+
+        private func buildTransformGizmo() {
+            gizmoNode.addChildNode(axisGuide(axis: "X", color: .systemRed))
+            gizmoNode.addChildNode(axisGuide(axis: "Y", color: .systemGreen))
+            gizmoNode.addChildNode(axisGuide(axis: "Z", color: .systemBlue))
+            let center = SCNSphere(radius: 0.035)
+            let material = SCNMaterial()
+            material.diffuse.contents = UIColor.white
+            material.readsFromDepthBuffer = false
+            center.materials = [material]
+            let centerNode = SCNNode(geometry: center)
+            centerNode.renderingOrder = 100
+            gizmoNode.addChildNode(centerNode)
+        }
+
+        private func axisGuide(axis: String, color: UIColor) -> SCNNode {
+            let root = SCNNode()
+            root.name = axis
+            let material = SCNMaterial()
+            material.diffuse.contents = color
+            material.emission.contents = color.withAlphaComponent(0.35)
+            material.readsFromDepthBuffer = false
+
+            let shaft = SCNCylinder(radius: 0.012, height: 0.52)
+            shaft.materials = [material]
+            let shaftNode = SCNNode(geometry: shaft)
+            shaftNode.position.y = 0.26
+
+            let tip = SCNCone(topRadius: 0, bottomRadius: 0.045, height: 0.12)
+            tip.materials = [material]
+            let tipNode = SCNNode(geometry: tip)
+            tipNode.position.y = 0.58
+
+            root.addChildNode(shaftNode)
+            root.addChildNode(tipNode)
+            root.renderingOrder = 100
+            switch axis {
+            case "X": root.eulerAngles.z = -Float.pi / 2
+            case "Z": root.eulerAngles.x = Float.pi / 2
+            default: break
+            }
+            return root
+        }
+
+        private func replaceModel(with node: SCNNode) {
+            modelContainer.childNodes.forEach { $0.removeFromParentNode() }
+            modelContainer.addChildNode(node)
+        }
+
+        private func makeFloor() -> SCNNode {
+            let floor = SCNFloor()
+            floor.reflectivity = 0
+            let material = SCNMaterial()
+            material.diffuse.contents = UIColor { traits in
+                UIColor(hexString: traits.userInterfaceStyle == .dark ? "#2A3436" : "#F2EDE6")
+            }
+            material.roughness.contents = 1
+            floor.materials = [material]
+            return SCNNode(geometry: floor)
+        }
+
+        private func makeGrid() -> SCNNode {
+            let node = SCNNode()
+            let color = UIColor(red: 0.60, green: 0.48, blue: 0.36, alpha: 0.24)
+            for index in -8...8 {
+                let value = Float(index) * 0.5
+                node.addChildNode(line(from: SCNVector3(value, 0.002, -4), to: SCNVector3(value, 0.002, 4), color: color))
+                node.addChildNode(line(from: SCNVector3(-4, 0.002, value), to: SCNVector3(4, 0.002, value), color: color))
+            }
+            return node
+        }
+
+        private func line(from start: SCNVector3, to end: SCNVector3, color: UIColor) -> SCNNode {
+            let source = SCNGeometrySource(vertices: [start, end])
+            let data = Data([0, 1])
+            let element = SCNGeometryElement(data: data, primitiveType: .line, primitiveCount: 1, bytesPerIndex: 1)
+            let geometry = SCNGeometry(sources: [source], elements: [element])
+            let material = SCNMaterial()
+            material.diffuse.contents = color
+            geometry.materials = [material]
+            return SCNNode(geometry: geometry)
+        }
+
+        /// root 하위 지오메트리들의 AABB를 frame 좌표계 기준으로 계산합니다. frame이 nil이면 월드 좌표계.
+        private func hierarchyBounds(of root: SCNNode, relativeTo frame: SCNNode?) -> (min: SCNVector3, max: SCNVector3)? {
+            var lower = SCNVector3(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude)
+            var upper = SCNVector3(-Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude)
+            var found = false
+
+            root.enumerateChildNodes { node, _ in
+                guard node.geometry != nil else { return }
+                let (minimum, maximum) = node.boundingBox
+                let corners = [
+                    SCNVector3(minimum.x, minimum.y, minimum.z), SCNVector3(maximum.x, minimum.y, minimum.z),
+                    SCNVector3(minimum.x, maximum.y, minimum.z), SCNVector3(maximum.x, maximum.y, minimum.z),
+                    SCNVector3(minimum.x, minimum.y, maximum.z), SCNVector3(maximum.x, minimum.y, maximum.z),
+                    SCNVector3(minimum.x, maximum.y, maximum.z), SCNVector3(maximum.x, maximum.y, maximum.z)
+                ]
+                for corner in corners {
+                    let point = node.convertPosition(corner, to: frame)
+                    lower.x = min(lower.x, point.x)
+                    lower.y = min(lower.y, point.y)
+                    lower.z = min(lower.z, point.z)
+                    upper.x = max(upper.x, point.x)
+                    upper.y = max(upper.y, point.y)
+                    upper.z = max(upper.z, point.z)
+                    found = true
+                }
+            }
+            return found ? (lower, upper) : nil
+        }
+    }
+}
+
+private extension Double {
+    func snapped(to increment: Double) -> Double {
+        (self / increment).rounded() * increment
+    }
+}
