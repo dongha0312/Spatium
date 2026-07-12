@@ -68,3 +68,5 @@ fastlane/test_output
 .LSOverride
 
 .claude/
+
+PROJECT_OVERVIEW.md
