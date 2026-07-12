@@ -36,6 +36,8 @@ struct ScanReviewView: View {
     var onExport: () -> Void
     var onUpload: () -> Void
     var onOpenSettings: () -> Void
+    /// 3D 에디터가 저장 과정에서 서버 룸을 새로 만들었을 때 바깥 상태(activeRoomID 등)를 갱신하는 콜백.
+    var onRoomUploaded: ((RoomRecord) -> Void)? = nil
 
     @State private var showScanEditor = false
 
@@ -66,7 +68,8 @@ struct ScanReviewView: View {
                 area: project.estimatedFootprint.width * project.estimatedFootprint.depth,
                 ceilingHeight: project.estimatedCeilingHeight,
                 projectID: projectID,
-                projectName: projectName
+                projectName: projectName,
+                onRoomCreated: onRoomUploaded
             )
         }
     }

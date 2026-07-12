@@ -191,6 +191,9 @@ struct RoomEditorSceneView: UIViewRepresentable {
         /// 실제 방 셸만의 수평 경계. 가구가 밖으로 튀어나와도 이 값은 넓히지 않습니다.
         private var roomBounds = HorizontalBounds(minX: -2, maxX: 2, minZ: -2, maxZ: 2)
         private var wallColliders: [WallCollider] = []
+        /// 벽 메우기 패널의 충돌 면. 셸 벽 콜라이더는 개구부 자리가 비어 있으므로,
+        /// 메운 자리는 패널 박스로 콜라이더를 만들어 실제 벽처럼 가구 이동을 막는다.
+        private var infillColliders: [WallCollider] = []
         private var shellViewFacingSurfaces: [WallFacingUpdater.Wall] = []
         private var measurementSegments: [MeasurementSegment] = []
         private var roomHeight: Float = 2.4
@@ -322,6 +325,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             let wallColor = UIColor(hexString: layout.space?.wallColor ?? "#F2EDE5")
             let floorColor = layout.space?.floorColor
             var scannedBounds: HorizontalBounds?
+            var meshFloorY: Float?
 
             if let template = shellTemplate(for: usdzURL) {
                 let shell = template.clone()
@@ -335,6 +339,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 renderedWallColor = layout.space?.wallColor ?? "#F2EDE5"
                 renderedFloorColor = floorColor
                 scannedBounds = Self.horizontalBounds(of: shell)
+                meshFloorY = Self.shellFloorY(of: shell)
                 let center = scannedBounds.map { SCNVector3($0.centerX, 0, $0.centerZ) } ?? SCNVector3(0, 0, 0)
                 wallColliders = Self.makeWallColliders(from: shell, roomCenter: center)
                 measurementSegments = wallColliders
@@ -366,11 +371,60 @@ struct RoomEditorSceneView: UIViewRepresentable {
             floorNode.geometry = dragFloor
             floorNode.name = "floor"
             floorNode.categoryBitMask = Coordinator.floorHitCategory
-            // 드래그 기준면을 가구가 놓인 실제 바닥 높이에 맞춰야, 탭한 지점과 가구 위치가 어긋나지 않습니다.
-            let floorLevel = layout.furnitures.map { Float($0.position.y) }.min() ?? -0.005
+            // 바닥 높이는 방 메시(Floor mesh)에서 찾는 것을 우선한다. 가구 최저 Y로만 잡으면
+            // 모든 가구를 띄워 저장한 방에서 그 높이가 새 바닥으로 굳어(F12) 슬라이더 0점,
+            // 새 가구 배치, 드래그 평면, 사람 뷰 눈높이가 전부 떠 버린다.
+            // 가구 바닥과 메시 바닥이 거의 같으면(정상 배치) 가구 값을 유지해 기존 저장분의
+            // 높이 슬라이더가 0에서 흔들리지 않게 한다.
+            let furnitureFloorY = layout.furnitures.map { Float($0.position.y) }.min()
+            let floorLevel: Float
+            if let meshFloorY {
+                if let furnitureFloorY, abs(furnitureFloorY - meshFloorY) < 0.1 {
+                    floorLevel = furnitureFloorY
+                } else {
+                    floorLevel = meshFloorY
+                }
+            } else {
+                floorLevel = furnitureFloorY ?? -0.005
+            }
             self.floorLevel = floorLevel
+            viewModel.adoptFloorY(Double(floorLevel))
             floorNode.position = SCNVector3(sceneCenter.x, floorLevel, sceneCenter.z)
             scene.rootNode.addChildNode(floorNode)
+        }
+
+        /// 스캔 셸에서 실제 바닥 높이(월드 Y)를 찾는다. Floor/Ground/Slab mesh의 윗면을
+        /// 우선 쓰고, 없으면 셸 전체의 최저점으로 근사한다. (RoomPlan 좌표계는 바닥이
+        /// y=0이 아닐 수 있어, 가구 최저 Y 추정만으로는 띄운 가구가 바닥을 끌어올린다)
+        private static func shellFloorY(of root: SCNNode) -> Float? {
+            var floorTop: Float?
+            var overallMin: Float?
+
+            func visit(_ node: SCNNode) {
+                if node.geometry != nil {
+                    let (minBounds, maxBounds) = node.boundingBox
+                    let corners = [
+                        SCNVector3(minBounds.x, minBounds.y, minBounds.z),
+                        SCNVector3(maxBounds.x, minBounds.y, minBounds.z),
+                        SCNVector3(minBounds.x, maxBounds.y, minBounds.z),
+                        SCNVector3(maxBounds.x, maxBounds.y, minBounds.z),
+                        SCNVector3(minBounds.x, minBounds.y, maxBounds.z),
+                        SCNVector3(maxBounds.x, minBounds.y, maxBounds.z),
+                        SCNVector3(minBounds.x, maxBounds.y, maxBounds.z),
+                        SCNVector3(maxBounds.x, maxBounds.y, maxBounds.z)
+                    ].map { node.convertPosition($0, to: nil) }
+                    if let minY = corners.map(\.y).min(), let maxY = corners.map(\.y).max() {
+                        overallMin = min(overallMin ?? minY, minY)
+                        if isFloorGeometryNode(node) {
+                            floorTop = max(floorTop ?? maxY, maxY)
+                        }
+                    }
+                }
+                node.childNodes.forEach(visit)
+            }
+
+            visit(root)
+            return floorTop ?? overallMin
         }
 
         /// 가구(Object_grp)를 제거한 방 셸 템플릿. 처음 한 번만 파싱하고 캐시합니다.
@@ -451,11 +505,20 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 applyRenderTransform(to: node, furniture: renderFurniture, source: furniture, roomCenter: roomCenter)
                 furnitureContainer.addChildNode(node)
             }
+            // 벽 메우기 패널은 실제 벽처럼 가구 드래그/되밀기를 막아야 한다. 패널 박스 노드로
+            // 콜라이더를 만들어 셸 벽 콜라이더와 함께 검사한다. (패널 추가/제거 때마다 갱신)
+            infillColliders = layout.furnitures
+                .filter { RoomEditorViewModel.isWallInfill($0) }
+                .compactMap { furniture in
+                    furnitureContainer.childNode(withName: "furniture-\(furniture.itemId)", recursively: false)
+                        .flatMap { WallCollider(node: $0, roomCenter: roomCenter) }
+                }
             applySelection(itemID: viewModel.selectedItemID)
             refreshViewFacingTransparencyTargets()
         }
 
         /// 모델/크기에만 의존하는 렌더 시그니처. 위치·회전은 재사용한 노드에 즉시 반영한다.
+        /// 벽 메우기 패널은 벽 색으로 칠하므로 벽 색이 바뀌면 다시 만들도록 색을 포함한다.
         private func furnitureRenderSignature(for furniture: PlacedFurniture, source: PlacedFurniture) -> String {
             [
                 furniture.furnitureId.description,
@@ -467,7 +530,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 furniture.scale.x.description,
                 furniture.scale.y.description,
                 furniture.scale.z.description,
-                RoomEditorViewModel.isWallInfill(source).description
+                RoomEditorViewModel.isWallInfill(source) ? "infill:\(viewModel.wallColorHex)" : ""
             ].joined(separator: "|")
         }
 
@@ -688,14 +751,15 @@ struct RoomEditorSceneView: UIViewRepresentable {
         }
 
         private func personIntersectsWall(at point: SIMD2<Float>) -> Bool {
-            guard !wallColliders.isEmpty else { return false }
+            let colliders = wallColliders + infillColliders
+            guard !colliders.isEmpty else { return false }
             let body = FurnitureFootprint(
                 halfWidth: Self.personBodyRadius,
                 halfDepth: Self.personBodyRadius,
                 rotationY: 0
             )
             let position = SCNVector3(point.x, floorLevel + 1.45, point.y)
-            for wall in wallColliders {
+            for wall in colliders {
                 guard wall.overlapsSpan(center: position, footprint: body) else { continue }
                 let radius = body.projectionRadius(on: wall.normal)
                 let innerMost = position.dotXZ(wall.normal) - radius
@@ -1334,6 +1398,11 @@ struct RoomEditorSceneView: UIViewRepresentable {
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard gestureRecognizer === movePanGesture else { return true }
             guard let sceneView, let selectedID = viewModel.selectedItemID else { return false }
+            // 벽 메우기 패널은 벽 구조라 드래그로 옮길 수 없다.
+            if let item = viewModel.layout.furnitures.first(where: { $0.itemId == selectedID }),
+               RoomEditorViewModel.isWallInfill(item) {
+                return false
+            }
             let point = touch.location(in: sceneView)
             let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
             return hits.contains { Self.furnitureID(fromNodeOrAncestors: $0.node) == selectedID }
@@ -1609,7 +1678,8 @@ struct RoomEditorSceneView: UIViewRepresentable {
         /// 웹 pushObjectOutOfWalls 포팅: 벽 경계를 침투한 만큼 방 안쪽 normal 방향으로
         /// 밀어내기를 침투가 없어질 때까지(최대 10회) 반복한다.
         private func pushedOutOfWalls(for furniture: PlacedFurniture, position: SCNVector3) -> SCNVector3 {
-            guard !wallColliders.isEmpty else { return position }
+            let colliders = wallColliders + infillColliders
+            guard !colliders.isEmpty else { return position }
             let footprint = FurnitureFootprint(
                 halfWidth: Float(furniture.width ?? 0.8) * max(Float(furniture.scale.x), 0.001) / 2,
                 halfDepth: Float(furniture.depth ?? 0.8) * max(Float(furniture.scale.z), 0.001) / 2,
@@ -1618,7 +1688,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             var position = position
             for _ in 0..<10 {
                 var didPush = false
-                for wall in wallColliders {
+                for wall in colliders {
                     guard wall.overlapsSpan(center: position, footprint: footprint) else { continue }
                     let radius = footprint.projectionRadius(on: wall.normal)
                     let innerMost = position.dotXZ(wall.normal) - radius
@@ -1648,7 +1718,8 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
         /// 발자국(footprint)을 직접 받는 본체 — 가구 이동과 사람 뷰 카메라(몸통)가 공유한다.
         private func wallConstrainedMovement(footprint: FurnitureFootprint, from start: SCNVector3, movement: SIMD2<Float>) -> SIMD2<Float> {
-            guard !wallColliders.isEmpty else { return movement }
+            let colliders = wallColliders + infillColliders
+            guard !colliders.isEmpty else { return movement }
             let totalDistance = simd_length(movement)
             guard totalDistance > 1e-6 else { return .zero }
 
@@ -1664,7 +1735,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 // 한 벽에서 깎은 결과가 다른 벽을 향할 수 있어(코너), 변화가 없을 때까지 몇 번 반복.
                 for _ in 0..<4 {
                     var changed = false
-                    for wall in wallColliders {
+                    for wall in colliders {
                         let normal = SIMD2(wall.normal.x, wall.normal.z)
                         let inward = simd_dot(adjusted, normal)
                         guard inward < -1e-6 else { continue } // 벽 쪽으로 향하는 이동만 검사

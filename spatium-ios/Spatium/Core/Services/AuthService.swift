@@ -131,12 +131,4 @@ struct AuthService {
             print("Server logout error: \(error.localizedDescription)")
         }
     }
-
-    /// 비밀번호 찾기: POST /api/auth/password-reset-requests
-    func requestPasswordReset(email: String) async throws {
-        let body = PasswordResetRequest(email: email)
-        let _: SpatiumAPIEnvelope<EmptyAPIData> = try await client.send(
-            method: "POST", path: "/api/auth/password-reset-requests", body: body, requiresAuth: false
-        )
-    }
 }

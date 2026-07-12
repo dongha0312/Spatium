@@ -29,11 +29,6 @@ private struct CreateProjectRequest: Encodable {
     var projectName: String
 }
 
-private struct RenameProjectRequest: Encodable {
-    var projectId: String
-    var projectName: String
-}
-
 // GET /api/projects/{id}/rooms → PageResponseDTO<ResponseRoomSummaryDTO>
 private struct RoomSummaryItem: Decodable {
     var roomId: String
@@ -87,12 +82,12 @@ struct ProjectService {
         )
     }
 
-    /// PATCH /api/projects (JWT) body {projectId, projectName}.
+    /// PATCH /api/projects/{projectId} (JWT) body {projectName}.
     func renameProject(projectID: String, newName: String) async throws {
         let _: SpatiumAPIEnvelope<EmptyAPIData> = try await client.send(
             method: "PATCH",
-            path: "/api/projects",
-            body: RenameProjectRequest(projectId: projectID, projectName: newName)
+            path: "/api/projects/\(projectID)",
+            body: ["projectName": newName]
         )
     }
 

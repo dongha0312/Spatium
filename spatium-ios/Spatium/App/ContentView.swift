@@ -201,7 +201,8 @@ struct MainTabView: View {
                     onStartScan: startNewScan,
                     onExport: exportScanPackage,
                     onUpload: uploadScanPackage,
-                    onOpenSettings: { selectedTab = .settings }
+                    onOpenSettings: { selectedTab = .settings },
+                    onRoomUploaded: handleEditorCreatedRoom
                 )
             } else {
                 EmptyScanView(onStartScan: startNewProjectFlow)
@@ -276,10 +277,28 @@ struct MainTabView: View {
         }
     }
 
+    /// 3D 에디터가 저장하며 서버 룸을 새로 만들었을 때: 로컬 placeholder를 서버 룸으로 교체하고
+    /// activeRoomID를 갱신해, 같은 스캔이 "서버로 업로드"로 중복 생성되지 않게 한다.
+    private func handleEditorCreatedRoom(_ room: RoomRecord) {
+        var adopted = room
+        adopted.itemCount = scanProject?.items.count ?? 0
+        adopted.photoCount = scanProject?.photos.count ?? 0
+        if let activeProjectID {
+            projectStore.adoptUploadedRoom(adopted, projectID: activeProjectID, replacingLocalRoomID: activeRoomID)
+        }
+        activeRoomID = adopted.id
+        uploadMessage = "3D 에디터에서 저장되어 서버에 업로드되었습니다."
+    }
+
     private func uploadScanPackage() {
         guard let scanProject else { return }
         guard let activeProjectID else {
             uploadMessage = "먼저 프로젝트를 선택/생성해 주세요."
+            return
+        }
+        // 이미 서버 룸이 된 스캔(에디터 저장 또는 이전 업로드)은 다시 올리면 중복 룸이 생긴다.
+        if let activeRoomID, !activeRoomID.hasPrefix("local-") {
+            uploadMessage = "이미 서버에 저장된 스캔입니다."
             return
         }
 

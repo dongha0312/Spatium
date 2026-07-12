@@ -59,6 +59,7 @@ struct RoomEditorView: View {
 
     /// 스캔 결과 또는 서버 저장 룸을 여는 3D 에디터: 방 메시 위에서 감지/편집된 가구를 편집합니다.
     /// roomID/projectID가 있으면(서버 룸) 편집 후 서버에 저장할 수 있습니다.
+    /// onRoomCreated: 저장 과정에서 새 서버 룸이 만들어졌을 때(스캔 첫 업로드) 호출됩니다.
     init(
         scanItems: [EditableScanItem],
         roomName: String,
@@ -70,9 +71,10 @@ struct RoomEditorView: View {
         projectID: String? = nil,
         projectName: String? = nil,
         availableRooms: [RoomRecord] = [],
-        onSelectRoom: ((RoomRecord) -> Void)? = nil
+        onSelectRoom: ((RoomRecord) -> Void)? = nil,
+        onRoomCreated: ((RoomRecord) -> Void)? = nil
     ) {
-        _viewModel = StateObject(wrappedValue: RoomEditorViewModel(
+        let model = RoomEditorViewModel(
             scanItems: scanItems,
             roomName: roomName,
             usdzURL: usdzURL,
@@ -82,7 +84,9 @@ struct RoomEditorView: View {
             roomID: roomID,
             projectID: projectID,
             projectName: projectName
-        ))
+        )
+        model.onServerRoomCreated = onRoomCreated
+        _viewModel = StateObject(wrappedValue: model)
         self.availableRooms = availableRooms
         self.onSelectRoom = onSelectRoom
     }
@@ -676,11 +680,13 @@ struct RoomEditorView: View {
                         .foregroundStyle(SpatiumTheme.soft)
                 }
 
-                // 회전 한 줄 (아이콘 + 슬라이더 + 값)
-                RotationSlider(
-                    degrees: viewModel.selectedRotationDegrees,
-                    onChange: { viewModel.setSelectedRotation(degrees: $0) }
-                )
+                // 회전 한 줄 (아이콘 + 슬라이더 + 값) — 벽 메우기 패널은 벽이라 회전 불가.
+                if !viewModel.selectedIsWallInfill {
+                    RotationSlider(
+                        degrees: viewModel.selectedRotationDegrees,
+                        onChange: { viewModel.setSelectedRotation(degrees: $0) }
+                    )
+                }
 
                 // 높이(수직) 한 줄 — 일반 가구만, 천장까지 여유가 있을 때만 표시.
                 if viewModel.selectedSupportsElevation && viewModel.selectedMaxElevationCm > 0 {
@@ -691,19 +697,26 @@ struct RoomEditorView: View {
                     )
                 }
 
-                // 교체 / 제거 한 줄
+                // 교체 / 제거 한 줄 — 벽 메우기 패널은 벽 구조라 이동/교체 없이
+                // '개구부로 되돌리기'(= 패널 제거)만 허용한다.
                 HStack(spacing: 8) {
+                    if !viewModel.selectedIsWallInfill {
+                        SelectionToolButton(
+                            title: viewModel.isMovingSelectedFurniture ? "이동 중" : "이동",
+                            systemImage: viewModel.isMovingSelectedFurniture ? "hand.raised.fill" : "hand.draw"
+                        ) {
+                            viewModel.isMovingSelectedFurniture.toggle()
+                        }
+                        SelectionToolButton(title: "교체", systemImage: "arrow.triangle.2.circlepath") {
+                            viewModel.isMovingSelectedFurniture = false
+                            showReplacePanel = true
+                        }
+                    }
                     SelectionToolButton(
-                        title: viewModel.isMovingSelectedFurniture ? "이동 중" : "이동",
-                        systemImage: viewModel.isMovingSelectedFurniture ? "hand.raised.fill" : "hand.draw"
+                        title: viewModel.selectedIsWallInfill ? "개구부로 되돌리기" : "제거",
+                        systemImage: "trash",
+                        tint: SpatiumTheme.coral
                     ) {
-                        viewModel.isMovingSelectedFurniture.toggle()
-                    }
-                    SelectionToolButton(title: "교체", systemImage: "arrow.triangle.2.circlepath") {
-                        viewModel.isMovingSelectedFurniture = false
-                        showReplacePanel = true
-                    }
-                    SelectionToolButton(title: "제거", systemImage: "trash", tint: SpatiumTheme.coral) {
                         // 문/창문은 '개구부로 남기기 / 벽으로 메우기'를 물어보고, 일반 가구는 바로 제거.
                         if viewModel.selectedIsReference {
                             showDeleteOptions = true

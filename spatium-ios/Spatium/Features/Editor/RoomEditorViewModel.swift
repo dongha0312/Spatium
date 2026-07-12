@@ -38,6 +38,12 @@ final class RoomEditorViewModel: ObservableObject {
     let usdzURL: URL?
     /// 서버 레이아웃을 시도할지 여부. 스캔에서 바로 연 편집기는 로컬 전용입니다.
     private let loadsRemoteLayout: Bool
+    /// 서버 레이아웃을 실제로 받아왔는지. 폴백(빈) 에디터에서 저장해 기존 서버
+    /// 메타데이터를 빈 목록으로 덮어쓰는 사고를 막는 데 사용합니다.
+    private var remoteLayoutLoaded = false
+    /// 저장 과정에서 새 서버 룸이 생성됐을 때(스캔 첫 업로드) 바깥 상태에 알리는 콜백.
+    /// 이를 전달하지 않으면 스캔 화면의 "서버로 업로드"가 같은 스캔으로 중복 룸을 만든다.
+    var onServerRoomCreated: ((RoomRecord) -> Void)?
     private let editorService = RoomEditorService()
     private var nextLocalItemID = -1
     /// 새 가구가 앉을 바닥 높이(월드 Y). 박스 방은 0, 스캔 방은 감지 가구 바닥에서 유도.
@@ -124,6 +130,8 @@ final class RoomEditorViewModel: ObservableObject {
         }
         self.nextLocalItemID = nextID
         // 감지된 가구들의 바닥면(= 스캔 바닥 높이)을 새 가구 배치 기준으로 삼습니다.
+        // 씬이 방 메시에서 실제 바닥을 찾으면 adoptFloorY로 이 값을 교정합니다.
+        // (가구를 모두 띄워 저장한 방에서 띄운 높이가 새 바닥으로 굳는 것 방지)
         // 벽 밀착/충돌은 씬(RoomEditorSceneView)의 벽 시스템이 렌더·드래그 모두에서 일관되게 처리합니다.
         self.floorY = self.layout.furnitures.map { $0.position.y }.min() ?? 0
 
@@ -151,6 +159,7 @@ final class RoomEditorViewModel: ObservableObject {
         do {
             layout = try await editorService.fetchLayout(roomID: roomID)
             if let mode = layout.viewMode { viewMode = mode }
+            remoteLayoutLoaded = true
             isOffline = false
             statusMessage = nil
             sceneRevision += 1
@@ -202,7 +211,7 @@ final class RoomEditorViewModel: ObservableObject {
     }
 
     func rotateSelected(byDegrees degrees: Double) {
-        guard let item = selectedFurniture else { return }
+        guard let item = selectedFurniture, !Self.isWallInfill(item) else { return }
         var rotation = item.rotation
         rotation.y += degrees * .pi / 180
         commitTransform(
@@ -244,7 +253,7 @@ final class RoomEditorViewModel: ObservableObject {
     /// 선택된 항목의 Y 회전을 절대 각도(도)로 설정합니다. 스톱 근처면 스냅합니다.
     /// 슬라이더 연속 조작이라 전체 리빌드 없이 노드만 갱신되도록 sceneRevision은 올리지 않습니다.
     func setSelectedRotation(degrees: Double) {
-        guard let item = selectedFurniture,
+        guard let item = selectedFurniture, !Self.isWallInfill(item),
               let index = layout.furnitures.firstIndex(where: { $0.itemId == item.itemId }) else { return }
         let snapped = Self.snapRotation(degrees)
         layout.furnitures[index].rotation.y = snapped * .pi / 180
@@ -297,6 +306,18 @@ final class RoomEditorViewModel: ObservableObject {
     var selectedIsReference: Bool {
         guard let item = selectedFurniture else { return false }
         return Self.isReference(item)
+    }
+
+    /// 선택 항목이 벽 메우기 패널인지 — 벽이므로 이동/회전/교체는 막고 제거(개구부로 되돌리기)만 허용합니다.
+    var selectedIsWallInfill: Bool {
+        guard let item = selectedFurniture else { return false }
+        return Self.isWallInfill(item)
+    }
+
+    /// 씬이 방 메시에서 찾아낸 실제 바닥 높이(월드 Y)를 적용합니다.
+    /// 높이 슬라이더의 0점, 새 가구 배치 높이가 이 값을 기준으로 합니다.
+    func adoptFloorY(_ y: Double) {
+        floorY = y
     }
 
     // MARK: - 높이(수직) 조정 — 프런트엔드 setSelectedElevationCm 대응
@@ -386,7 +407,7 @@ final class RoomEditorViewModel: ObservableObject {
     var isPersonView: Bool { viewMode == .person }
 
     func replaceSelected(with furniture: FurnitureDetail) {
-        guard let item = selectedFurniture,
+        guard let item = selectedFurniture, !Self.isWallInfill(item),
               let index = layout.furnitures.firstIndex(where: { $0.itemId == item.itemId }) else { return }
         layout.furnitures[index].furnitureId = furniture.furnitureId
         layout.furnitures[index].furnitureName = furniture.name
@@ -494,6 +515,13 @@ final class RoomEditorViewModel: ObservableObject {
             return
         }
 
+        // 폴백(기본) 에디터: 원본 씬/메타데이터를 받지 못한 채 열렸다. 이 상태로 저장하면
+        // 빈 editedObjects가 서버의 기존 메타데이터를 통째로 덮어쓰므로 저장을 차단한다.
+        if loadsRemoteLayout && !remoteLayoutLoaded {
+            statusMessage = "방 데이터를 불러오지 못해 저장할 수 없어요. 방을 다시 열어 주세요."
+            return
+        }
+
         do {
             let metadataURL = try exportEditedMetadata()
             defer { try? FileManager.default.removeItem(at: metadataURL) }
@@ -517,6 +545,7 @@ final class RoomEditorViewModel: ObservableObject {
                 isOffline = false
                 hasUnsavedChanges = false
                 statusMessage = "스캔이 업로드되어 저장되었습니다."
+                onServerRoomCreated?(created)
                 return
             }
 
