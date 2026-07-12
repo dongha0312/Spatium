@@ -510,6 +510,7 @@
 }
 
 .it3-viewer-canvas {
+  position: relative;
   flex: 1;
   min-width: 0;
   height: 400px;
@@ -518,12 +519,92 @@
   border: 1px solid var(--bd);
 }
 
+.it3-viewer-mount {
+  width: 100%;
+  height: 100%;
+}
+
+/* 캔버스 하단 조작 안내 칩 */
+.it3-viewer-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 16px;
+  background: rgba(250, 247, 243, 0.92);
+  border: 1px solid var(--bd);
+  font-size: 12px;
+  color: var(--t2);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.it3-viewer-hint b {
+  color: var(--t);
+}
+
+/* 축별 90° 회전 버튼 */
+.it3-rot-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.it3-rot-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.it3-rot-axis {
+  width: 34px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--t2);
+  flex-shrink: 0;
+}
+
+.it3-btn-sm {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 6px;
+  background: var(--sur);
+  border: 1px solid var(--bd);
+  color: var(--t2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.it3-btn-sm:hover {
+  background: var(--bg);
+  color: var(--t);
+}
+
+.it3-btn-sm.is-on {
+  background: var(--g);
+  border-color: var(--g);
+  color: #fff;
+}
+
 .it3-viewer-panel {
   width: 220px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.it3-ctrl-group-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--t3);
+  text-transform: uppercase;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--bd);
+  margin-bottom: -8px;
 }
 
 .it3-ctrl-label {
