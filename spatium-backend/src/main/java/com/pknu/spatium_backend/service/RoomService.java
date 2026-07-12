@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
@@ -210,13 +211,19 @@ public class RoomService {
         getOwnedProject(memId, projectId);
 
         return roomRepository.findByRoomProj(projectId).stream()
-                .map(room -> new ResponseRoomSummaryDTO(
-                        room.getRoom_id(),
-                        room.getRoom_name(),
-                        room.getRoom_area(),
-                        null,
-                        null
-                ))
+                .map(room -> {
+                    // 수정된 적 없는 룸(구버전 데이터 등)은 생성일로 대체한다.
+                    LocalDateTime lastTouched = room.getRoom_modified() != null
+                            ? room.getRoom_modified()
+                            : room.getRoom_created();
+                    return new ResponseRoomSummaryDTO(
+                            room.getRoom_id(),
+                            room.getRoom_name(),
+                            room.getRoom_area(),
+                            null,
+                            lastTouched != null ? lastTouched.toString() : null
+                    );
+                })
                 .toList();
     }
 

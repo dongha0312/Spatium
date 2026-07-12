@@ -50,17 +50,31 @@ function normalizeRoom(room) {
     id: room.roomId,
     thumb: "3D",
     name: room.roomName || "Untitled room",
-    updatedAt: room.updatedAt || "-",
+    // 정렬용 원본(ISO) — ISO 문자열은 사전순 비교가 시간순과 일치한다.
+    updatedAtRaw: room.updatedAt || null,
+    // 표시용 (마지막 수정일, 수정된 적 없으면 백엔드가 생성일을 내려준다)
+    updatedAt: room.updatedAt
+      ? new Date(room.updatedAt).toLocaleDateString("ko-KR")
+      : "-",
     furnitureCount: 0,
   };
 }
 
 function normalizeProject(project, rooms = []) {
+  const normalizedRooms = rooms.map(normalizeRoom);
+  // 프로젝트의 "최근 활동" = 프로젝트 생성일과 소속 룸 수정일 중 가장 최근 값
+  const lastActivity =
+    [project.createdAt, ...normalizedRooms.map((room) => room.updatedAtRaw)]
+      .filter(Boolean)
+      .sort()
+      .pop() || null;
+
   return {
     id: project.projectId,
     name: project.projectName || "Untitled project",
     furnitureCount: project.furnitureCount || 0,
-    rooms: rooms.map(normalizeRoom),
+    rooms: normalizedRooms,
+    lastActivity,
   };
 }
 
@@ -110,6 +124,11 @@ function MyPage() {
           const roomPage = await getRoomList(project.projectId);
           return normalizeProject(project, roomPage?.items || []);
         }),
+      );
+
+      // 최근에 수정/생성된 프로젝트부터 보여준다
+      projectsWithRooms.sort((a, b) =>
+        (b.lastActivity || "").localeCompare(a.lastActivity || ""),
       );
 
       setUser(normalizeUser(me));
@@ -597,10 +616,9 @@ function MyPage() {
                               {room.name}
                             </div>
                           )}
-                          {/* <div className="mp-room-meta">
-                            최근 수정 {room.updatedAt} · 가구{" "}
-                            {room.furnitureCount}개
-                          </div> */}
+                          <div className="mp-room-meta">
+                            최근 수정 {room.updatedAt}
+                          </div>
                         </div>
                         <button
                           type="button"

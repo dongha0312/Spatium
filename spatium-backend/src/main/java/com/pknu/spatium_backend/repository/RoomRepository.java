@@ -23,8 +23,10 @@ public interface RoomRepository extends JpaRepository<Room, String>{
             @Param("roomId") String roomId,
             @Param("projectId") String projectId);
 
-    @Query("SELECT r FROM Room r WHERE r.room_proj = :projectId")
-    List<Room> findByRoomProj(String projectId);
+    // 최근에 수정(수정된 적 없으면 생성)된 룸부터 내려준다.
+    @Query("SELECT r FROM Room r WHERE r.room_proj = :projectId " +
+            "ORDER BY COALESCE(r.room_modified, r.room_created) DESC")
+    List<Room> findByRoomProj(@Param("projectId") String projectId);
 
     @Query("SELECT COUNT(r) FROM Room r WHERE r.room_proj = :projectId")
     int countByRoomProj(String projectId);
