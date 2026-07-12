@@ -70,6 +70,7 @@ function MyPage() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [user, setUser] = useState(DEFAULT_USER);
   const [projects, setProjects] = useState([]);
+  const [expandedProjectIds, setExpandedProjectIds] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
   const [editingProjectId, setEditingProjectId] = useState(null);
@@ -148,6 +149,20 @@ function MyPage() {
     (p) => p.id === modalTargetProjectId,
   );
   const togglePanel = () => setPanelOpen((prev) => !prev);
+
+  const toggleProjectRooms = (projectId) => {
+    setExpandedProjectIds((previous) => {
+      const next = new Set(previous);
+
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+
+      return next;
+    });
+  };
 
   const handleGoAccount = () => {
     setPanelOpen(false);
@@ -447,8 +462,16 @@ function MyPage() {
             </div>
 
             <div className="mp-projects-list">
-              {projects.map((project) => (
-                <div className="mp-room-card" key={project.id}>
+              {projects.map((project) => {
+                const isExpanded = expandedProjectIds.has(project.id);
+
+                return (
+                <div
+                  className={`mp-room-card ${
+                    isExpanded ? "is-expanded" : "is-collapsed"
+                  }`}
+                  key={project.id}
+                >
                   <div className="mp-room-card-header">
                     {editingProjectId === project.id ? (
                       <input
@@ -473,6 +496,33 @@ function MyPage() {
                     )}
                     <div className="mp-room-card-actions">
                       <button
+                        type="button"
+                        className="mp-project-collapse-btn"
+                        onClick={() => toggleProjectRooms(project.id)}
+                        aria-expanded={isExpanded}
+                        aria-controls={`project-rooms-${project.id}`}
+                        title={isExpanded ? "룸 목록 접기" : "룸 목록 보기"}
+                      >
+                        <span className="mp-project-collapse-label">룸</span>
+                        <span className="mp-project-collapse-count">
+                          {project.rooms.length}
+                        </span>
+                        <svg
+                          className="mp-project-collapse-icon"
+                          aria-hidden="true"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                        >
+                          <path
+                            d={isExpanded ? "M4 10L8 6L12 10" : "M4 6L8 10L12 6"}
+                            stroke="currentColor"
+                            strokeWidth="1.75"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                      <button
                         className="mp-new-btn"
                         onClick={() => openProjectModal("room", project.id)}
                       >
@@ -488,13 +538,22 @@ function MyPage() {
                           ? "삭제 중..."
                           : "삭제"}
                       </button>
-                      <div className="mp-room-card-count">
-                        총 {project.rooms.length}개
-                      </div>
                     </div>
                   </div>
 
-                  {project.rooms.map((room) => {
+                  <div
+                    id={`project-rooms-${project.id}`}
+                    className={`mp-project-rooms ${
+                      isExpanded ? "is-expanded" : ""
+                    }`}
+                    aria-hidden={!isExpanded}
+                    inert={!isExpanded ? "" : undefined}
+                  >
+                    <div className="mp-project-rooms-inner">
+                    {project.rooms.length === 0 && (
+                      <div className="mp-empty-rooms">아직 생성된 룸이 없습니다.</div>
+                    )}
+                    {project.rooms.map((room) => {
                     const isEditingRoom =
                       editingRoomKey &&
                       editingRoomKey.projectId === project.id &&
@@ -555,9 +614,12 @@ function MyPage() {
                         <div className="mp-room-arrow">›</div>
                       </div>
                     );
-                  })}
+                    })}
+                    </div>
+                  </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

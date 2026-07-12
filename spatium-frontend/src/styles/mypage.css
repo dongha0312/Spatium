@@ -197,7 +197,7 @@
 }
 
 /* '내 공간' 목록의 프로젝트 항목이 서로 붙어 보이지 않도록 여백을 둔다. */
-.mp-sb-item+.mp-sb-item {
+.mp-sb-item + .mp-sb-item {
   margin-top: 4px;
 }
 
@@ -295,6 +295,11 @@
   justify-content: space-between;
 }
 
+.mp-room-card.is-collapsed .mp-room-card-header {
+  padding-bottom: 18px;
+  border-bottom-color: transparent;
+}
+
 .mp-room-card-title {
   font-size: 14px;
   font-weight: 700;
@@ -321,14 +326,75 @@
   gap: 10px;
 }
 
-.mp-room-card-count {
-  font-size: 12px;
-  color: var(--t3);
-  font-weight: 500;
-  background: var(--bg);
-  padding: 3px 10px;
-  border-radius: 12px;
+.mp-project-collapse-btn {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
   border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--sur);
+  color: var(--t2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: inherit;
+}
+
+.mp-project-collapse-btn:hover {
+  border-color: var(--ga);
+  background: #F3E9DE;
+  color: var(--g);
+}
+
+.mp-project-collapse-count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--t3);
+  font-size: 11px;
+  text-align: center;
+}
+
+.mp-project-collapse-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
+.mp-project-rooms {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px);
+  transition: grid-template-rows .24s ease, opacity .18s ease, transform .24s ease;
+}
+
+.mp-project-rooms.is-expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.mp-project-rooms-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mp-project-rooms {
+    transition: none;
+  }
+}
+
+.mp-empty-rooms {
+  padding: 18px 22px;
+  color: var(--t3);
+  font-size: 13px;
 }
 
 .mp-room-row {
@@ -786,6 +852,59 @@
 
   .mp-panel {
     width: 100%;
+  }
+}
+
+@media (max-width: 600px) {
+  .mp-nav {
+    padding: 0 20px;
+  }
+
+  .mp-sidebar {
+    display: none;
+  }
+
+  .mp-main {
+    padding: 20px 16px;
+  }
+
+  .mp-projects-list {
+    gap: 14px;
+  }
+
+  .mp-room-card-header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+  }
+
+  .mp-room-card-title-input {
+    max-width: none;
+  }
+
+  .mp-room-card-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .mp-project-collapse-btn,
+  .mp-new-btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .mp-project-delete-btn {
+    padding: 8px 10px;
+  }
+
+  .mp-room-row {
+    gap: 10px;
+    padding: 14px 16px;
+  }
+
+  .mp-room-delete-btn {
+    padding: 6px 8px;
   }
 }
 
