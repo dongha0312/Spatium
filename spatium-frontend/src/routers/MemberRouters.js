@@ -8,6 +8,7 @@ import { Route, Routes } from "react-router-dom";
 import MyPage from "../pages/member/MyPage";
 import AccountSettings from "../pages/member/AccountSettings";
 import ThreeDEditor from "../pages/3dEditor";
+import Imgto3dPage from "../pages/imgTo3d/ImgTo3dPage";
 
 function MemberRouters() {
   return (
@@ -20,6 +21,10 @@ function MemberRouters() {
       <Route
         path="member/editor"
         element={<ThreeDEditor></ThreeDEditor>}
+      ></Route>
+      <Route
+        path="member/imgto3d"
+        element={<Imgto3dPage></Imgto3dPage>}
       ></Route>
     </Routes>
   );
