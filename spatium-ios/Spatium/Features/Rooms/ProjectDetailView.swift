@@ -196,6 +196,7 @@ private struct RoomRenderLoaderView: View {
                     scanItems: package.items,
                     roomName: currentRoom.roomType,
                     usdzURL: package.usdzURL,
+                    initialFloorColor: package.floorColor,
                     area: currentRoom.area ?? 16,
                     ceilingHeight: 2.4,
                     roomID: currentRoom.id,
@@ -270,7 +271,11 @@ private struct RoomRenderLoaderView: View {
         if !currentRoom.id.hasPrefix("local-") {
             do {
                 let scene = try await ProjectService().fetchRoomScene(roomID: currentRoom.id)
-                state = .loaded(RoomScanPackage(items: scene.items, usdzURL: scene.usdzURL))
+                state = .loaded(RoomScanPackage(
+                    items: scene.items,
+                    usdzURL: scene.usdzURL,
+                    floorColor: scene.floorColor
+                ))
                 return
             } catch {
                 // scene 실패(구버전 룸/파일 없음 등) 시 아래 로컬 자산 경로로 폴백.

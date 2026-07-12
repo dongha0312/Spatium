@@ -88,11 +88,6 @@ struct TokenRefreshRequest: Encodable {
     var refreshToken: String
 }
 
-/// 비밀번호 찾기: POST /api/auth/password-reset-requests
-struct PasswordResetRequest: Encodable {
-    var email: String
-}
-
 /// 서버가 ID를 문자열(memId) 또는 숫자로 내려줘도 안전하게 문자열로 디코딩하는 래퍼.
 /// 백엔드의 userId는 mem_id(문자열)이며, 숫자형으로 바뀌어도 그대로 파싱됩니다.
 struct BackendID: Codable, Hashable, CustomStringConvertible, ExpressibleByStringLiteral {

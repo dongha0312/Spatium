@@ -12,7 +12,13 @@ struct EmptyScanView: View {
                 message: "새 방을 스캔하면 RoomPlan 결과를 확인하고 서버로 업로드할 수 있습니다."
             )
 
-            PrimaryButton(title: "방 스캔 시작", systemImage: "camera.viewfinder", action: onStartScan)
+            ActionCTAButton(
+                title: "방 스캔 시작",
+                subtitle: "카메라로 공간을 스캔해 3D 도면을 만드세요",
+                systemImage: "camera.viewfinder",
+                tint: SpatiumTheme.sky,
+                action: onStartScan
+            )
         }
     }
 }
@@ -30,6 +36,8 @@ struct ScanReviewView: View {
     var onExport: () -> Void
     var onUpload: () -> Void
     var onOpenSettings: () -> Void
+    /// 3D 에디터가 저장 과정에서 서버 룸을 새로 만들었을 때 바깥 상태(activeRoomID 등)를 갱신하는 콜백.
+    var onRoomUploaded: ((RoomRecord) -> Void)? = nil
 
     @State private var showScanEditor = false
 
@@ -60,7 +68,8 @@ struct ScanReviewView: View {
                 area: project.estimatedFootprint.width * project.estimatedFootprint.depth,
                 ceilingHeight: project.estimatedCeilingHeight,
                 projectID: projectID,
-                projectName: projectName
+                projectName: projectName,
+                onRoomCreated: onRoomUploaded
             )
         }
     }
@@ -132,9 +141,9 @@ private struct ScanStatusHeader: View {
             Button(action: onStartScan) {
                 Image(systemName: "arrow.clockwise")
                     .font(.headline.weight(.semibold))
-                    .foregroundStyle(SpatiumTheme.accent)
+                    .foregroundStyle(SpatiumTheme.sky)
                     .frame(width: 44, height: 44)
-                    .background(SpatiumTheme.accent.opacity(0.09))
+                    .background(SpatiumTheme.sky.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
             }
             .buttonStyle(.pressable)

@@ -29,11 +29,6 @@ private struct CreateProjectRequest: Encodable {
     var projectName: String
 }
 
-private struct RenameProjectRequest: Encodable {
-    var projectId: String
-    var projectName: String
-}
-
 // GET /api/projects/{id}/rooms → PageResponseDTO<ResponseRoomSummaryDTO>
 private struct RoomSummaryItem: Decodable {
     var roomId: String
@@ -87,12 +82,12 @@ struct ProjectService {
         )
     }
 
-    /// PATCH /api/projects (JWT) body {projectId, projectName}.
+    /// PATCH /api/projects/{projectId} (JWT) body {projectName}.
     func renameProject(projectID: String, newName: String) async throws {
         let _: SpatiumAPIEnvelope<EmptyAPIData> = try await client.send(
             method: "PATCH",
-            path: "/api/projects",
-            body: RenameProjectRequest(projectId: projectID, projectName: newName)
+            path: "/api/projects/\(projectID)",
+            body: ["projectName": newName]
         )
     }
 
@@ -192,6 +187,7 @@ struct ProjectService {
         var roomName: String
         var items: [EditableScanItem]
         var usdzURL: URL?
+        var floorColor: String?
     }
 
     private struct RoomSceneData: Decodable {
@@ -214,7 +210,12 @@ struct ProjectService {
 
         let items = data.metadata?.items() ?? []
         let usdzURL = try Self.writeSceneModel(base64: data.model?.dataBase64, roomID: roomID)
-        return RoomSceneResult(roomName: data.roomName, items: items, usdzURL: usdzURL)
+        return RoomSceneResult(
+            roomName: data.roomName,
+            items: items,
+            usdzURL: usdzURL,
+            floorColor: data.metadata?.floorColor
+        )
     }
 
     /// base64 usdz를 캐시에 파일로 복원해 편집기 메시로 쓸 수 있게 합니다.

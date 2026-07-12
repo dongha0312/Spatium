@@ -120,6 +120,19 @@ final class ProjectStore: ObservableObject {
         return created
     }
 
+    /// 3D 에디터가 저장 과정에서 직접 생성한 서버 룸을 목록에 반영합니다.
+    /// (uploadRoom과 같은 교체 규칙: 로컬 placeholder가 있으면 그 자리를 대체)
+    func adoptUploadedRoom(_ room: RoomRecord, projectID: String, replacingLocalRoomID localRoomID: String?) {
+        guard let index = projects.firstIndex(where: { $0.id == projectID }) else { return }
+        if let localRoomID, let roomIndex = projects[index].rooms.firstIndex(where: { $0.id == localRoomID }) {
+            projects[index].rooms[roomIndex] = room
+        } else if !projects[index].rooms.contains(where: { $0.id == room.id }) {
+            projects[index].rooms.insert(room, at: 0)
+        }
+        projects[index].roomCount = max(projects[index].roomCount, projects[index].rooms.count)
+        saveCache()
+    }
+
     func loadRooms(projectID: String) async {
         guard !projectID.hasPrefix("local-") else { return }
         do {

@@ -15,7 +15,6 @@ struct LoginView: View {
     @State private var errorMessage: String?
     @State private var infoMessage: String?
     @State private var showSignUp = false
-    @State private var showPasswordReset = false
     @State private var pendingSocialSignUp: PendingSocialSignUp?
     @State private var appleRawNonce = ""
     @State private var googleService = GoogleSignInService()
@@ -53,7 +52,10 @@ struct LoginView: View {
                     .disabled(isLoading || email.isEmpty || password.isEmpty)
 
                     Button {
-                        showPasswordReset = true
+                        // 서버에 비밀번호 재설정 API가 아직 없다. 이메일을 받아 놓고 항상 실패하는
+                        // 요청을 보내는 대신, 준비 전임을 바로 안내한다. (서버 제공 시 시트 복원)
+                        errorMessage = nil
+                        infoMessage = "비밀번호 재설정은 아직 준비 중이에요. Apple/Google 로그인을 이용하거나 새 계정으로 가입해 주세요."
                     } label: {
                         Text("비밀번호를 잊으셨나요?")
                             .font(.footnote)
@@ -108,16 +110,6 @@ struct LoginView: View {
                     onLoggedIn()
                     dismiss()
                 }
-            }
-            .sheet(isPresented: $showPasswordReset) {
-                NameEditSheet(
-                    title: "비밀번호 찾기",
-                    hint: "가입한 이메일로 재설정 안내를 보내드립니다",
-                    placeholder: "이메일을 입력하세요",
-                    initialName: email,
-                    confirmTitle: "재설정 메일 보내기",
-                    onSave: requestPasswordReset
-                )
             }
         }
     }
@@ -195,19 +187,6 @@ struct LoginView: View {
             } catch {
                 isLoading = false
                 errorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func requestPasswordReset(_ resetEmail: String) {
-        errorMessage = nil
-        infoMessage = nil
-        Task {
-            do {
-                try await AuthService().requestPasswordReset(email: resetEmail)
-                infoMessage = "재설정 안내를 이메일로 보냈어요. 메일함을 확인해 주세요."
-            } catch {
-                errorMessage = "재설정 메일을 보내지 못했어요: \(error.localizedDescription)"
             }
         }
     }

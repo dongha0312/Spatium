@@ -47,6 +47,9 @@ struct RoomEditorSceneView: UIViewRepresentable {
         let personLook = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePersonLook(_:)))
         personLook.maximumNumberOfTouches = 1
         personLook.isEnabled = false
+        // 탭 이동을 먼저 판정한다. 이동량이 있으면 tap이 즉시 실패하고 기존 시선 팬이
+        // 이어받으므로, 드래그 둘러보기는 유지하면서 짧은 탭이 팬에 먹히는 것을 막는다.
+        personLook.require(toFail: tap)
         view.addGestureRecognizer(personLook)
         context.coordinator.personLookGesture = personLook
 
@@ -81,6 +84,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 // 스캔 방: 카메라(보던 각도/확대)를 유지한 채 가구/벽색만 증분 반영해 시점이 튀지 않게 합니다.
                 coordinator.rebuildFurnitureNodes(for: viewModel.layout)
                 coordinator.retintWallsIfNeeded(to: viewModel.wallColorHex)
+                coordinator.retintFloorsIfNeeded(to: viewModel.floorColorHex)
             } else {
                 // 박스(저장) 방: 방 크기/색이 바뀔 수 있어 전체 재생성.
                 view.scene = coordinator.buildScene(for: viewModel.layout)
@@ -112,6 +116,11 @@ struct RoomEditorSceneView: UIViewRepresentable {
         coordinator.updateCameraGestureRequirements(on: view)
     }
 
+    static func dismantleUIView(_ uiView: SCNView, coordinator: Coordinator) {
+        // CADisplayLink가 사람뷰 coordinator를 유지하지 않도록 화면 종료 시 확실히 정리한다.
+        coordinator.stopPersonComfortMotion()
+    }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(viewModel: viewModel, modelLoader: modelLoader)
     }
@@ -141,16 +150,34 @@ struct RoomEditorSceneView: UIViewRepresentable {
         /// 시선 방향(라디안). yaw 0 = -Z, pitch + = 위.
         private var personYaw: Float = 0
         private var personPitch: Float = 0
+        /// 사용자가 요청한 시선/위치. 실제 카메라는 display link가 여기로 부드럽게 따라간다.
+        /// 입력 이벤트마다 카메라를 즉시 움직이면 손가락 샘플링의 들쭉날쭉함이 그대로 눈에
+        /// 전달돼 멀미가 나므로, 사람뷰에서만 목표와 실제 위치를 분리한다.
+        private var personTargetYaw: Float = 0
+        private var personTargetPitch: Float = 0
+        private var personTargetPosition: SIMD2<Float>?
+        private var personWalkVelocity = SIMD2<Float>(0, 0)
+        private var personMotionDisplayLink: CADisplayLink?
+        private var lastPersonMotionTimestamp: CFTimeInterval?
         private var lastLookTranslation = CGPoint.zero
         private var lastWalkTranslation = CGPoint.zero
         /// 카메라(사람 몸통)의 수평 충돌 반경(m).
         private static let personBodyRadius: Float = 0.25
+        /// 멀미를 줄이기 위한 보행/시선 파라미터. 실제 걷는 속도에 가깝게 제한해 장거리
+        /// 탭이 화면을 훅 끌고 가는 느낌을 막고, 시선은 아주 짧은 시간만 보간해 조작 지연은 없다.
+        private static let personMaxTapTravel: Float = 2.8
+        private static let personWalkMaxSpeed: Float = 1.90
+        private static let personWalkAcceleration: Float = 7.5
+        private static let personLookResponse: Float = 0.055
         var renderedRevision = 0
         var renderedViewMode: RoomViewMode?
         var cameraLayoutSize = CGSize.zero
 
         let cameraNode = SCNNode()
         private let furnitureContainer = SCNNode()
+        /// item ID별 마지막 GLB 렌더 형태. SceneKit의 SCNNode는 userData를 제공하지 않아
+        /// coordinator가 별도로 보관한다.
+        private var furnitureRenderSignatures: [Int: String] = [:]
         private let floorNode = SCNNode()
         private let measurementContainer = SCNNode()
         private let selectionHighlightName = "__selection_highlight"
@@ -164,6 +191,9 @@ struct RoomEditorSceneView: UIViewRepresentable {
         /// 실제 방 셸만의 수평 경계. 가구가 밖으로 튀어나와도 이 값은 넓히지 않습니다.
         private var roomBounds = HorizontalBounds(minX: -2, maxX: 2, minZ: -2, maxZ: 2)
         private var wallColliders: [WallCollider] = []
+        /// 벽 메우기 패널의 충돌 면. 셸 벽 콜라이더는 개구부 자리가 비어 있으므로,
+        /// 메운 자리는 패널 박스로 콜라이더를 만들어 실제 벽처럼 가구 이동을 막는다.
+        private var infillColliders: [WallCollider] = []
         private var shellViewFacingSurfaces: [WallFacingUpdater.Wall] = []
         private var measurementSegments: [MeasurementSegment] = []
         private var roomHeight: Float = 2.4
@@ -179,6 +209,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
         /// 현재 씬에 올라간 방 셸(벽 색 재적용용) 및 마지막으로 반영한 벽 색.
         private weak var shellNode: SCNNode?
         private var renderedWallColor = ""
+        private var renderedFloorColor: String?
         /// 카메라를 향한(시야를 가리는) 벽을 반투명 처리하는 렌더 델리게이트. (프런트 updateViewFacingWalls 대응)
         let wallFacingUpdater = WallFacingUpdater()
 
@@ -262,10 +293,11 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
             let floor = SCNBox(width: floorSide, height: 0.05, length: floorSide, chamferRadius: 0)
             let floorMaterial = SCNMaterial()
-            floorMaterial.diffuse.contents = UIColor(red: 0.87, green: 0.80, blue: 0.70, alpha: 1)
+            floorMaterial.diffuse.contents = UIColor(hexString: layout.space?.floorColor ?? "#DECCB3")
             floor.materials = [floorMaterial]
             floorNode.geometry = floor
             floorNode.name = "floor"
+            floorNode.categoryBitMask = Coordinator.floorHitCategory
             floorNode.position = SCNVector3(0, -0.025, 0)
             scene.rootNode.addChildNode(floorNode)
 
@@ -291,16 +323,23 @@ struct RoomEditorSceneView: UIViewRepresentable {
             shellViewFacingSurfaces = []
             roomHeight = Float(layout.space?.ceilingHeight ?? 2.4)
             let wallColor = UIColor(hexString: layout.space?.wallColor ?? "#F2EDE5")
+            let floorColor = layout.space?.floorColor
             var scannedBounds: HorizontalBounds?
+            var meshFloorY: Float?
 
             if let template = shellTemplate(for: usdzURL) {
                 let shell = template.clone()
                 // 벽 색상을 스캔 벽 메시에도 반영.
                 tintWalls(in: shell, color: wallColor)
+                if let floorColor {
+                    tintFloors(in: shell, color: UIColor(hexString: floorColor))
+                }
                 scene.rootNode.addChildNode(shell)
                 shellNode = shell
                 renderedWallColor = layout.space?.wallColor ?? "#F2EDE5"
+                renderedFloorColor = floorColor
                 scannedBounds = Self.horizontalBounds(of: shell)
+                meshFloorY = Self.shellFloorY(of: shell)
                 let center = scannedBounds.map { SCNVector3($0.centerX, 0, $0.centerZ) } ?? SCNVector3(0, 0, 0)
                 wallColliders = Self.makeWallColliders(from: shell, roomCenter: center)
                 measurementSegments = wallColliders
@@ -332,11 +371,60 @@ struct RoomEditorSceneView: UIViewRepresentable {
             floorNode.geometry = dragFloor
             floorNode.name = "floor"
             floorNode.categoryBitMask = Coordinator.floorHitCategory
-            // 드래그 기준면을 가구가 놓인 실제 바닥 높이에 맞춰야, 탭한 지점과 가구 위치가 어긋나지 않습니다.
-            let floorLevel = layout.furnitures.map { Float($0.position.y) }.min() ?? -0.005
+            // 바닥 높이는 방 메시(Floor mesh)에서 찾는 것을 우선한다. 가구 최저 Y로만 잡으면
+            // 모든 가구를 띄워 저장한 방에서 그 높이가 새 바닥으로 굳어(F12) 슬라이더 0점,
+            // 새 가구 배치, 드래그 평면, 사람 뷰 눈높이가 전부 떠 버린다.
+            // 가구 바닥과 메시 바닥이 거의 같으면(정상 배치) 가구 값을 유지해 기존 저장분의
+            // 높이 슬라이더가 0에서 흔들리지 않게 한다.
+            let furnitureFloorY = layout.furnitures.map { Float($0.position.y) }.min()
+            let floorLevel: Float
+            if let meshFloorY {
+                if let furnitureFloorY, abs(furnitureFloorY - meshFloorY) < 0.1 {
+                    floorLevel = furnitureFloorY
+                } else {
+                    floorLevel = meshFloorY
+                }
+            } else {
+                floorLevel = furnitureFloorY ?? -0.005
+            }
             self.floorLevel = floorLevel
+            viewModel.adoptFloorY(Double(floorLevel))
             floorNode.position = SCNVector3(sceneCenter.x, floorLevel, sceneCenter.z)
             scene.rootNode.addChildNode(floorNode)
+        }
+
+        /// 스캔 셸에서 실제 바닥 높이(월드 Y)를 찾는다. Floor/Ground/Slab mesh의 윗면을
+        /// 우선 쓰고, 없으면 셸 전체의 최저점으로 근사한다. (RoomPlan 좌표계는 바닥이
+        /// y=0이 아닐 수 있어, 가구 최저 Y 추정만으로는 띄운 가구가 바닥을 끌어올린다)
+        private static func shellFloorY(of root: SCNNode) -> Float? {
+            var floorTop: Float?
+            var overallMin: Float?
+
+            func visit(_ node: SCNNode) {
+                if node.geometry != nil {
+                    let (minBounds, maxBounds) = node.boundingBox
+                    let corners = [
+                        SCNVector3(minBounds.x, minBounds.y, minBounds.z),
+                        SCNVector3(maxBounds.x, minBounds.y, minBounds.z),
+                        SCNVector3(minBounds.x, maxBounds.y, minBounds.z),
+                        SCNVector3(maxBounds.x, maxBounds.y, minBounds.z),
+                        SCNVector3(minBounds.x, minBounds.y, maxBounds.z),
+                        SCNVector3(maxBounds.x, minBounds.y, maxBounds.z),
+                        SCNVector3(minBounds.x, maxBounds.y, maxBounds.z),
+                        SCNVector3(maxBounds.x, maxBounds.y, maxBounds.z)
+                    ].map { node.convertPosition($0, to: nil) }
+                    if let minY = corners.map(\.y).min(), let maxY = corners.map(\.y).max() {
+                        overallMin = min(overallMin ?? minY, minY)
+                        if isFloorGeometryNode(node) {
+                            floorTop = max(floorTop ?? maxY, maxY)
+                        }
+                    }
+                }
+                node.childNodes.forEach(visit)
+            }
+
+            visit(root)
+            return floorTop ?? overallMin
         }
 
         /// 가구(Object_grp)를 제거한 방 셸 템플릿. 처음 한 번만 파싱하고 캐시합니다.
@@ -365,6 +453,15 @@ struct RoomEditorSceneView: UIViewRepresentable {
             }
         }
 
+        /// 프런트엔드 applyRoomFloorColor 대응. 바닥색을 지정하지 않은 스캔은
+        /// 원본 USDZ 재질을 보존하고, 사용자가 선택한 경우에만 Floor/Ground/Slab mesh를 tint합니다.
+        func retintFloorsIfNeeded(to hex: String?) {
+            guard hex != renderedFloorColor else { return }
+            renderedFloorColor = hex
+            guard let shellNode, let hex else { return }
+            tintFloors(in: shellNode, color: UIColor(hexString: hex))
+        }
+
         /// 스캔 벽 메시(이름에 "Wall" 포함)의 diffuse를 선택한 벽 색으로 덮습니다.
         private func tintWalls(in node: SCNNode, color: UIColor) {
             if let name = node.name, name.localizedCaseInsensitiveContains("wall"), let geometry = node.geometry {
@@ -373,32 +470,89 @@ struct RoomEditorSceneView: UIViewRepresentable {
             node.childNodes.forEach { tintWalls(in: $0, color: color) }
         }
 
+        private func tintFloors(in node: SCNNode, color: UIColor) {
+            if Self.isFloorGeometryNode(node), let geometry = node.geometry {
+                geometry.materials.forEach { $0.diffuse.contents = color }
+            }
+            node.childNodes.forEach { tintFloors(in: $0, color: color) }
+        }
+
         func rebuildFurnitureNodes(for layout: RoomLayout) {
-            furnitureContainer.childNodes.forEach { $0.removeFromParentNode() }
             let roomCenter = SCNVector3(roomBounds.centerX, 0, roomBounds.centerZ)
+            let requestedIDs = Set(layout.furnitures.map(\.itemId))
+            // 프런트엔드처럼 기존 GLB 인스턴스를 유지한다. 추가/삭제/교체된 모델만 다시
+            // 만들므로 벽 색상 변경이나 다른 가구의 회전 때문에 전체 모델을 복제하지 않는다.
+            furnitureContainer.childNodes
+                .filter { Self.furnitureID(fromNodeOrAncestors: $0).map { !requestedIDs.contains($0) } ?? true }
+                .forEach { $0.removeFromParentNode() }
+            furnitureRenderSignatures = furnitureRenderSignatures.filter { requestedIDs.contains($0.key) }
+
             for furniture in layout.furnitures {
                 let renderFurniture = displayFurniture(for: furniture)
+                let nodeName = "furniture-\(furniture.itemId)"
+                let signature = furnitureRenderSignature(for: renderFurniture, source: furniture)
+                if let existing = furnitureContainer.childNode(withName: nodeName, recursively: false),
+                   furnitureRenderSignatures[furniture.itemId] == signature {
+                    applyRenderTransform(to: existing, furniture: renderFurniture, source: furniture, roomCenter: roomCenter)
+                    continue
+                }
+
+                furnitureContainer.childNode(withName: nodeName, recursively: false)?.removeFromParentNode()
                 let node = RoomEditorViewModel.isWallInfill(furniture)
                     ? makeWallInfillNode(for: renderFurniture)
                     : modelLoader.makeNode(for: renderFurniture)
-                // 문/창문은 두께가 거의 0이라 벽 메시와 같은 평면에 놓이면 z-fighting(카메라 이동 시
-                // 번쩍이며 깨지는 현상)이 생깁니다. 방 안쪽으로 아주 살짝 띄워 평면 겹침을 없앱니다.
-                if Self.isDoorOrWindow(furniture) {
-                    let dx = roomCenter.x - node.position.x
-                    let dz = roomCenter.z - node.position.z
-                    let len = sqrtf(dx * dx + dz * dz)
-                    if len > 0.0001 {
-                        let inset: Float = 0.03
-                        node.position.x += dx / len * inset
-                        node.position.z += dz / len * inset
-                    }
-                }
-                // 스캔 결과를 처음 렌더할 때는 RoomPlan이 감지한 좌표를 그대로 보여줘야 합니다.
-                // 벽 스냅/충돌 보정은 사용자가 드래그할 때만 적용합니다.
+                furnitureRenderSignatures[furniture.itemId] = signature
+                applyRenderTransform(to: node, furniture: renderFurniture, source: furniture, roomCenter: roomCenter)
                 furnitureContainer.addChildNode(node)
             }
+            // 벽 메우기 패널은 실제 벽처럼 가구 드래그/되밀기를 막아야 한다. 패널 박스 노드로
+            // 콜라이더를 만들어 셸 벽 콜라이더와 함께 검사한다. (패널 추가/제거 때마다 갱신)
+            infillColliders = layout.furnitures
+                .filter { RoomEditorViewModel.isWallInfill($0) }
+                .compactMap { furniture in
+                    furnitureContainer.childNode(withName: "furniture-\(furniture.itemId)", recursively: false)
+                        .flatMap { WallCollider(node: $0, roomCenter: roomCenter) }
+                }
             applySelection(itemID: viewModel.selectedItemID)
             refreshViewFacingTransparencyTargets()
+        }
+
+        /// 모델/크기에만 의존하는 렌더 시그니처. 위치·회전은 재사용한 노드에 즉시 반영한다.
+        /// 벽 메우기 패널은 벽 색으로 칠하므로 벽 색이 바뀌면 다시 만들도록 색을 포함한다.
+        private func furnitureRenderSignature(for furniture: PlacedFurniture, source: PlacedFurniture) -> String {
+            [
+                furniture.furnitureId.description,
+                furniture.furnitureName,
+                furniture.modelName ?? "",
+                furniture.width?.description ?? "",
+                furniture.height?.description ?? "",
+                furniture.depth?.description ?? "",
+                furniture.scale.x.description,
+                furniture.scale.y.description,
+                furniture.scale.z.description,
+                RoomEditorViewModel.isWallInfill(source) ? "infill:\(viewModel.wallColorHex)" : ""
+            ].joined(separator: "|")
+        }
+
+        /// 스캔 결과를 처음 렌더할 때는 RoomPlan이 감지한 transform을 그대로 사용한다.
+        /// 문/창문만 벽과의 z-fighting을 막기 위해 방 안쪽으로 3cm 넣는다.
+        private func applyRenderTransform(
+            to node: SCNNode,
+            furniture: PlacedFurniture,
+            source: PlacedFurniture,
+            roomCenter: SCNVector3
+        ) {
+            node.position = SCNVector3(furniture.position.x, furniture.position.y, furniture.position.z)
+            node.eulerAngles = SCNVector3(furniture.rotation.x, furniture.rotation.y, furniture.rotation.z)
+            guard Self.isDoorOrWindow(source) else { return }
+
+            let dx = roomCenter.x - node.position.x
+            let dz = roomCenter.z - node.position.z
+            let length = sqrtf(dx * dx + dz * dz)
+            guard length > 0.0001 else { return }
+            let inset: Float = 0.03
+            node.position.x += dx / length * inset
+            node.position.z += dz / length * inset
         }
 
         /// 벽 메우기 패널 노드 — 문/창문을 '벽으로 메우기'로 지운 자리를 GLB 대신 벽 색 박스로 막습니다.
@@ -456,7 +610,9 @@ struct RoomEditorSceneView: UIViewRepresentable {
             case .person:
                 // 방 중앙, 사람 눈높이(~1.45m)에서 시작하는 1인칭 뷰.
                 cameraNode.camera?.usesOrthographicProjection = false
-                cameraNode.camera?.fieldOfView = 70
+                // 휴대폰의 작은 화면에서는 너무 넓은 화각이 가장자리 왜곡과 빠른 optical flow를
+                // 키워 멀미를 유발한다. 실내를 충분히 보면서도 편안한 65°로 제한한다.
+                cameraNode.camera?.fieldOfView = 65
                 let eyeY = floorLevel + 1.45
                 let start = safePersonStartPosition(preferred: SIMD2(sceneCenter.x, sceneCenter.z))
                 let eye = SCNVector3(start.x, eyeY, start.y)
@@ -473,6 +629,10 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 // 이후 시선 제스처가 이어갈 yaw/pitch 상태를 실제 오리엔테이션에서 읽어온다.
                 personYaw = cameraNode.eulerAngles.y
                 personPitch = cameraNode.eulerAngles.x
+                personTargetYaw = personYaw
+                personTargetPitch = personPitch
+                personTargetPosition = start
+                personWalkVelocity = .zero
             }
             SCNTransaction.commit()
             // 벽 투명화는 3D 시점 전용. 탑다운에서는 벽이 시야를 가리지 않는데도
@@ -481,11 +641,18 @@ struct RoomEditorSceneView: UIViewRepresentable {
             wallFacingUpdater.isEnabled = (mode == .threeD)
             sceneView?.pointOfView = cameraNode
 
+            if mode == .person {
+                startPersonComfortMotion()
+            } else {
+                stopPersonComfortMotion()
+            }
+
             // 사람 뷰는 기본 카메라 컨트롤을 끄고(updateUIView) 전용 제스처로 움직인다.
             if mode != .person, let controller = sceneView?.defaultCameraController {
-                // 뷰 이동을 자연스럽게: 방 중심을 축으로 도는 턴테이블 방식(수평 유지, 구르기 없음)
-                // + 관성. 기본(arcball)은 임의 피벗으로 기울어지고 뒤집혀 어지럽다.
-                controller.interactionMode = .orbitTurntable
+                // 스카이뷰는 평면도 역할이므로 회전/기울기를 완전히 막고 평행 이동만 허용한다.
+                // 핀치 확대·축소는 SCNView 기본 카메라 컨트롤이 계속 처리한다.
+                // 일반 3D 뷰만 방 중심을 축으로 도는 턴테이블 회전을 사용한다.
+                controller.interactionMode = mode == .skyView ? .pan : .orbitTurntable
                 controller.target = sceneCenter
                 controller.automaticTarget = false
                 controller.inertiaEnabled = true
@@ -503,9 +670,12 @@ struct RoomEditorSceneView: UIViewRepresentable {
             let dy = Float(translation.y - lastLookTranslation.y)
             lastLookTranslation = translation
 
-            personYaw += dx * 0.004
-            personPitch = max(-0.85, min(0.75, personPitch + dy * 0.003))
-            cameraNode.eulerAngles = SCNVector3(personPitch, personYaw, 0)
+            // 원래 감도(0.004)는 100pt 드래그에 약 23°가 돌아 작은 손 떨림도 과하게
+            // 느껴졌다. 감도를 낮추고 display link 보간 대상으로만 갱신한다.
+            personTargetYaw += dx * 0.0022
+            // 아래 보기 한계를 약 60°까지 열어 발밑/가구 하단도 자연스럽게 확인할 수 있게 한다.
+            // 위쪽은 과도하게 젖혀지지 않도록 기존과 비슷한 범위로 유지한다.
+            personTargetPitch = max(-1.05, min(0.68, personTargetPitch + dy * 0.00175))
         }
 
         /// 두 손가락 드래그 = 보조 이동. 위로 밀면 전진, 좌우로 밀면 옆걸음.
@@ -517,20 +687,25 @@ struct RoomEditorSceneView: UIViewRepresentable {
             let dy = Float(translation.y - lastWalkTranslation.y)
             lastWalkTranslation = translation
 
-            movePersonCamera(forward: -dy * 0.006, strafe: dx * 0.006)
+            // 한 번의 제스처 샘플이 늦게 몰려와도 순간 점프하지 않게 이동량을 제한한다.
+            movePersonCamera(
+                forward: max(-0.10, min(0.10, -dy * 0.0035)),
+                strafe: max(-0.10, min(0.10, dx * 0.0035))
+            )
         }
 
         /// 핀치 = 앞뒤 이동(벌리면 전진).
         @objc func handlePersonPinch(_ gesture: UIPinchGestureRecognizer) {
             let delta = Float(gesture.scale - 1)
             gesture.scale = 1
-            movePersonCamera(forward: delta * 1.6, strafe: 0)
+            movePersonCamera(forward: max(-0.10, min(0.10, delta * 0.55)), strafe: 0)
         }
 
         /// 시선 기준으로 걷되, 벽은 미끄러지며 막히고 가구는 몸통 반경만큼 못 들어가게 한다.
         private func movePersonCamera(forward: Float, strafe: Float) {
-            let forwardDir = SIMD2(-sinf(personYaw), -cosf(personYaw))
-            let rightDir = SIMD2(cosf(personYaw), -sinf(personYaw))
+            // 보간 중에도 두 손가락 이동은 사용자가 바라보려는 방향을 기준으로 한다.
+            let forwardDir = SIMD2(-sinf(personTargetYaw), -cosf(personTargetYaw))
+            let rightDir = SIMD2(cosf(personTargetYaw), -sinf(personTargetYaw))
             var movement = forwardDir * forward + rightDir * strafe
             guard simd_length_squared(movement) > 1e-10 else { return }
 
@@ -540,17 +715,22 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 halfDepth: Self.personBodyRadius,
                 rotationY: 0
             )
-            movement = wallConstrainedMovement(footprint: body, from: cameraNode.position, movement: movement)
+            let motionPosition = personTargetPosition ?? SIMD2(cameraNode.position.x, cameraNode.position.z)
+            movement = wallConstrainedMovement(
+                footprint: body,
+                from: SCNVector3(motionPosition.x, cameraNode.position.y, motionPosition.y),
+                movement: movement
+            )
 
             // 가구: 몸통 반경만큼 부풀린 발자국 안으로 못 들어가게 축별로 차단.
             // (축별 검사라 가구 모서리에서도 걸리지 않고 옆으로 미끄러진다)
-            var position = SIMD2(cameraNode.position.x, cameraNode.position.z)
+            var position = motionPosition
             let stepX = SIMD2(position.x + movement.x, position.y)
             if !personIntersectsFurniture(at: stepX) { position = stepX }
             let stepZ = SIMD2(position.x, position.y + movement.y)
             if !personIntersectsFurniture(at: stepZ) { position = stepZ }
 
-            cameraNode.position = SCNVector3(position.x, cameraNode.position.y, position.y)
+            personTargetPosition = position
         }
 
         /// 해당 위치가 (문/창문 제외) 어떤 가구의 발자국 + 몸통 반경 안인지 검사.
@@ -571,14 +751,15 @@ struct RoomEditorSceneView: UIViewRepresentable {
         }
 
         private func personIntersectsWall(at point: SIMD2<Float>) -> Bool {
-            guard !wallColliders.isEmpty else { return false }
+            let colliders = wallColliders + infillColliders
+            guard !colliders.isEmpty else { return false }
             let body = FurnitureFootprint(
                 halfWidth: Self.personBodyRadius,
                 halfDepth: Self.personBodyRadius,
                 rotationY: 0
             )
             let position = SCNVector3(point.x, floorLevel + 1.45, point.y)
-            for wall in wallColliders {
+            for wall in colliders {
                 guard wall.overlapsSpan(center: position, footprint: body) else { continue }
                 let radius = body.projectionRadius(on: wall.normal)
                 let innerMost = position.dotXZ(wall.normal) - radius
@@ -684,10 +865,6 @@ struct RoomEditorSceneView: UIViewRepresentable {
             for node in furnitureContainer.childNodes {
                 removeSelectionHighlight(from: node)
                 let isSelected = Self.furnitureID(fromNodeOrAncestors: node) == itemID
-                Self.setEmission(
-                    on: node,
-                    color: isSelected ? UIColor(red: 0.77, green: 0.58, blue: 0.42, alpha: 0.55) : .black
-                )
                 if isSelected {
                     addSelectionHighlight(to: node)
                 }
@@ -1003,7 +1180,9 @@ struct RoomEditorSceneView: UIViewRepresentable {
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: style.textColor,
-                .strokeColor: UIColor.white.withAlphaComponent(0.9),
+                // 다크모드에서는 흰 글자 둘레를 어둡게 둘러 밝은 바닥/벽 위에서도 구분한다.
+                // 라이트모드는 기존 흰 후광을 유지한다.
+                .strokeColor: style.textHaloColor,
                 .strokeWidth: -3.0
             ]
             let lineSizes = lines.map { ($0 as NSString).size(withAttributes: attributes) }
@@ -1066,8 +1245,34 @@ struct RoomEditorSceneView: UIViewRepresentable {
             guard let sceneView else { return }
             let point = gesture.location(in: sceneView)
             let hits = sceneView.hitTest(point, options: [.categoryBitMask: Self.floorHitCategory])
-            guard let floorHit = hits.first else { return }
-            walkPersonCamera(toward: SIMD2(floorHit.worldCoordinates.x, floorHit.worldCoordinates.z))
+            if let floorHit = hits.first {
+                walkPersonCamera(toward: SIMD2(floorHit.worldCoordinates.x, floorHit.worldCoordinates.z))
+                return
+            }
+
+            // 투명 드래그 바닥은 SceneKit hit-test에서 제외될 수 있다(특히 스캔 메시의
+            // 깊이 상태와 겹칠 때). 프런트엔드처럼 화면 탭 광선과 실제 바닥 평면의 교점으로
+            // 목적지를 계산하면, 바닥 mesh hit 유무와 관계없이 탭 이동이 항상 동작한다.
+            guard let target = floorPoint(from: point, in: sceneView) else { return }
+            walkPersonCamera(toward: target)
+        }
+
+        private func floorPoint(from screenPoint: CGPoint, in sceneView: SCNView) -> SIMD2<Float>? {
+            let near = sceneView.unprojectPoint(
+                SCNVector3(Float(screenPoint.x), Float(screenPoint.y), 0)
+            )
+            let far = sceneView.unprojectPoint(
+                SCNVector3(Float(screenPoint.x), Float(screenPoint.y), 1)
+            )
+            let direction = SCNVector3(far.x - near.x, far.y - near.y, far.z - near.z)
+            guard abs(direction.y) > 1e-6 else { return nil }
+
+            let distance = (floorLevel - near.y) / direction.y
+            guard distance >= 0 else { return nil }
+            return SIMD2(
+                near.x + direction.x * distance,
+                near.z + direction.z * distance
+            )
         }
 
         /// 탭한 지점을 향해 "걸어서" 이동한다. 순간이동이 아니라 5cm 스텝 스윕이라
@@ -1079,12 +1284,17 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 halfDepth: Self.personBodyRadius,
                 rotationY: 0
             )
-            let start = SIMD2(cameraNode.position.x, cameraNode.position.z)
+            // 목표가 멀어도 한 번에 방을 가로지르지 않는다. 사람 눈높이 카메라의 장거리
+            // 고속 활주는 가장 멀미가 큰 패턴이라, 편안한 보행 거리만 이동하고 다음 탭에서 이어간다.
+            let start = personTargetPosition ?? SIMD2(cameraNode.position.x, cameraNode.position.z)
             var position = start
-            let total = simd_length(target - start)
+            let requested = target - start
+            let total = simd_length(requested)
             guard total > 0.05 else { return }
-            let stepCount = min(max(1, Int(ceilf(total / 0.05))), 400)
-            let step = (target - start) / Float(stepCount)
+            let travel = min(total, Self.personMaxTapTravel)
+            let comfortTarget = start + requested / total * travel
+            let stepCount = max(1, Int(ceilf(travel / 0.04)))
+            let step = (comfortTarget - start) / Float(stepCount)
 
             for _ in 0..<stepCount {
                 let adjusted = wallConstrainedMovement(
@@ -1103,12 +1313,84 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
             let distance = simd_length(position - start)
             guard distance > 0.02 else { return }
-            // 걷는 속도감 ~2m/s. 짧은 이동도 눈에 보이게 최소 0.25초, 길어도 1.2초.
-            SCNTransaction.begin()
-            SCNTransaction.animationDuration = Double(min(max(distance / 2.0, 0.25), 1.2))
-            SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            cameraNode.position = SCNVector3(position.x, cameraNode.position.y, position.y)
-            SCNTransaction.commit()
+            // display link가 가속/감속을 적용하며 목표까지 걷는다. SceneKit transaction으로
+            // 일정 속도 이동을 시키는 것보다 입력 중단/재입력 때도 속도가 자연스럽게 이어진다.
+            personTargetPosition = position
+        }
+
+        private func startPersonComfortMotion() {
+            guard personMotionDisplayLink == nil else { return }
+            let displayLink = CADisplayLink(target: self, selector: #selector(advancePersonComfortMotion(_:)))
+            displayLink.preferredFramesPerSecond = 120
+            displayLink.add(to: .main, forMode: .common)
+            personMotionDisplayLink = displayLink
+            lastPersonMotionTimestamp = nil
+        }
+
+        func stopPersonComfortMotion() {
+            personMotionDisplayLink?.invalidate()
+            personMotionDisplayLink = nil
+            personTargetPosition = nil
+            personWalkVelocity = .zero
+            lastPersonMotionTimestamp = nil
+        }
+
+        @objc private func advancePersonComfortMotion(_ displayLink: CADisplayLink) {
+            guard viewModel.viewMode == .person else {
+                stopPersonComfortMotion()
+                return
+            }
+            defer { lastPersonMotionTimestamp = displayLink.timestamp }
+            guard let previousTimestamp = lastPersonMotionTimestamp else { return }
+            let deltaTime = Float(min(max(displayLink.timestamp - previousTimestamp, 1.0 / 240.0), 1.0 / 30.0))
+
+            // 시선은 55ms 반응 시간으로만 완화한다. 손가락과 눈 사이의 지연은 느껴지지 않으면서
+            // 미세한 방향 전환의 톱니/급정지를 제거한다.
+            let lookBlend = 1 - expf(-deltaTime / Self.personLookResponse)
+            personYaw += Self.shortestAngle(from: personYaw, to: personTargetYaw) * lookBlend
+            personPitch += (personTargetPitch - personPitch) * lookBlend
+            cameraNode.eulerAngles = SCNVector3(personPitch, personYaw, 0)
+
+            guard let target = personTargetPosition else { return }
+            let current = SIMD2(cameraNode.position.x, cameraNode.position.z)
+            let remaining = target - current
+            let distance = simd_length(remaining)
+            guard distance > 0.002 else {
+                cameraNode.position = SCNVector3(target.x, cameraNode.position.y, target.y)
+                personWalkVelocity = .zero
+                return
+            }
+
+            // 목표가 멀수록 보행 속도까지만, 가까워질수록 자연스럽게 감속한다.
+            let desiredSpeed = min(Self.personWalkMaxSpeed, distance * 4.5)
+            let desiredVelocity = remaining / distance * desiredSpeed
+            let velocityDelta = desiredVelocity - personWalkVelocity
+            let maxVelocityChange = Self.personWalkAcceleration * deltaTime
+            let velocityDeltaLength = simd_length(velocityDelta)
+            if velocityDeltaLength > maxVelocityChange {
+                personWalkVelocity += velocityDelta / velocityDeltaLength * maxVelocityChange
+            } else {
+                personWalkVelocity = desiredVelocity
+            }
+
+            let step = personWalkVelocity * deltaTime
+            if simd_length(step) >= distance {
+                cameraNode.position = SCNVector3(target.x, cameraNode.position.y, target.y)
+                personWalkVelocity = .zero
+            } else {
+                cameraNode.position = SCNVector3(
+                    current.x + step.x,
+                    cameraNode.position.y,
+                    current.y + step.y
+                )
+            }
+        }
+
+        private static func shortestAngle(from: Float, to: Float) -> Float {
+            var difference = (to - from).truncatingRemainder(dividingBy: .pi * 2)
+            if difference > .pi { difference -= .pi * 2 }
+            if difference < -.pi { difference += .pi * 2 }
+            return difference
         }
 
         /// 가구 이동 팬은 "선택된 가구 위에서 시작한 터치"만 받는다. 그 외 터치는 받지 않아
@@ -1116,6 +1398,11 @@ struct RoomEditorSceneView: UIViewRepresentable {
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard gestureRecognizer === movePanGesture else { return true }
             guard let sceneView, let selectedID = viewModel.selectedItemID else { return false }
+            // 벽 메우기 패널은 벽 구조라 드래그로 옮길 수 없다.
+            if let item = viewModel.layout.furnitures.first(where: { $0.itemId == selectedID }),
+               RoomEditorViewModel.isWallInfill(item) {
+                return false
+            }
             let point = touch.location(in: sceneView)
             let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
             return hits.contains { Self.furnitureID(fromNodeOrAncestors: $0.node) == selectedID }
@@ -1212,14 +1499,6 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 current = candidate.parent
             }
             return nil
-        }
-
-        private static func setEmission(on node: SCNNode, color: UIColor) {
-            node.geometry?.materials.forEach { $0.emission.contents = color }
-            for child in node.childNodes {
-                if child.name == "__selection_highlight" || child.name == "__measurement_label" { continue }
-                setEmission(on: child, color: color)
-            }
         }
 
         private static func localHierarchyBounds(of root: SCNNode) -> (min: SCNVector3, max: SCNVector3)? {
@@ -1399,7 +1678,8 @@ struct RoomEditorSceneView: UIViewRepresentable {
         /// 웹 pushObjectOutOfWalls 포팅: 벽 경계를 침투한 만큼 방 안쪽 normal 방향으로
         /// 밀어내기를 침투가 없어질 때까지(최대 10회) 반복한다.
         private func pushedOutOfWalls(for furniture: PlacedFurniture, position: SCNVector3) -> SCNVector3 {
-            guard !wallColliders.isEmpty else { return position }
+            let colliders = wallColliders + infillColliders
+            guard !colliders.isEmpty else { return position }
             let footprint = FurnitureFootprint(
                 halfWidth: Float(furniture.width ?? 0.8) * max(Float(furniture.scale.x), 0.001) / 2,
                 halfDepth: Float(furniture.depth ?? 0.8) * max(Float(furniture.scale.z), 0.001) / 2,
@@ -1408,7 +1688,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             var position = position
             for _ in 0..<10 {
                 var didPush = false
-                for wall in wallColliders {
+                for wall in colliders {
                     guard wall.overlapsSpan(center: position, footprint: footprint) else { continue }
                     let radius = footprint.projectionRadius(on: wall.normal)
                     let innerMost = position.dotXZ(wall.normal) - radius
@@ -1438,7 +1718,8 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
         /// 발자국(footprint)을 직접 받는 본체 — 가구 이동과 사람 뷰 카메라(몸통)가 공유한다.
         private func wallConstrainedMovement(footprint: FurnitureFootprint, from start: SCNVector3, movement: SIMD2<Float>) -> SIMD2<Float> {
-            guard !wallColliders.isEmpty else { return movement }
+            let colliders = wallColliders + infillColliders
+            guard !colliders.isEmpty else { return movement }
             let totalDistance = simd_length(movement)
             guard totalDistance > 1e-6 else { return .zero }
 
@@ -1454,7 +1735,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 // 한 벽에서 깎은 결과가 다른 벽을 향할 수 있어(코너), 변화가 없을 때까지 몇 번 반복.
                 for _ in 0..<4 {
                     var changed = false
-                    for wall in wallColliders {
+                    for wall in colliders {
                         let normal = SIMD2(wall.normal.x, wall.normal.z)
                         let inward = simd_dot(adjusted, normal)
                         guard inward < -1e-6 else { continue } // 벽 쪽으로 향하는 이동만 검사
@@ -1482,8 +1763,18 @@ struct RoomEditorSceneView: UIViewRepresentable {
             var colliders: [WallCollider] = []
 
             func visit(_ node: SCNNode) {
-                if isWallGeometryNode(node), let collider = WallCollider(node: node, roomCenter: roomCenter) {
-                    colliders.append(collider)
+                if isWallGeometryNode(node) {
+                    // 프런트엔드의 worldWallFaceCollidersFromGeometry와 같은 경로:
+                    // 스캔 벽의 각 삼각형 면을 따로 충돌 면으로 만든다. 특히 대각선 벽을
+                    // 한 개의 축 정렬 bounding box로 처리하면, 벽 바깥의 넓은 삼각 영역이
+                    // 막혀 버리므로 이 세분화가 필수다.
+                    let faceColliders = WallCollider.faceColliders(node: node, roomCenter: roomCenter)
+                    if faceColliders.isEmpty, let fallback = WallCollider(node: node, roomCenter: roomCenter) {
+                        // geometry element를 읽을 수 없는 특수 USD mesh만 기존 OBB 추정으로 보완.
+                        colliders.append(fallback)
+                    } else {
+                        colliders += faceColliders
+                    }
                 }
                 node.childNodes.forEach(visit)
             }
@@ -1501,14 +1792,20 @@ struct RoomEditorSceneView: UIViewRepresentable {
         }
 
         private static func makeViewFacingSurfaces(from colliders: [WallCollider]) -> [WallFacingUpdater.Wall] {
-            colliders.compactMap { collider in
-                collider.node.map {
-                    WallFacingUpdater.Wall(
-                        node: $0,
-                        centerXZ: SIMD2(collider.center.x, collider.center.z),
-                        normalXZ: SIMD2(collider.normal.x, collider.normal.z)
-                    )
+            // 충돌은 triangle별로 세분화하지만, 투명화는 같은 mesh에 대해 한 번만 처리한다.
+            // 그렇지 않으면 스캔 mesh의 수백 개 face가 렌더 프레임마다 같은 material을 반복
+            // 변경해 사람뷰 프레임이 떨어질 수 있다.
+            var seenNodes = Set<ObjectIdentifier>()
+            return colliders.compactMap { collider in
+                guard let node = collider.node,
+                      seenNodes.insert(ObjectIdentifier(node)).inserted else {
+                    return nil
                 }
+                return WallFacingUpdater.Wall(
+                    node: node,
+                    centerXZ: SIMD2(collider.center.x, collider.center.z),
+                    normalXZ: SIMD2(collider.normal.x, collider.normal.z)
+                )
             }
         }
 
@@ -1566,6 +1863,26 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 current = candidate.parent
             }
             return hasWallName
+        }
+
+        /// 프런트엔드 isUsdFloorMesh와 같은 이름 기반 판별.
+        /// 문/창문 메시는 이름에 바닥 관련 단어가 있어도 색칠하지 않습니다.
+        private static func isFloorGeometryNode(_ node: SCNNode) -> Bool {
+            guard node.geometry != nil else { return false }
+            var current: SCNNode? = node
+            while let candidate = current {
+                let name = candidate.name ?? ""
+                if isDoorOrWindowName(name) {
+                    return false
+                }
+                if name.localizedCaseInsensitiveContains("floor") ||
+                    name.localizedCaseInsensitiveContains("ground") ||
+                    name.localizedCaseInsensitiveContains("slab") {
+                    return true
+                }
+                current = candidate.parent
+            }
+            return false
         }
 
         private static func isDoorWindowGeometryNode(_ node: SCNNode) -> Bool {
@@ -1631,22 +1948,40 @@ private enum MeasurementLabelStyle {
     case overall
 
     var lineColor: UIColor {
-        switch self {
-        // 도면 스타일: 치수선/눈금은 진한 검정.
-        case .wall, .overall:
-            UIColor(white: 0.10, alpha: 0.95)
-        case .object:
-            UIColor(red: 0.20, green: 0.27, blue: 0.32, alpha: 0.88)
+        UIColor { traits in
+            if traits.userInterfaceStyle == .dark {
+                return UIColor(white: 1, alpha: 0.96)
+            }
+            switch self {
+            // 라이트모드 도면 스타일: 치수선/눈금은 기존 진한 색 유지.
+            case .wall, .overall:
+                return UIColor(white: 0.10, alpha: 0.95)
+            case .object:
+                return UIColor(red: 0.20, green: 0.27, blue: 0.32, alpha: 0.88)
+            }
         }
     }
 
     var textColor: UIColor {
-        switch self {
-        // 도면 스타일: 라벨도 검정 (흰 후광으로 바닥/벽 위에서도 가독).
-        case .wall, .overall:
-            UIColor(white: 0.08, alpha: 1)
-        case .object:
-            UIColor(red: 0.12, green: 0.20, blue: 0.24, alpha: 1)
+        UIColor { traits in
+            if traits.userInterfaceStyle == .dark {
+                return .white
+            }
+            switch self {
+            // 라이트모드 도면 스타일: 라벨도 기존 진한 색 유지.
+            case .wall, .overall:
+                return UIColor(white: 0.08, alpha: 1)
+            case .object:
+                return UIColor(red: 0.12, green: 0.20, blue: 0.24, alpha: 1)
+            }
+        }
+    }
+
+    var textHaloColor: UIColor {
+        UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(white: 0.02, alpha: 0.82)
+                : UIColor.white.withAlphaComponent(0.9)
         }
     }
 
@@ -1696,8 +2031,11 @@ private struct WallCollider {
     var center: SCNVector3
 
     init?(node: SCNNode, roomCenter: SCNVector3) {
-        let points = Self.worldBoxCorners(of: node)
-        guard points.count == 8,
+        // 축 정렬 bounding box의 8개 꼭짓점만 쓰면 대각선 벽이 실제보다 넓은 사각형
+        // 충돌 영역으로 부풀어 난다. 프런트엔드 wallColliders처럼 실제 geometry 정점을
+        // 월드 좌표로 변환해 벽의 길이·두께·방향을 계산한다.
+        let points = Self.worldGeometryPoints(of: node)
+        guard points.count >= 3,
               let lengthAxis = Self.dominantHorizontalAxis(points) else { return nil }
 
         let candidateNormal = SCNVector3(-lengthAxis.z, 0, lengthAxis.x).normalizedXZ
@@ -1718,6 +2056,76 @@ private struct WallCollider {
         let sumX = points.reduce(Float(0)) { $0 + $1.x }
         let sumZ = points.reduce(Float(0)) { $0 + $1.z }
         center = SCNVector3(sumX / Float(points.count), 0, sumZ / Float(points.count))
+    }
+
+    /// 스캔된 벽의 실제 삼각형 face마다 만든 콜라이더.
+    ///
+    /// 하나의 Wall mesh에는 서로 다른 방향의 대각선/ㄱ자 면이 섞일 수 있다. 전체 정점으로
+    /// 한 축을 추정하면 그 면들이 만든 빈 공간까지 벽으로 취급하게 된다. 웹의
+    /// `worldWallFaceCollidersFromGeometry`와 동일하게 수직에 가까운 각 triangle만 사용해
+    /// 벽의 실제 면과 같은 방향·길이의 충돌 영역을 만든다.
+    static func faceColliders(node: SCNNode, roomCenter: SCNVector3) -> [WallCollider] {
+        worldGeometryTriangles(of: node).compactMap { triangle in
+            WallCollider(node: node, facePoints: triangle, roomCenter: roomCenter)
+        }
+    }
+
+    private init?(node: SCNNode, facePoints points: [SCNVector3], roomCenter: SCNVector3) {
+        guard points.count == 3 else { return nil }
+
+        let edgeA = SCNVector3(
+            points[1].x - points[0].x,
+            points[1].y - points[0].y,
+            points[1].z - points[0].z
+        )
+        let edgeB = SCNVector3(
+            points[2].x - points[0].x,
+            points[2].y - points[0].y,
+            points[2].z - points[0].z
+        )
+        let faceNormal = SCNVector3(
+            edgeA.y * edgeB.z - edgeA.z * edgeB.y,
+            edgeA.z * edgeB.x - edgeA.x * edgeB.z,
+            edgeA.x * edgeB.y - edgeA.y * edgeB.x
+        )
+        let faceAreaTwice = sqrtf(
+            faceNormal.x * faceNormal.x +
+                faceNormal.y * faceNormal.y +
+                faceNormal.z * faceNormal.z
+        )
+        // 퇴화한 면과 바닥/천장에 가까운 면은 벽 충돌 대상이 아니다.
+        guard faceAreaTwice > 0.000002,
+              abs(faceNormal.y / faceAreaTwice) <= 0.25 else { return nil }
+
+        let candidateNormal = SCNVector3(faceNormal.x, 0, faceNormal.z).normalizedXZ
+        guard candidateNormal.lengthXZ > 0 else { return nil }
+
+        let candidateProjection = points.reduce(Float(0)) { $0 + $1.dotXZ(candidateNormal) } / Float(points.count)
+        let roomSide: Float = roomCenter.dotXZ(candidateNormal) >= candidateProjection ? 1 : -1
+        normal = SCNVector3(
+            candidateNormal.x * roomSide,
+            0,
+            candidateNormal.z * roomSide
+        ).normalizedXZ
+        projection = candidateProjection * roomSide
+        lengthAxis = SCNVector3(-normal.z, 0, normal.x).normalizedXZ
+
+        let lengthRange = Self.projectionRange(points, axis: lengthAxis)
+        let heightRange = Self.verticalRange(points)
+        let faceLength = lengthRange.max - lengthRange.min
+        let faceHeight = heightRange.max - heightRange.min
+        // 웹과 같은 최소 크기. 창/문 개구부의 아주 작은 찌꺼기 triangle은 충돌면이 되지 않는다.
+        guard faceLength >= 0.05, faceHeight >= 0.05 else { return nil }
+
+        lengthCenter = (lengthRange.min + lengthRange.max) / 2
+        halfLength = faceLength / 2
+        self.node = node
+        let centerY = (heightRange.min + heightRange.max) / 2
+        center = SCNVector3(
+            normal.x * projection + lengthAxis.x * lengthCenter,
+            centerY,
+            normal.z * projection + lengthAxis.z * lengthCenter
+        )
     }
 
     func overlapsSpan(center: SCNVector3, footprint: FurnitureFootprint) -> Bool {
@@ -1742,6 +2150,93 @@ private struct WallCollider {
             SCNVector3(minBounds.x, maxBounds.y, maxBounds.z),
             SCNVector3(maxBounds.x, maxBounds.y, maxBounds.z)
         ].map { node.convertPosition($0, to: nil) }
+    }
+
+    private static func worldGeometryPoints(of node: SCNNode) -> [SCNVector3] {
+        guard let source = node.geometry?.sources(for: .vertex).first,
+              source.usesFloatComponents,
+              source.componentsPerVector >= 3,
+              source.bytesPerComponent == MemoryLayout<Float>.size,
+              source.dataStride >= source.bytesPerComponent * source.componentsPerVector else {
+            return worldBoxCorners(of: node)
+        }
+
+        var points: [SCNVector3] = []
+        points.reserveCapacity(source.vectorCount)
+        source.data.withUnsafeBytes { rawBuffer in
+            for index in 0..<source.vectorCount {
+                let offset = index * source.dataStride + source.dataOffset
+                guard offset + MemoryLayout<Float>.size * 3 <= rawBuffer.count else { continue }
+                let x = rawBuffer.loadUnaligned(fromByteOffset: offset, as: Float.self)
+                let y = rawBuffer.loadUnaligned(
+                    fromByteOffset: offset + MemoryLayout<Float>.size,
+                    as: Float.self
+                )
+                let z = rawBuffer.loadUnaligned(
+                    fromByteOffset: offset + MemoryLayout<Float>.size * 2,
+                    as: Float.self
+                )
+                points.append(node.convertPosition(SCNVector3(x, y, z), to: nil))
+            }
+        }
+        return points.isEmpty ? worldBoxCorners(of: node) : points
+    }
+
+    private static func worldGeometryTriangles(of node: SCNNode) -> [[SCNVector3]] {
+        guard let geometry = node.geometry else { return [] }
+        guard let source = geometry.sources(for: .vertex).first,
+              source.usesFloatComponents,
+              source.componentsPerVector >= 3,
+              source.bytesPerComponent == MemoryLayout<Float>.size,
+              source.dataStride >= source.bytesPerComponent * source.componentsPerVector,
+              // `worldGeometryPoints`가 source를 읽지 못하면 bounding box를 반환한다. face index가
+              // 그 fallback 점에 적용되면 잘못된 면이 생기므로, 지원하는 실제 source만 허용한다.
+              source.vectorCount > 0 else { return [] }
+        let vertices = worldGeometryPoints(of: node)
+        guard
+              source.vectorCount == vertices.count else { return [] }
+
+        var triangles: [[SCNVector3]] = []
+        for element in geometry.elements where element.primitiveType == .triangles {
+            let indices = Self.indices(in: element)
+            guard !indices.isEmpty else { continue }
+            for offset in stride(from: 0, to: indices.count - 2, by: 3) {
+                let a = indices[offset]
+                let b = indices[offset + 1]
+                let c = indices[offset + 2]
+                guard vertices.indices.contains(a), vertices.indices.contains(b), vertices.indices.contains(c) else { continue }
+                triangles.append([vertices[a], vertices[b], vertices[c]])
+            }
+        }
+        return triangles
+    }
+
+    private static func indices(in element: SCNGeometryElement) -> [Int] {
+        guard element.bytesPerIndex > 0 else { return [] }
+        let indexCount = element.primitiveCount * 3
+        guard indexCount > 0 else { return [] }
+
+        var indices: [Int] = []
+        indices.reserveCapacity(indexCount)
+        element.data.withUnsafeBytes { rawBuffer in
+            for index in 0..<indexCount {
+                let offset = index * element.bytesPerIndex
+                guard offset + element.bytesPerIndex <= rawBuffer.count else { break }
+                let value: Int
+                switch element.bytesPerIndex {
+                case 1:
+                    value = Int(rawBuffer.loadUnaligned(fromByteOffset: offset, as: UInt8.self))
+                case 2:
+                    value = Int(rawBuffer.loadUnaligned(fromByteOffset: offset, as: UInt16.self))
+                case 4:
+                    value = Int(rawBuffer.loadUnaligned(fromByteOffset: offset, as: UInt32.self))
+                default:
+                    return
+                }
+                indices.append(value)
+            }
+        }
+        return indices
     }
 
     private static func dominantHorizontalAxis(_ points: [SCNVector3]) -> SCNVector3? {
@@ -1771,6 +2266,16 @@ private struct WallCollider {
             let projected = point.dotXZ(axis)
             minValue = min(minValue, projected)
             maxValue = max(maxValue, projected)
+        }
+        return (minValue, maxValue)
+    }
+
+    private static func verticalRange(_ points: [SCNVector3]) -> (min: Float, max: Float) {
+        var minValue = Float.greatestFiniteMagnitude
+        var maxValue = -Float.greatestFiniteMagnitude
+        for point in points {
+            minValue = min(minValue, point.y)
+            maxValue = max(maxValue, point.y)
         }
         return (minValue, maxValue)
     }

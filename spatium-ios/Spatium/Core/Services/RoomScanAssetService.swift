@@ -3,6 +3,7 @@ import Foundation
 struct RoomScanPackage {
     var items: [EditableScanItem]
     var usdzURL: URL?
+    var floorColor: String?
 }
 
 struct RoomScanAssetService {
@@ -63,17 +64,20 @@ struct RoomScanAssetService {
         }
 
         let items: [EditableScanItem]
+        let floorColor: String?
         if let localJSONURL {
             let data = try Data(contentsOf: localJSONURL)
             guard let export = try? JSONDecoder().decode(RoomPlanExportJSON.self, from: data) else {
                 throw LoadError.invalidJSON
             }
             items = export.items()
+            floorColor = export.floorColor
         } else {
             items = []
+            floorColor = nil
         }
 
-        return RoomScanPackage(items: items, usdzURL: localUSDZURL)
+        return RoomScanPackage(items: items, usdzURL: localUSDZURL, floorColor: floorColor)
     }
 
     /// 방 목록 표시용 항목 개수. 스캔 JSON만 내려받아 파싱합니다. (무거운 USDZ는 받지 않음)
