@@ -46,6 +46,70 @@ struct PrimaryButton: View {
     }
 }
 
+/// 주요 작업을 설명과 함께 보여주는 카드형 CTA. 프로젝트 생성과 방 스캔처럼
+/// 다음 단계가 명확한 화면에서 사용한다.
+struct ActionCTAButton: View {
+    let title: String
+    let subtitle: String
+    let systemImage: String
+    let tint: Color
+    var action: () -> Void
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 13) {
+                Image(systemName: systemImage)
+                    .font(.title3.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 48, height: 48)
+                    .background(.white.opacity(0.18))
+                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline.weight(.black))
+                    Text(subtitle)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.82))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .foregroundStyle(.white)
+
+                Spacer(minLength: 4)
+
+                Image(systemName: "arrow.right")
+                    .font(.subheadline.weight(.black))
+                    .foregroundStyle(tint)
+                    .frame(width: 34, height: 34)
+                    .background(.white, in: Circle())
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(
+                    colors: [tint, tint.opacity(0.72)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous)
+                    .stroke(.white.opacity(0.22), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
+            .shadow(color: tint.opacity(0.22), radius: 12, y: 6)
+            .opacity(isEnabled ? 1 : 0.45)
+            .saturation(isEnabled ? 1 : 0.6)
+        }
+        .buttonStyle(.pressable)
+        .contentShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
+        .accessibilityHint(subtitle)
+    }
+}
+
 struct SecondaryButton: View {
     let title: String
     let systemImage: String

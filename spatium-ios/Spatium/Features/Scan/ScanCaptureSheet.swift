@@ -82,7 +82,7 @@ struct ScanCaptureSheet: View {
                         .padding(.vertical, 15)
                         .background(
                             LinearGradient(
-                                colors: [SpatiumTheme.accentLight, SpatiumTheme.accent],
+                                colors: [SpatiumTheme.sky, SpatiumTheme.sky.opacity(0.72)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             ),

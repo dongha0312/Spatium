@@ -1,5 +1,24 @@
 import SwiftUI
 
+private enum SurfaceColorPicker: Equatable {
+    case wall
+    case floor
+
+    var title: String {
+        switch self {
+        case .wall: "벽 색상"
+        case .floor: "바닥 색상"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .wall: "paintpalette"
+        case .floor: "square.grid.2x2"
+        }
+    }
+}
+
 /// 3D 모델링 에디터 페이지. 프런트엔드 `3dEditor.js`의 화면 구성을 그대로 옮겼습니다.
 /// 상단 내비 + 툴바, 좌측(폰=상단) 가구 카탈로그 패널, 3D 캔버스 + 하단 뷰바,
 /// 하단 액션바(취소/미리보기/저장), 선택 시 치수·회전·교체·제거 컨트롤.
@@ -17,12 +36,14 @@ struct RoomEditorView: View {
     @State private var pendingRoomSwitch: RoomRecord?
     @State private var activeGroup: String? = nil
     @State private var priceBannerVisible = true
-    @State private var wallPickerOpen = false
+    /// 벽/바닥 중 하나만 열리는 단일 플로팅 팔레트. 툴바 자체의 높이는 항상 고정한다.
+    @State private var activeSurfaceColorPicker: SurfaceColorPicker?
     @State private var showViewHelp = false
     /// 문/창문 제거 시 '개구부로 남기기 / 벽으로 메우기' 선택 다이얼로그.
     @State private var showDeleteOptions = false
 
     private static let wallColors = ["#F5F0EA", "#E8DCC8", "#C4956A", "#3A3A3A"]
+    private static let floorColors = ["#D8C4A0", "#B08968", "#6B4A34", "#C9C9C9"]
 
     init(
         room: RoomRecord,
@@ -38,28 +59,34 @@ struct RoomEditorView: View {
 
     /// 스캔 결과 또는 서버 저장 룸을 여는 3D 에디터: 방 메시 위에서 감지/편집된 가구를 편집합니다.
     /// roomID/projectID가 있으면(서버 룸) 편집 후 서버에 저장할 수 있습니다.
+    /// onRoomCreated: 저장 과정에서 새 서버 룸이 만들어졌을 때(스캔 첫 업로드) 호출됩니다.
     init(
         scanItems: [EditableScanItem],
         roomName: String,
         usdzURL: URL?,
+        initialFloorColor: String? = nil,
         area: Double,
         ceilingHeight: Double,
         roomID: String? = nil,
         projectID: String? = nil,
         projectName: String? = nil,
         availableRooms: [RoomRecord] = [],
-        onSelectRoom: ((RoomRecord) -> Void)? = nil
+        onSelectRoom: ((RoomRecord) -> Void)? = nil,
+        onRoomCreated: ((RoomRecord) -> Void)? = nil
     ) {
-        _viewModel = StateObject(wrappedValue: RoomEditorViewModel(
+        let model = RoomEditorViewModel(
             scanItems: scanItems,
             roomName: roomName,
             usdzURL: usdzURL,
+            initialFloorColor: initialFloorColor,
             area: area,
             ceilingHeight: ceilingHeight,
             roomID: roomID,
             projectID: projectID,
             projectName: projectName
-        ))
+        )
+        model.onServerRoomCreated = onRoomCreated
+        _viewModel = StateObject(wrappedValue: model)
         self.availableRooms = availableRooms
         self.onSelectRoom = onSelectRoom
     }
@@ -486,59 +513,59 @@ struct RoomEditorView: View {
     }
 
     private var viewbar: some View {
+        ZStack(alignment: .bottom) {
+            viewbarControls
+
+            if let picker = activeSurfaceColorPicker {
+                surfaceColorPalette(for: picker)
+                    .offset(y: -58)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(1)
+            }
+        }
+        // 팔레트가 떠도 bottom toolbar의 레이아웃 높이는 변하지 않는다.
+        .frame(height: 50)
+        .zIndex(2)
+        .animation(.easeOut(duration: 0.16), value: activeSurfaceColorPicker)
+    }
+
+    private var viewbarControls: some View {
         HStack(spacing: 4) {
             Button {
                 viewModel.setViewMode(viewModel.isSkyview ? .threeD : .skyView)
-                wallPickerOpen = false
+                activeSurfaceColorPicker = nil
             } label: {
-                Label("Skyview", systemImage: "cube.transparent")
-                    .font(.caption.weight(.bold))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
+                Image(systemName: "cube.transparent")
+                    .font(.subheadline)
                     .foregroundStyle(viewModel.isSkyview ? SpatiumTheme.accent : SpatiumTheme.controlIcon)
-                    .background(viewModel.isSkyview ? SpatiumTheme.warmPanel : .clear, in: Capsule())
+                    .frame(width: 38, height: 38)
+                    .background(viewModel.isSkyview ? SpatiumTheme.warmPanel : .clear, in: Circle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Skyview 보기")
 
             Button {
                 viewModel.setViewMode(viewModel.isPersonView ? .threeD : .person)
-                wallPickerOpen = false
+                activeSurfaceColorPicker = nil
             } label: {
-                Label("사람 뷰", systemImage: "figure.stand")
-                    .font(.caption.weight(.bold))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
+                Image(systemName: "figure.stand")
+                    .font(.subheadline)
                     .foregroundStyle(viewModel.isPersonView ? SpatiumTheme.accent : SpatiumTheme.controlIcon)
-                    .background(viewModel.isPersonView ? SpatiumTheme.warmPanel : .clear, in: Capsule())
+                    .frame(width: 38, height: 38)
+                    .background(viewModel.isPersonView ? SpatiumTheme.warmPanel : .clear, in: Circle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("사람 뷰로 방 안 둘러보기")
 
             Rectangle().fill(SpatiumTheme.subtleDivider).frame(width: 1, height: 22)
 
-            ZStack(alignment: .bottom) {
-                Button {
-                    withAnimation(.easeOut(duration: 0.12)) { wallPickerOpen.toggle() }
-                } label: {
-                    Image(systemName: "paintpalette")
-                        .font(.subheadline)
-                        .foregroundStyle(wallPickerOpen ? SpatiumTheme.accent : SpatiumTheme.controlIcon)
-                        .frame(width: 38, height: 38)
-                        .background(wallPickerOpen ? SpatiumTheme.warmPanel : .clear, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("벽 색깔 바꾸기")
-
-                if wallPickerOpen {
-                    wallColorPopover
-                        .offset(y: -52)
-                }
-            }
+            surfaceColorButton(.wall)
+            surfaceColorButton(.floor)
 
             if !viewModel.isPersonView {
                 Button {
                     viewModel.isMeasuring.toggle()
-                    wallPickerOpen = false
+                    activeSurfaceColorPicker = nil
                 } label: {
                     Image(systemName: "ruler")
                         .font(.subheadline)
@@ -552,7 +579,7 @@ struct RoomEditorView: View {
 
             Button {
                 showViewHelp = true
-                wallPickerOpen = false
+                activeSurfaceColorPicker = nil
             } label: {
                 Image(systemName: "questionmark.circle")
                     .font(.subheadline)
@@ -568,34 +595,72 @@ struct RoomEditorView: View {
         .shadow(color: SpatiumTheme.shadow.opacity(0.22), radius: 14, y: 6)
     }
 
-    private var wallColorPopover: some View {
-        HStack(spacing: 6) {
-            ForEach(Self.wallColors, id: \.self) { hex in
+    private func surfaceColorButton(_ picker: SurfaceColorPicker) -> some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.16)) {
+                activeSurfaceColorPicker = activeSurfaceColorPicker == picker ? nil : picker
+            }
+        } label: {
+            Image(systemName: picker.systemImage)
+                .font(.subheadline)
+                .foregroundStyle(activeSurfaceColorPicker == picker ? SpatiumTheme.accent : SpatiumTheme.controlIcon)
+                .frame(width: 38, height: 38)
+                .background(activeSurfaceColorPicker == picker ? SpatiumTheme.warmPanel : .clear, in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(picker == .wall ? "벽 색깔 바꾸기" : "바닥 색깔 바꾸기")
+    }
+
+    private func surfaceColorPalette(for picker: SurfaceColorPicker) -> some View {
+        let colors = picker == .wall ? Self.wallColors : Self.floorColors
+        return HStack(spacing: 9) {
+            Label(picker.title, systemImage: picker.systemImage)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(SpatiumTheme.text)
+
+            Rectangle()
+                .fill(SpatiumTheme.subtleDivider)
+                .frame(width: 1, height: 22)
+
+            ForEach(colors, id: \.self) { hex in
                 Button {
-                    viewModel.setWallColor(hex)
-                    wallPickerOpen = false
+                    if picker == .wall {
+                        viewModel.setWallColor(hex)
+                    } else {
+                        viewModel.setFloorColor(hex)
+                    }
+                    activeSurfaceColorPicker = nil
                 } label: {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
                         .fill(Color(edHex: hex))
-                        .frame(width: 24, height: 24)
-                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.black.opacity(0.08), lineWidth: 1))
+                        .frame(width: 26, height: 26)
+                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(.black.opacity(0.10), lineWidth: 1))
                         .overlay {
-                            if viewModel.wallColorHex.caseInsensitiveCompare(hex) == .orderedSame {
-                                RoundedRectangle(cornerRadius: 8)
+                            if isSelectedSurfaceColor(hex, for: picker) {
+                                RoundedRectangle(cornerRadius: 9)
                                     .stroke(SpatiumTheme.accentLight, lineWidth: 2)
                                     .padding(-3)
                             }
                         }
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("벽 색상 \(hex)")
+                .accessibilityLabel("\(picker.title) \(hex)")
             }
         }
-        .padding(10)
-        .background(SpatiumTheme.elevatedSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(SpatiumTheme.border.opacity(0.65), lineWidth: 1))
-        .shadow(color: SpatiumTheme.shadow.opacity(0.22), radius: 14, y: 6)
+        .padding(9)
+        .background(SpatiumTheme.elevatedSurface, in: Capsule())
+        .overlay(Capsule().stroke(SpatiumTheme.border.opacity(0.72), lineWidth: 1))
+        .shadow(color: SpatiumTheme.shadow.opacity(0.24), radius: 14, y: 6)
         .fixedSize()
+    }
+
+    private func isSelectedSurfaceColor(_ hex: String, for picker: SurfaceColorPicker) -> Bool {
+        switch picker {
+        case .wall:
+            viewModel.wallColorHex.caseInsensitiveCompare(hex) == .orderedSame
+        case .floor:
+            viewModel.floorColorHex?.caseInsensitiveCompare(hex) == .orderedSame
+        }
     }
 
     // MARK: - 선택 컨트롤 (치수 / 회전 / 교체·제거)
@@ -615,11 +680,13 @@ struct RoomEditorView: View {
                         .foregroundStyle(SpatiumTheme.soft)
                 }
 
-                // 회전 한 줄 (아이콘 + 슬라이더 + 값)
-                RotationSlider(
-                    degrees: viewModel.selectedRotationDegrees,
-                    onChange: { viewModel.setSelectedRotation(degrees: $0) }
-                )
+                // 회전 한 줄 (아이콘 + 슬라이더 + 값) — 벽 메우기 패널은 벽이라 회전 불가.
+                if !viewModel.selectedIsWallInfill {
+                    RotationSlider(
+                        degrees: viewModel.selectedRotationDegrees,
+                        onChange: { viewModel.setSelectedRotation(degrees: $0) }
+                    )
+                }
 
                 // 높이(수직) 한 줄 — 일반 가구만, 천장까지 여유가 있을 때만 표시.
                 if viewModel.selectedSupportsElevation && viewModel.selectedMaxElevationCm > 0 {
@@ -630,19 +697,26 @@ struct RoomEditorView: View {
                     )
                 }
 
-                // 교체 / 제거 한 줄
+                // 교체 / 제거 한 줄 — 벽 메우기 패널은 벽 구조라 이동/교체 없이
+                // '개구부로 되돌리기'(= 패널 제거)만 허용한다.
                 HStack(spacing: 8) {
+                    if !viewModel.selectedIsWallInfill {
+                        SelectionToolButton(
+                            title: viewModel.isMovingSelectedFurniture ? "이동 중" : "이동",
+                            systemImage: viewModel.isMovingSelectedFurniture ? "hand.raised.fill" : "hand.draw"
+                        ) {
+                            viewModel.isMovingSelectedFurniture.toggle()
+                        }
+                        SelectionToolButton(title: "교체", systemImage: "arrow.triangle.2.circlepath") {
+                            viewModel.isMovingSelectedFurniture = false
+                            showReplacePanel = true
+                        }
+                    }
                     SelectionToolButton(
-                        title: viewModel.isMovingSelectedFurniture ? "이동 중" : "이동",
-                        systemImage: viewModel.isMovingSelectedFurniture ? "hand.raised.fill" : "hand.draw"
+                        title: viewModel.selectedIsWallInfill ? "개구부로 되돌리기" : "제거",
+                        systemImage: "trash",
+                        tint: SpatiumTheme.coral
                     ) {
-                        viewModel.isMovingSelectedFurniture.toggle()
-                    }
-                    SelectionToolButton(title: "교체", systemImage: "arrow.triangle.2.circlepath") {
-                        viewModel.isMovingSelectedFurniture = false
-                        showReplacePanel = true
-                    }
-                    SelectionToolButton(title: "제거", systemImage: "trash", tint: SpatiumTheme.coral) {
                         // 문/창문은 '개구부로 남기기 / 벽으로 메우기'를 물어보고, 일반 가구는 바로 제거.
                         if viewModel.selectedIsReference {
                             showDeleteOptions = true
