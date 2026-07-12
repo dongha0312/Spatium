@@ -1,12 +1,25 @@
 import React, { useRef, useState } from "react";
 
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
 // 1단계: 가구 사진 업로드 (드래그앤드롭 + 파일 선택)
 function UploadStep({ image, onImageChange }) {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
+  const [validationError, setValidationError] = useState("");
 
   const handleFile = (file) => {
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file) return;
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) {
+      setValidationError("PNG, JPG, WEBP 이미지만 사용할 수 있어요.");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setValidationError("이미지 크기는 10MB 이하여야 해요.");
+      return;
+    }
+    setValidationError("");
     onImageChange({ file, url: URL.createObjectURL(file) });
   };
 
@@ -29,10 +42,11 @@ function UploadStep({ image, onImageChange }) {
           <button
             type="button"
             className="it3-btn-ghost"
-            onClick={() => {
-              onImageChange(null);
-              if (inputRef.current) inputRef.current.value = "";
-            }}
+          onClick={() => {
+            onImageChange(null);
+            setValidationError("");
+            if (inputRef.current) inputRef.current.value = "";
+          }}
           >
             다른 사진 선택
           </button>
@@ -57,10 +71,17 @@ function UploadStep({ image, onImageChange }) {
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/png,image/jpeg,image/webp"
         style={{ display: "none" }}
         onChange={(e) => handleFile(e.target.files?.[0])}
       />
+
+      {validationError && (
+        <div className="it3-result-card">
+          <div className="it3-result-label">파일을 확인해주세요</div>
+          <div className="it3-result-main">{validationError}</div>
+        </div>
+      )}
     </div>
   );
 }

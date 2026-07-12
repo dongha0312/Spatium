@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 // 6단계: 생성된 GLB 확인 · 보정
@@ -67,6 +68,22 @@ function applyInitialTransform(model) {
   model.position.set(INITIAL.pos.x, INITIAL.pos.y, INITIAL.pos.z);
 }
 
+function rememberInitialTransform(model) {
+  model.userData.initialTransform = {
+    position: model.position.toArray(),
+    quaternion: model.quaternion.toArray(),
+  };
+}
+
+function restoreInitialTransform(model) {
+  const initial = model.userData.initialTransform;
+  if (!initial) return false;
+  model.position.fromArray(initial.position);
+  model.quaternion.fromArray(initial.quaternion);
+  model.scale.setScalar(model.userData.baseScale || 1);
+  return true;
+}
+
 // 모델의 정점을 모델 로컬 좌표로 균일 샘플링 (모델별로 1회 계산 후 캐시)
 function collectLocalSamples(target) {
   if (target.userData._alignSamples) return target.userData._alignSamples;
@@ -97,18 +114,22 @@ function collectLocalSamples(target) {
   return samples;
 }
 
-function ViewerStep({ objectLabel }) {
+function ViewerStep({ modelUrl, objectLabel, onComplete }) {
   const mountRef = useRef(null);
   const threeRef = useRef(null);
   const fileRef = useRef(null);
   const floorSnapRef = useRef(false);
   const gizmoModeRef = useRef(null);
+  const modelLoadTokenRef = useRef(0);
   const [scale, setScale] = useState(1);
   const [floorSnap, setFloorSnap] = useState(false);
   const [gizmoMode, setGizmoMode] = useState(null); // null | "translate" | "rotate"
   const [fileName, setFileName] = useState(null); // null이면 플레이스홀더 박스
   const [baseSize, setBaseSize] = useState({ ...BOX_SIZE }); // 스케일 1 기준 모델 크기(m)
   const [loadingModel, setLoadingModel] = useState(false);
+  const [modelError, setModelError] = useState("");
+  const [exportingModel, setExportingModel] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   // three.js 씬 + 직접 조작(드래그 이동 / 핸들 회전 / 기즈모) 초기화 (마운트 시 1회)
   useEffect(() => {
@@ -147,6 +168,7 @@ function ViewerStep({ objectLabel }) {
 
     const model = createPlaceholderBox();
     applyInitialTransform(model);
+    rememberInitialTransform(model);
     scene.add(model);
 
     // 선택 표시 — roomSceneEditor와 같은 시각 언어 (링 + 회전 핸들 + 연결선)
@@ -537,6 +559,7 @@ function ViewerStep({ objectLabel }) {
     };
 
     return () => {
+      modelLoadTokenRef.current += 1;
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", onResize);
       renderer.domElement.removeEventListener("pointerdown", handlePointerDown, true);
@@ -586,7 +609,7 @@ function ViewerStep({ objectLabel }) {
   }, [gizmoMode]);
 
   // 현재 모델을 새 모델로 교체 (이전 모델은 정리)
-  const swapModel = (next) => {
+  const swapModel = useCallback((next) => {
     const t = threeRef.current;
     if (!t) return;
     if (t.model) {
@@ -596,7 +619,83 @@ function ViewerStep({ objectLabel }) {
     t.model = next;
     t.scene.add(next);
     t.transformControls.attach(next);
-  };
+  }, []);
+
+  const loadGlb = useCallback(
+    (url, { displayName, applyDemoTransform = false, revokeUrl = false } = {}) => {
+      if (!url || !threeRef.current) return;
+
+      const loadToken = modelLoadTokenRef.current + 1;
+      modelLoadTokenRef.current = loadToken;
+      setLoadingModel(true);
+      setModelError("");
+
+      const finishUrl = () => {
+        if (revokeUrl) URL.revokeObjectURL(url);
+      };
+
+      new GLTFLoader().load(
+        url,
+        (gltf) => {
+          finishUrl();
+          if (modelLoadTokenRef.current !== loadToken || !threeRef.current) {
+            disposeObject(gltf.scene);
+            return;
+          }
+
+          const model = gltf.scene;
+          const bounds = new THREE.Box3().setFromObject(model);
+          const center = bounds.getCenter(new THREE.Vector3());
+          const size = bounds.getSize(new THREE.Vector3());
+          model.position.sub(center);
+
+          const group = new THREE.Group();
+          group.add(model);
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const base = maxDim > 0 ? TARGET_MAX_DIM / maxDim : 1;
+          group.userData.baseScale = base;
+          group.scale.setScalar(base);
+
+          if (applyDemoTransform) {
+            applyInitialTransform(group);
+          } else {
+            // Python에서 이미 Three.js Y-up 축 보정을 마친 모델이므로 회전은 추가하지 않는다.
+            group.position.set(0, (size.y * base) / 2, 0);
+          }
+          rememberInitialTransform(group);
+
+          swapModel(group);
+          setBaseSize({ w: size.x * base, h: size.y * base, d: size.z * base });
+          setFileName(displayName || "generated-model.glb");
+          setScale(1);
+          setFloorSnap(false);
+          threeRef.current?.updateOverlay();
+          setLoadingModel(false);
+        },
+        undefined,
+        () => {
+          finishUrl();
+          if (modelLoadTokenRef.current !== loadToken) return;
+          setLoadingModel(false);
+          setModelError("GLB 모델을 불러오지 못했습니다.");
+        },
+      );
+    },
+    [swapModel],
+  );
+
+  const loadGeneratedModel = useCallback(
+    () => {
+      if (!modelUrl) return;
+      const name = modelUrl.split("/").pop() || "generated-model.glb";
+      loadGlb(modelUrl, { displayName: name });
+    },
+    [loadGlb, modelUrl],
+  );
+
+  useEffect(() => {
+    loadGeneratedModel();
+  }, [loadGeneratedModel]);
 
   // 축별 90° 회전 버튼
   const rotateBy = (axis, degrees) => {
@@ -619,11 +718,11 @@ function ViewerStep({ objectLabel }) {
     setFloorSnap(true);
   };
 
-  // 어긋난 초기 상태로 되돌리기 (카메라 포함)
+  // 현재 모델이 처음 로드된 상태로 되돌리기 (카메라 포함)
   const resetAll = () => {
     const t = threeRef.current;
     if (!t?.model) return;
-    applyInitialTransform(t.model);
+    if (!restoreInitialTransform(t.model)) return;
     setScale(1);
     setFloorSnap(false);
     t.model.scale.setScalar(t.model.userData.baseScale || 1);
@@ -632,58 +731,64 @@ function ViewerStep({ objectLabel }) {
     t.updateOverlay();
   };
 
-  // 테스트용 GLB 파일 로드
+  // 개발 확인용 로컬 GLB 파일 로드
   const handleGlbFile = (file) => {
     if (!file) return;
-    setLoadingModel(true);
     const url = URL.createObjectURL(file);
-    new GLTFLoader().load(
-      url,
-      (gltf) => {
-        URL.revokeObjectURL(url);
-        const model = gltf.scene;
-
-        // 모델 중심을 원점으로 옮기고, 최대 변이 TARGET_MAX_DIM이 되게 정규화
-        const bb = new THREE.Box3().setFromObject(model);
-        const center = bb.getCenter(new THREE.Vector3());
-        const size = bb.getSize(new THREE.Vector3());
-        model.position.sub(center);
-
-        const group = new THREE.Group();
-        group.add(model);
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const base = maxDim > 0 ? TARGET_MAX_DIM / maxDim : 1;
-        group.userData.baseScale = base;
-        applyInitialTransform(group);
-        group.scale.setScalar(base);
-
-        swapModel(group);
-        setBaseSize({ w: size.x * base, h: size.y * base, d: size.z * base });
-        setFileName(file.name);
-        setScale(1);
-        setFloorSnap(false);
-        threeRef.current?.updateOverlay();
-        setLoadingModel(false);
-      },
-      undefined,
-      () => {
-        URL.revokeObjectURL(url);
-        setLoadingModel(false);
-        alert("GLB 파일을 불러오지 못했어요. 파일을 확인해주세요.");
-      }
-    );
+    loadGlb(url, { displayName: file.name, applyDemoTransform: true, revokeUrl: true });
   };
 
   // 플레이스홀더 박스로 복귀
   const restorePlaceholder = () => {
+    modelLoadTokenRef.current += 1;
     const box = createPlaceholderBox();
     applyInitialTransform(box);
+    rememberInitialTransform(box);
     swapModel(box);
     setBaseSize({ ...BOX_SIZE });
     setFileName(null);
     setScale(1);
     setFloorSnap(false);
+    setLoadingModel(false);
+    setModelError("");
     threeRef.current?.updateOverlay();
+  };
+
+  const handleComplete = async () => {
+    const target = threeRef.current?.model;
+    if (!target || !fileName || exportingModel) return;
+
+    setExportingModel(true);
+    setExportError("");
+    try {
+      target.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(target);
+      const size = bounds.getSize(new THREE.Vector3());
+      const exportTarget = target.clone(true);
+      exportTarget.traverse((child) => {
+        child.userData = {};
+      });
+
+      const arrayBuffer = await new GLTFExporter().parseAsync(exportTarget, {
+        binary: true,
+        onlyVisible: true,
+      });
+      const file = new File([arrayBuffer], "spatium_furniture.glb", {
+        type: "model/gltf-binary",
+      });
+      onComplete?.({
+        file,
+        dimensions: {
+          x: Number(size.x.toFixed(4)),
+          y: Number(size.y.toFixed(4)),
+          z: Number(size.z.toFixed(4)),
+        },
+      });
+    } catch (_error) {
+      setExportError("보정된 GLB 파일을 만드는 데 실패했습니다.");
+    } finally {
+      setExportingModel(false);
+    }
   };
 
   return (
@@ -711,7 +816,22 @@ function ViewerStep({ objectLabel }) {
         </div>
 
         <div className="it3-viewer-panel">
-          <div className="it3-ctrl-group-label">테스트 모델</div>
+          <div className="it3-ctrl-group-label">모델</div>
+          {modelError && (
+            <div className="it3-result-card">
+              <div className="it3-result-label">모델 로드 실패</div>
+              <div>{modelError}</div>
+              {modelUrl && (
+                <button
+                  type="button"
+                  className="it3-btn-ghost"
+                  onClick={loadGeneratedModel}
+                >
+                  다시 불러오기
+                </button>
+              )}
+            </div>
+          )}
           <button
             type="button"
             className="it3-btn-ghost"
@@ -817,6 +937,16 @@ function ViewerStep({ objectLabel }) {
             {(baseSize.w * scale).toFixed(2)}m × {(baseSize.h * scale).toFixed(2)}m ×{" "}
             {(baseSize.d * scale).toFixed(2)}m
           </div>
+
+          {exportError && <div className="it3-hint">{exportError}</div>}
+          <button
+            type="button"
+            className="it3-btn-prim"
+            disabled={!fileName || loadingModel || exportingModel}
+            onClick={handleComplete}
+          >
+            {exportingModel ? "GLB 내보내는 중…" : "보정 완료 · 저장하기"}
+          </button>
         </div>
       </div>
     </div>

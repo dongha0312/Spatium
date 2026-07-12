@@ -7,3 +7,17 @@ export const getFurnitureCatalog = () =>
     .get("/api/furniture")
     .then(unwrapApiData)
     .catch(throwApiError);
+
+export const createUserFurniture = ({ file, metadata }) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append(
+    "metadata",
+    new Blob([JSON.stringify(metadata)], { type: "application/json" }),
+  );
+
+  return springApi
+    .post("/api/furniture", formData)
+    .then(unwrapApiData)
+    .catch(throwApiError);
+};
