@@ -109,6 +109,9 @@ function MyPage() {
   const [furnitureLoading, setFurnitureLoading] = useState(false);
   const [furnitureError, setFurnitureError] = useState("");
   const [deletingFurnitureId, setDeletingFurnitureId] = useState(null);
+  const [expandedFurnitureIds, setExpandedFurnitureIds] = useState(
+    () => new Set(),
+  );
   const autoModalHandled = useRef(false);
   const metadataFileInputRef = useRef(null);
   const roomFileInputRef = useRef(null);
@@ -384,10 +387,22 @@ function MyPage() {
     }
   };
 
+  const toggleFurnitureDetails = (furnitureId) => {
+    setExpandedFurnitureIds((previous) => {
+      const next = new Set(previous);
+
+      if (next.has(furnitureId)) {
+        next.delete(furnitureId);
+      } else {
+        next.add(furnitureId);
+      }
+
+      return next;
+    });
+  };
+
   const handleDeleteFurniture = async (item) => {
-    const confirmed = window.confirm(
-      `"${item.name}" 가구를 삭제하시겠습니까?`,
-    );
+    const confirmed = window.confirm(`"${item.name}" 가구를 삭제하시겠습니까?`);
     if (!confirmed) return;
 
     if (!getAccessToken()) {
@@ -552,45 +567,108 @@ function MyPage() {
                 )}
               </div>
 
-              <div className="mp-room-card is-expanded">
-                {!furnitureLoading &&
-                  !furnitureError &&
-                  myFurniture.length === 0 && (
-                    <div className="mp-empty-rooms">
-                      아직 만든 가구가 없습니다. 사진 한 장으로 나만의 가구를
-                      만들어보세요.
-                    </div>
-                  )}
-                {myFurniture.map((item) => (
-                  <div key={item.id} className="mp-room-row">
-                    <div className="mp-room-thumb">🪑</div>
-                    <div className="mp-room-info">
-                      <div className="mp-room-name">{item.name}</div>
-                      <div className="mp-room-meta">
-                        {[
-                          item.group || item.category,
-                          item.dimensions
-                            ? `${(item.dimensions.x || 0).toFixed(2)}m × ${(
-                                item.dimensions.y || 0
-                              ).toFixed(2)}m × ${(
-                                item.dimensions.z || 0
-                              ).toFixed(2)}m`
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
+              <div className="mp-projects-list">
+                {myFurniture.map((item) => {
+                  const isExpanded = expandedFurnitureIds.has(item.id);
+                  const sizeText = item.dimensions
+                    ? `${(item.dimensions.x || 0).toFixed(2)}m × ${(
+                        item.dimensions.y || 0
+                      ).toFixed(2)}m × ${(item.dimensions.z || 0).toFixed(2)}m`
+                    : "-";
+
+                  return (
+                    <div
+                      className={`mp-room-card ${
+                        isExpanded ? "is-expanded" : "is-collapsed"
+                      }`}
+                      key={item.id}
+                    >
+                      <div className="mp-room-card-header">
+                        <div className="mp-room-card-title">🪑 {item.name}</div>
+                        <div className="mp-room-card-actions">
+                          <button
+                            type="button"
+                            className="mp-project-collapse-btn"
+                            onClick={() => toggleFurnitureDetails(item.id)}
+                            aria-expanded={isExpanded}
+                            aria-controls={`furniture-details-${item.id}`}
+                            title={isExpanded ? "정보 접기" : "정보 보기"}
+                          >
+                            <span className="mp-project-collapse-label">
+                              정보
+                            </span>
+                            <svg
+                              className="mp-project-collapse-icon"
+                              aria-hidden="true"
+                              viewBox="0 0 16 16"
+                              fill="none"
+                            >
+                              <path
+                                d={
+                                  isExpanded
+                                    ? "M4 10L8 6L12 10"
+                                    : "M4 6L8 10L12 6"
+                                }
+                                stroke="currentColor"
+                                strokeWidth="1.75"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            className="mp-project-delete-btn"
+                            disabled={deletingFurnitureId === item.id}
+                            onClick={() => handleDeleteFurniture(item)}
+                          >
+                            {deletingFurnitureId === item.id
+                              ? "삭제 중..."
+                              : "삭제"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        id={`furniture-details-${item.id}`}
+                        className={`mp-project-rooms ${
+                          isExpanded ? "is-expanded" : ""
+                        }`}
+                        aria-hidden={!isExpanded}
+                        inert={!isExpanded ? "" : undefined}
+                      >
+                        <div className="mp-project-rooms-inner">
+                          <div className="mp-fur-details">
+                            <div className="mp-fur-detail-row">
+                              <span className="mp-fur-detail-label">
+                                카테고리
+                              </span>
+                              <span className="mp-fur-detail-value">
+                                {item.group || item.category || "-"}
+                              </span>
+                            </div>
+                            <div className="mp-fur-detail-row">
+                              <span className="mp-fur-detail-label">
+                                크기 (가로 × 높이 × 깊이)
+                              </span>
+                              <span className="mp-fur-detail-value">
+                                {sizeText}
+                              </span>
+                            </div>
+                            <div className="mp-fur-detail-row">
+                              <span className="mp-fur-detail-label">
+                                가구 코드
+                              </span>
+                              <span className="mp-fur-detail-value">
+                                {item.id}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      className="mp-room-delete-btn"
-                      disabled={deletingFurnitureId === item.id}
-                      onClick={() => handleDeleteFurniture(item)}
-                    >
-                      {deletingFurnitureId === item.id ? "삭제 중..." : "삭제"}
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : (
