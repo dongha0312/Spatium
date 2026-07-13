@@ -655,14 +655,6 @@ function MyPage() {
                                 {sizeText}
                               </span>
                             </div>
-                            <div className="mp-fur-detail-row">
-                              <span className="mp-fur-detail-label">
-                                가구 코드
-                              </span>
-                              <span className="mp-fur-detail-value">
-                                {item.id}
-                              </span>
-                            </div>
                           </div>
                         </div>
                       </div>
