@@ -111,12 +111,15 @@ function createPickOnlyMaterial(color) {
 }
 
 // localObb 크기의 투명 박스 mesh. pickTargets에 등록되어 실제 클릭/선택 판정에 쓰인다.
+// isCollisionHitBox 표시는 꾸미기 모드의 표면 raycast(decorSurface.js)가 실제 렌더링
+// mesh와 이 투명 박스를 구분하는 데 쓰인다.
 function createCollisionHitBox(localObb, color) {
   const size = localObb.halfSize.clone().multiplyScalar(2);
   const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
   const mesh = new THREE.Mesh(geometry, createPickOnlyMaterial(color));
 
   mesh.position.copy(localObb.center);
+  mesh.userData.isCollisionHitBox = true;
   return mesh;
 }
 
@@ -336,6 +339,95 @@ export function createEditableFurnitureModel(modelTemplate, item, index) {
     roomItem: item,
     sourceType: "object",
     sourceIndex: index,
+    localObb,
+    edgeLine: edge,
+    baseEdgeColor: new THREE.Color(sceneColor("defaultEdge")),
+    selectedEdgeColor: new THREE.Color(sceneColor("selectedEdge")),
+    collisionColor: new THREE.Color(sceneColor("collision")),
+    collisions: [],
+    initialPosition: transform.position.clone(),
+    initialQuaternion: transform.quaternion.clone(),
+    initialScale: transform.scale.clone(),
+    lastValidPosition: transform.position.clone(),
+    lastValidQuaternion: transform.quaternion.clone(),
+    lastValidScale: transform.scale.clone(),
+  };
+
+  hitBox.userData.editableRoot = root;
+  edge.userData.editableRoot = root;
+
+  root.add(model, hitBox, edge);
+  return { root, pickTargets: [hitBox] };
+}
+
+// 서랍장 꾸미기 모드에서 서랍장 위에 올려놓는 피규어를 만든다. 일반 가구
+// (createEditableFurnitureModel)와 구조는 같지만 sourceType이 "figure"이고, 서랍장
+// root의 자식으로 부착되어 상대 transform으로 관리된다(서랍장을 옮기면 함께 움직인다).
+// item.transform은 부모(서랍장) 로컬 좌표계 기준이다. modelTemplate이 없으면(GLB 로드
+// 실패 등) 단색 박스로 fallback한다.
+export function createDecorFigure(modelTemplate, item, index) {
+  const dimensions = item.dimensions || {};
+  const targetSize = new THREE.Vector3(
+    Math.max(dimensions.x || 0.1, 0.02),
+    Math.max(dimensions.y || 0.1, 0.02),
+    Math.max(dimensions.z || 0.1, 0.02),
+  );
+  const root = new THREE.Group();
+  const transform = decomposeRoomTransform(item);
+  let model = null;
+
+  root.name = `figure-${index + 1}`;
+  root.position.copy(transform.position);
+  root.quaternion.copy(transform.quaternion);
+  root.scale.copy(transform.scale);
+
+  if (modelTemplate) {
+    model = modelTemplate.clone(true);
+    removeModelArtifacts(model);
+    // 같은 사용자 GLB로 피규어를 여러 개 올릴 수 있으므로, 인스턴스별 표시(투명도 등)가
+    // 섞이지 않게 material을 복제한다.
+    cloneRenderableMaterials(model);
+    model.traverse((object) => {
+      if (object.isMesh) {
+        object.castShadow = true;
+        object.receiveShadow = true;
+        object.userData.editableRoot = root;
+      }
+    });
+    fitModelToTargetSize(model, targetSize);
+  } else {
+    const geometry = new THREE.BoxGeometry(
+      targetSize.x,
+      targetSize.y,
+      targetSize.z,
+    );
+    const material = new THREE.MeshStandardMaterial({
+      color: categoryColor(item.category || "other"),
+      opacity: 0.85,
+      transparent: true,
+      roughness: 0.72,
+    });
+    model = new THREE.Mesh(geometry, material);
+    model.castShadow = true;
+    model.receiveShadow = true;
+    model.userData.editableRoot = root;
+  }
+
+  const localObb = modelTemplate
+    ? createLocalObbFromBounds(getBaseGeometryBounds(model), targetSize)
+    : createCenteredLocalObb(targetSize);
+  const hitBox = createCollisionHitBox(
+    localObb,
+    categoryColor(item.category || "other"),
+  );
+  const edge = createCollisionBoxLine(localObb);
+
+  root.userData = {
+    editable: true,
+    roomItem: item,
+    sourceType: "figure",
+    sourceIndex: index,
+    isDecorFigure: true,
     localObb,
     edgeLine: edge,
     baseEdgeColor: new THREE.Color(sceneColor("defaultEdge")),

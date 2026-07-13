@@ -37,6 +37,7 @@ import {
   shouldCheckFurnitureCollision,
 } from "../scene/collision";
 import {
+  createDecorFigure,
   createDoorModel,
   createEditableFurniture,
   createEditableFurnitureModel,
@@ -44,6 +45,22 @@ import {
   createWallInfillMesh,
   createWindowModel,
 } from "../scene/objectFactory";
+import {
+  collectSupportMeshes,
+  constrainedSupportPoint,
+  figureBottomOffset,
+  figureWorldSupportPoint,
+  findSupportPointOnRay,
+  isDecoratableModelPath,
+  placeFigureAtSupportPoint,
+} from "../scene/decorSurface";
+import {
+  applyDecorControlLimits,
+  captureControlLimits,
+  computeDecorView,
+  restoreControlLimits,
+} from "../scene/decorCamera";
+import { startCameraTransition } from "../scene/cameraTransitions";
 import {
   createWallColliderVisuals,
   createWallColliders,
@@ -95,6 +112,70 @@ import {
 // 시점까지 가지 않도록 polar angle 상한을 둔다(180도 = 대상 바로 아래에서 수직으로
 // 올려다보는 시점).
 const FLOOR_VIEW_MAX_POLAR_ANGLE = THREE.MathUtils.degToRad(90);
+
+// 피규어 기본 크기 상한(m). imgto3d로 저장된 사용자 가구의 치수가 실제 가구 스케일이어도
+// 서랍장 위에 올릴 수 있는 소품 크기로 비율을 유지한 채 줄인다.
+const FIGURE_MAX_DIMENSION = 0.35;
+// 크기 슬라이더 범위(cm, 최대 변 기준).
+const FIGURE_MIN_SIZE_CM = 5;
+const FIGURE_MAX_SIZE_CM = 50;
+
+// 피규어의 현재 크기(최대 변, cm). localObb는 scale 1 기준이므로 root scale을 곱한다.
+function figureSizeCmForObject(object) {
+  if (!object?.userData.isDecorFigure) return 0;
+
+  const halfSize = object.userData.localObb?.halfSize;
+  if (!halfSize) return 0;
+
+  const baseMaxDimension = Math.max(halfSize.x, halfSize.y, halfSize.z) * 2;
+  return Math.round(baseMaxDimension * object.scale.x * 100);
+}
+
+// 선택된 오브젝트가 꾸미기 모드를 시작할 수 있는 대상인지 판단한다 — 모델 GLB가
+// editable_furniture 폴더에 있는 일반 가구만(isDecoratableModelPath 참고).
+function canDecorateObject(object) {
+  const item = object?.userData.roomItem;
+  return (
+    object?.userData.sourceType === "object" &&
+    isDecoratableModelPath(item?.path || item?.modelUrl)
+  );
+}
+
+// 카탈로그 치수를 피규어 크기로 정규화한다. 비율은 유지하고 최대 변만
+// FIGURE_MAX_DIMENSION으로 제한한다.
+function figureDimensionsFromCatalog(dimensions) {
+  const normalized = normalizedDimensions(dimensions);
+  const maxDimension = Math.max(normalized.x, normalized.y, normalized.z);
+  if (maxDimension <= FIGURE_MAX_DIMENSION) return normalized;
+
+  const scale = FIGURE_MAX_DIMENSION / maxDimension;
+  return {
+    x: Number((normalized.x * scale).toFixed(4)),
+    y: Number((normalized.y * scale).toFixed(4)),
+    z: Number((normalized.z * scale).toFixed(4)),
+  };
+}
+
+// 피규어를 서랍장 root의 자식으로 부착하고, 꾸미기 모드 선택/저장에 필요한 역참조를
+// 등록한다. 이후 서랍장을 이동/회전하면 피규어도 함께 움직인다.
+function attachFigureToTarget(targetRoot, figure) {
+  targetRoot.userData.decorRoots = targetRoot.userData.decorRoots || [];
+  targetRoot.userData.decorRoots.push(figure.root);
+  figure.root.userData.hitBoxes = figure.pickTargets;
+  targetRoot.add(figure.root);
+  figure.root.updateWorldMatrix(true, false);
+}
+
+// 피규어를 서랍장에서 떼어내고 GPU 리소스를 정리한다.
+function detachFigureFromTarget(figureRoot) {
+  const parentRoot = figureRoot.parent;
+  const decorRoots = parentRoot?.userData.decorRoots || [];
+  const index = decorRoots.indexOf(figureRoot);
+  if (index >= 0) decorRoots.splice(index, 1);
+
+  parentRoot?.remove(figureRoot);
+  disposeScene(figureRoot);
+}
 
 function debugConfigBoolean(name, defaultValue = false) {
   return optionalConfigBoolean(["debug", name], defaultValue);
@@ -156,6 +237,14 @@ export function useRoomSceneEditor({
   // 위함이고, state는 안내 배너/커서 표시 등 화면 갱신용이다.
   const pendingPlacementRef = useRef(null);
   const [isPlacingFurniture, setIsPlacingFurniture] = useState(false);
+  // 서랍장 꾸미기 모드 상태(UI 표시용). 실제 모드 컨텍스트(대상 서랍장, 표면 mesh 목록,
+  // 복귀 시점)는 아래 useEffect 내부의 decorContext에 있다.
+  const [decorModeState, setDecorModeState] = useState({
+    active: false,
+    targetName: "",
+  });
+  // 선택된 피규어의 현재 크기(최대 변, cm). 피규어가 아니면 0.
+  const [selectedFigureSizeCm, setSelectedFigureSizeCmState] = useState(0);
 
   function markSceneChanged() {
     onSceneChangedRef.current?.();
@@ -239,6 +328,20 @@ export function useRoomSceneEditor({
       return false;
     }
 
+    // 꾸미기 모드 중에는 카탈로그 클릭이 "피규어 올려놓기/교체"로 동작한다.
+    if (sceneActionsRef.current.isDecorModeActive?.()) {
+      if (
+        isReplacingSelectedRef.current &&
+        selectedObjectRef.current?.userData.sourceType === "figure"
+      ) {
+        const replaced =
+          await sceneActionsRef.current.replaceSelectedFigure(catalogItem);
+        if (replaced) setReplaceMode(false);
+        return replaced;
+      }
+      return sceneActionsRef.current.addFigureFromCatalog(catalogItem);
+    }
+
     if (isReplacingSelectedRef.current && selectedObjectRef.current) {
       const replaced =
         await sceneActionsRef.current.replaceSelectedObject(catalogItem);
@@ -250,6 +353,30 @@ export function useRoomSceneEditor({
       catalogItem,
       customDimensions,
     );
+  }
+
+  // 선택된 서랍장에 대해 꾸미기 모드를 시작한다(정면 시점 전환 + 피규어 편집).
+  function enterDecorMode() {
+    if (!sceneActionsRef.current?.enterDecorMode) {
+      setError("3D 편집기가 아직 준비되지 않았습니다.");
+      return false;
+    }
+    return sceneActionsRef.current.enterDecorMode();
+  }
+
+  // 꾸미기 모드를 종료하고 원래 시점으로 복귀한다.
+  function exitDecorMode() {
+    return sceneActionsRef.current?.exitDecorMode?.() ?? false;
+  }
+
+  // 크기 슬라이더 값 변경 시 호출된다(피규어 전용, 최대 변 cm 기준).
+  function setSelectedFigureSizeCm(sizeCm) {
+    if (!sceneActionsRef.current?.setSelectedFigureSizeCm) {
+      setError("3D 편집기가 아직 준비되지 않았습니다.");
+      return false;
+    }
+
+    return sceneActionsRef.current.setSelectedFigureSizeCm(sizeCm);
   }
 
   // 진행 중인 "바닥 클릭 배치" 모드를 취소한다(ESC 키, 취소 버튼용).
@@ -422,6 +549,8 @@ export function useRoomSceneEditor({
     setSelectedMaxElevationCmState(0);
     setEditedItems([]);
     setCollisionSummary({ hasCollision: false, with: [] });
+    setDecorModeState({ active: false, targetName: "" });
+    setSelectedFigureSizeCmState(0);
     setStatus("방 불러오는 중...");
 
     const scene = new THREE.Scene();
@@ -555,6 +684,19 @@ export function useRoomSceneEditor({
     };
     // 현재 진행 중인 드래그(이동/회전) 상태. null이면 드래그 중이 아님.
     let activeInteraction = null;
+    // 서랍장 꾸미기 모드 컨텍스트. null이면 일반 편집 모드.
+    // { target: 서랍장 root, supportMeshes: 표면 raycast 대상 mesh들,
+    //   savedView: 복귀할 카메라 시점, savedLimits: 복귀할 OrbitControls 제한 }
+    let decorContext = null;
+
+    // 꾸미기 모드에서 클릭/드래그로 선택할 수 있는 대상 — 현재 서랍장에 올려진
+    // 피규어들의 투명 hitBox 목록.
+    function decorPickTargets() {
+      if (!decorContext) return [];
+      return (decorContext.target.userData.decorRoots || []).flatMap(
+        (figureRoot) => figureRoot.userData.hitBoxes || [],
+      );
+    }
 
     selectionRing.rotation.x = -Math.PI / 2;
     selectionRing.renderOrder = 30;
@@ -832,8 +974,11 @@ export function useRoomSceneEditor({
       const radius = Math.max(0.35, Math.max(size.x, size.z) * 0.58 + 0.18);
       const baseY = bounds.min.y + 0.025;
       const labelY = bounds.min.y + 0.08;
+      // 피규어는 서랍장의 자식이라 position이 부모 로컬 좌표다 — 선택 고리는 월드
+      // 좌표에 그려지므로 항상 월드 위치 기준으로 계산한다(일반 가구는 둘이 같다).
+      const worldPosition = object.getWorldPosition(new THREE.Vector3());
 
-      selectionRing.position.set(object.position.x, baseY, object.position.z);
+      selectionRing.position.set(worldPosition.x, baseY, worldPosition.z);
       selectionRing.scale.set(radius, radius, 1);
       selectionRing.visible = true;
       dimensionLabels.width.element.textContent = formatCentimeters(
@@ -905,6 +1050,20 @@ export function useRoomSceneEditor({
       return true;
     }
 
+    // 꾸미기 모드에서 피규어 드래그 이동을 시작한다. 이동 자체는 서랍장 표면 raycast로
+    // 계산되므로(updateActiveInteraction의 figure-move 분기) 바닥 평면 교차는 쓰지 않는다.
+    function beginFigureMoveInteraction(event, figureRoot) {
+      activeInteraction = {
+        type: "figure-move",
+        pointerId: event.pointerId,
+        object: figureRoot,
+      };
+      controls.enabled = false;
+      renderer.domElement.style.cursor = "grabbing";
+      capturePointer(event.pointerId);
+      return true;
+    }
+
     // pointermove마다 호출된다. 이동 중이면 벽 충돌 제한을 적용해 위치를 갱신하고,
     // 회전 중이면 회전을 적용해보고 벽과 충돌하면 즉시 되돌린다.
     function updateActiveInteraction(event) {
@@ -916,8 +1075,42 @@ export function useRoomSceneEditor({
       }
 
       const { object } = activeInteraction;
-      if (!object || !intersectObjectFloor(event, object, floorHitPoint))
+      if (!object) return;
+
+      // 피규어 드래그: 포인터 ray를 서랍장 표면에 쏴서, 위를 향한 면(상판/선반 바닥)이
+      // 맞으면 그 지점으로 스냅한다(다른 층으로의 이동 포함). 포인터가 표면 밖(허공/옆면)
+      // 으로 나가면 얼어붙는 대신, 현재 층 높이의 수평면과 포인터의 교차점을 목표로 삼아
+      // 벽 충돌 이동 제한과 같은 sweep 방식으로 표면 가장자리까지 부드럽게 미끄러진다
+      // (constrainedSupportPoint).
+      if (activeInteraction.type === "figure-move") {
+        if (!decorContext) return;
+
+        setPointerRay(event);
+        const support = findSupportPointOnRay(
+          raycaster,
+          decorContext.supportMeshes,
+        );
+        if (support) {
+          placeFigureAtSupportPoint(object, support.point);
+          rememberValidTransform(object);
+        } else {
+          const currentPoint = figureWorldSupportPoint(object);
+          floorPlane.set(upAxis, -currentPoint.y);
+          if (raycaster.ray.intersectPlane(floorPlane, floorHitPoint)) {
+            const constrainedPoint = constrainedSupportPoint(
+              object,
+              decorContext.supportMeshes,
+              floorHitPoint,
+            );
+            placeFigureAtSupportPoint(object, constrainedPoint);
+            rememberValidTransform(object);
+          }
+        }
+        updateSelectionOverlay(object);
         return;
+      }
+
+      if (!intersectObjectFloor(event, object, floorHitPoint)) return;
 
       if (activeInteraction.type === "move") {
         const targetPosition = floorHitPoint
@@ -1040,7 +1233,12 @@ export function useRoomSceneEditor({
 
     // 선택된 가구의 현재 높이(cm, 바닥 기준)와 슬라이더 최댓값(천장에 닿기 직전)을 계산한다.
     function elevationBoundsForObject(object) {
-      if (!object || !canTransformObject(object)) {
+      // 피규어는 서랍장 표면 위에만 놓이므로 높이 슬라이더 대상이 아니다.
+      if (
+        !object ||
+        !canTransformObject(object) ||
+        object.userData.isDecorFigure
+      ) {
         return { currentCm: 0, maxCm: 0 };
       }
 
@@ -1077,10 +1275,16 @@ export function useRoomSceneEditor({
       const elevationBounds = elevationBoundsForObject(selectedObject);
       setSelectedElevationCmState(elevationBounds.currentCm);
       setSelectedMaxElevationCmState(elevationBounds.maxCm);
+      setSelectedFigureSizeCmState(figureSizeCmForObject(selectedObject));
       setCollisionSummary({
         hasCollision: collisions.length > 0,
         with: collisions,
       });
+      // 피규어는 editableRoots에 없어 refreshCollisionState의 시각 갱신 대상이 아니므로,
+      // 선택 표시(노란 edge)를 여기서 직접 갱신한다.
+      if (selectedObject?.userData.isDecorFigure) {
+        setFurnitureVisualState(selectedObject, selectedObject);
+      }
       updateWallDiagnostics(selectedObject);
       updateSelectionOverlay(selectedObject);
     }
@@ -1107,6 +1311,13 @@ export function useRoomSceneEditor({
 
     // 오브젝트를 선택 상태로 만든다(또는 null로 선택 해제). 교체 모드는 항상 해제된다.
     function selectObject(object) {
+      // 이전 선택이 피규어였다면 선택 edge를 직접 꺼준다(피규어는 editableRoots 밖이라
+      // refreshCollisionState가 갱신해주지 않는다).
+      const previous = selectedObjectRef.current;
+      if (previous?.userData.isDecorFigure && previous !== object) {
+        setFurnitureVisualState(previous, object);
+      }
+
       selectedObjectRef.current = object;
       setReplaceMode(false);
 
@@ -1141,6 +1352,38 @@ export function useRoomSceneEditor({
       if (event.button !== 0) return;
 
       setPointerRay(event);
+
+      // 꾸미기 모드: 피규어만 선택/드래그할 수 있다. 피규어가 아닌 곳을 클릭하면 선택만
+      // 해제하고 이벤트를 OrbitControls에 넘긴다(제한된 범위에서 시점 회전 가능).
+      if (decorContext) {
+        // 피규어 배치 모드: 클릭한 표면(위를 향한 면)에 대기 중인 피규어를 올려놓는다.
+        if (pendingPlacementRef.current?.isFigure) {
+          const support = findSupportPointOnRay(
+            raycaster,
+            decorContext.supportMeshes,
+          );
+          if (support) {
+            sceneActionsRef.current?.resolvePendingFigurePlacement(
+              support.point,
+            );
+          } else {
+            setStatus("피규어를 놓을 층(선반의 위를 향한 면)을 클릭하세요.");
+          }
+          stopSceneEvent(event);
+          return;
+        }
+
+        const figureHits = raycaster.intersectObjects(decorPickTargets(), false);
+        if (figureHits.length) {
+          const figureRoot = figureHits[0].object.userData.editableRoot;
+          selectObject(figureRoot);
+          beginFigureMoveInteraction(event, figureRoot);
+          stopSceneEvent(event);
+          return;
+        }
+        if (selectedObjectRef.current) selectObject(null);
+        return;
+      }
 
       if (pendingPlacementRef.current) {
         const floorHits = raycaster.intersectObjects(
@@ -1402,6 +1645,37 @@ export function useRoomSceneEditor({
           editableRoots.push(furniture.root);
           pickTargets.push(...furniture.pickTargets);
         });
+
+        // 저장된 피규어(decorations)를 복원해서 각 가구 root의 자식으로 다시 부착한다.
+        // transform이 부모 로컬 기준으로 저장돼 있으므로 그대로 적용하면 된다.
+        await Promise.all(
+          furnitureItems.map(async (furniture, index) => {
+            const decorations = (metadata.objects || [])[index]?.decorations;
+            if (!Array.isArray(decorations) || !decorations.length) return;
+
+            const figures = await Promise.all(
+              decorations.map(async (decorationItem, figureIndex) => {
+                const modelTemplate = await loadModelTemplateForItem(
+                  decorationItem,
+                ).catch(() => null);
+                return createDecorFigure(
+                  modelTemplate,
+                  decorationItem,
+                  figureIndex,
+                );
+              }),
+            );
+
+            if (!isMounted) {
+              figures.forEach((figure) => disposeScene(figure.root));
+              return;
+            }
+
+            figures.forEach((figure) =>
+              attachFigureToTarget(furniture.root, figure),
+            );
+          }),
+        );
 
         nextObjectIndex = (metadata.objects || []).length;
 
@@ -1754,6 +2028,19 @@ export function useRoomSceneEditor({
           // 선택된 일반 가구를 삭제한다. 문/창문은 이 액션 대상이 아니다(deleteSelectedReference).
           deleteSelectedObject: () => {
             const object = selectedObjectRef.current;
+
+            // 꾸미기 모드의 피규어 삭제 — 서랍장에서 떼어내고 정리한다.
+            if (object?.userData.sourceType === "figure") {
+              detachFigureFromTarget(object);
+              selectedObjectRef.current = null;
+              setReplaceMode(false);
+              syncSceneState(null);
+              markSceneChanged();
+              setStatus("피규어를 삭제했습니다.");
+              window.setTimeout(() => setStatus(""), 900);
+              return true;
+            }
+
             if (
               !canTransformObject(object) ||
               object.userData.sourceType !== "object"
@@ -1836,6 +2123,243 @@ export function useRoomSceneEditor({
             setStatus(fillWithWall ? "벽으로 메웠습니다." : "개구부로 남겼습니다.");
             window.setTimeout(() => setStatus(""), 900);
             return true;
+          },
+          // 선택된 서랍장에 대해 꾸미기 모드를 시작한다. 현재 시점/컨트롤 제한을 저장해두고
+          // 서랍장 정면 시점으로 부드럽게 전환한 뒤, orbit 범위를 정면 주변으로 제한한다.
+          enterDecorMode: () => {
+            const target = selectedObjectRef.current;
+            if (decorContext || !canDecorateObject(target)) return false;
+            if (viewControllerRef.current?.isInSkyview) {
+              setError("Skyview를 끈 뒤 서랍장 꾸미기를 시작하세요.");
+              return false;
+            }
+
+            sceneActionsRef.current?.cancelPlaceFurniture?.();
+
+            const view = computeDecorView(target, camera, roomCenter);
+            decorContext = {
+              target,
+              supportMeshes: collectSupportMeshes(target),
+              savedView: captureCameraView(camera, controls),
+              savedLimits: captureControlLimits(controls),
+            };
+
+            startCameraTransition(
+              viewControllerRef.current,
+              view,
+              Math.max(controls.maxDistance, view.distance * 1.8),
+              () => {
+                // 전환이 끝난 뒤에만 컨트롤 제한을 적용한다 — 전환 도중 OrbitControls
+                // 클램핑이 애니메이션과 충돌하지 않게. 그 사이 모드가 종료됐으면 건너뛴다.
+                if (decorContext?.target === target) {
+                  applyDecorControlLimits(controls, view);
+                }
+              },
+            );
+
+            selectObject(null);
+            setDecorModeState({
+              active: true,
+              targetName:
+                target.userData.roomItem?.name ||
+                target.userData.roomItem?.category ||
+                "서랍장",
+            });
+            setError("");
+            setStatus("왼쪽 목록에서 피규어를 클릭해 서랍장 위에 올려놓으세요.");
+            return true;
+          },
+          // 꾸미기 모드를 종료하고 저장해둔 원래 시점/컨트롤 제한으로 복귀한다.
+          exitDecorMode: () => {
+            if (!decorContext) return false;
+
+            // 진행 중인 피규어 배치 모드가 있으면 함께 취소한다.
+            if (pendingPlacementRef.current?.isFigure) {
+              pendingPlacementRef.current = null;
+              setIsPlacingFurniture(false);
+              renderer.domElement.style.cursor = "default";
+            }
+
+            const { target, savedView, savedLimits } = decorContext;
+            decorContext = null;
+
+            startCameraTransition(
+              viewControllerRef.current,
+              savedView,
+              savedLimits.maxDistance,
+              () => restoreControlLimits(controls, savedLimits),
+            );
+
+            setDecorModeState({ active: false, targetName: "" });
+            setStatus("");
+            selectObject(target);
+            return true;
+          },
+          isDecorModeActive: () => Boolean(decorContext),
+          // 크기 슬라이더로 피규어의 최대 변 길이(cm)를 지정한다. 균일 스케일이며,
+          // 바닥면이 현재 놓인 표면에 그대로 붙어 있도록 Y를 함께 보정한다.
+          setSelectedFigureSizeCm: (sizeCm) => {
+            const object = selectedObjectRef.current;
+            if (object?.userData.sourceType !== "figure") return false;
+
+            const halfSize = object.userData.localObb?.halfSize;
+            const baseMaxDimension = halfSize
+              ? Math.max(halfSize.x, halfSize.y, halfSize.z) * 2
+              : 0;
+            if (baseMaxDimension <= 0) return false;
+
+            const clampedCm = THREE.MathUtils.clamp(
+              Number(sizeCm) || 0,
+              FIGURE_MIN_SIZE_CM,
+              FIGURE_MAX_SIZE_CM,
+            );
+            // 스케일 변경 전의 바닥 높이(부모 로컬)를 기억해뒀다가, 새 스케일의
+            // 바닥 오프셋(figureBottomOffset은 scale 반영)으로 되돌려 붙인다.
+            const supportY = object.position.y + figureBottomOffset(object);
+            object.scale.setScalar(clampedCm / 100 / baseMaxDimension);
+            object.position.y = supportY - figureBottomOffset(object);
+            object.updateWorldMatrix(true, false);
+            rememberValidTransform(object);
+            syncSceneState(object);
+            markSceneChanged();
+            return true;
+          },
+          // 카탈로그에서 피규어를 고르면 "선반 클릭 배치" 모드를 시작한다. 실제 배치는
+          // 사용자가 서랍장의 위를 향한 면(상판/선반 바닥)을 클릭한 시점에 이뤄진다
+          // (resolvePendingFigurePlacement) — 클릭한 층에 그대로 놓인다.
+          addFigureFromCatalog: (catalogItem) => {
+            if (!decorContext || !catalogItem) return false;
+
+            pendingPlacementRef.current = { catalogItem, isFigure: true };
+            setIsPlacingFurniture(true);
+            setError("");
+            setStatus("피규어를 놓을 층(선반)을 클릭하세요.");
+            renderer.domElement.style.cursor = "crosshair";
+            return true;
+          },
+          // 피규어 배치 모드 중 사용자가 클릭한 표면 지점(point, world space)에
+          // 대기 중이던 피규어를 만들어 올려놓는다.
+          resolvePendingFigurePlacement: async (point) => {
+            const pending = pendingPlacementRef.current;
+            if (!pending?.isFigure || !decorContext) return false;
+
+            const target = decorContext.target;
+            const catalogItem = pending.catalogItem;
+            pendingPlacementRef.current = null;
+            setIsPlacingFurniture(false);
+            renderer.domElement.style.cursor = "default";
+            setError("");
+            setStatus(`${catalogItem.name || "피규어"} 올리는 중...`);
+
+            try {
+              const dimensions = figureDimensionsFromCatalog(
+                catalogItem.dimensions,
+              );
+              const item = {
+                catalogId: catalogItem.id,
+                name: catalogItem.name,
+                category: catalogItem.category || "figure",
+                path: catalogItem.path || catalogItem.modelUrl,
+                modelUrl: catalogItem.modelUrl,
+                dimensions,
+                transform: roundedTransform(new THREE.Vector3()),
+              };
+              const modelTemplate = await loadModelTemplateForItem(item).catch(
+                () => null,
+              );
+
+              // 모델 로딩 중 모드가 종료/전환됐으면 중단한다.
+              if (!isMounted || decorContext?.target !== target) return false;
+
+              const figureIndex = (target.userData.decorRoots || []).length;
+              const figure = createDecorFigure(
+                modelTemplate,
+                item,
+                figureIndex,
+              );
+              attachFigureToTarget(target, figure);
+              placeFigureAtSupportPoint(figure.root, point);
+              rememberValidTransform(figure.root);
+
+              selectObject(figure.root);
+              markSceneChanged();
+              setStatus("");
+              return true;
+            } catch (caughtError) {
+              setStatus("");
+              setError(
+                caughtError instanceof Error
+                  ? caughtError.message
+                  : String(caughtError),
+              );
+              return false;
+            }
+          },
+          // 선택된 피규어를 다른 카탈로그 모델로 교체한다. 기존 피규어의 바닥 위치/회전을
+          // 유지한다.
+          replaceSelectedFigure: async (catalogItem) => {
+            const figureRoot = selectedObjectRef.current;
+            if (
+              !decorContext ||
+              !catalogItem ||
+              figureRoot?.userData.sourceType !== "figure"
+            ) {
+              return false;
+            }
+
+            const target = decorContext.target;
+            setError("");
+            setStatus(`${catalogItem.name || "피규어"}(으)로 교체 중...`);
+
+            try {
+              const dimensions = figureDimensionsFromCatalog(
+                catalogItem.dimensions,
+              );
+              const bottomY =
+                figureRoot.position.y + figureBottomOffset(figureRoot);
+              const item = {
+                catalogId: catalogItem.id,
+                name: catalogItem.name,
+                category: catalogItem.category || "figure",
+                path: catalogItem.path || catalogItem.modelUrl,
+                modelUrl: catalogItem.modelUrl,
+                dimensions,
+                transform: roundedTransform(
+                  figureRoot.position.clone(),
+                  figureRoot.quaternion.clone(),
+                ),
+              };
+              const modelTemplate = await loadModelTemplateForItem(item).catch(
+                () => null,
+              );
+
+              if (!isMounted || decorContext?.target !== target) return false;
+
+              const figure = createDecorFigure(
+                modelTemplate,
+                item,
+                figureRoot.userData.sourceIndex,
+              );
+              detachFigureFromTarget(figureRoot);
+              attachFigureToTarget(target, figure);
+              // 새 피규어의 바닥면이 기존 피규어가 놓여 있던 표면 높이에 오도록 보정한다.
+              figure.root.position.y = bottomY - figureBottomOffset(figure.root);
+              figure.root.updateWorldMatrix(true, false);
+              rememberValidTransform(figure.root);
+
+              selectObject(figure.root);
+              markSceneChanged();
+              setStatus("");
+              return true;
+            } catch (caughtError) {
+              setStatus("");
+              setError(
+                caughtError instanceof Error
+                  ? caughtError.message
+                  : String(caughtError),
+              );
+              return false;
+            }
           },
           setWallColor: (color) => {
             applyRoomWallColor(wallColliders, color);
@@ -2004,6 +2528,7 @@ export function useRoomSceneEditor({
       sceneActionsRef.current = null;
       pendingPlacementRef.current = null;
       setCollisionSummary({ hasCollision: false, with: [] });
+      setDecorModeState({ active: false, targetName: "" });
       controls.dispose();
       disposeScene(scene);
       renderer.dispose();
@@ -2041,6 +2566,12 @@ export function useRoomSceneEditor({
     canResetSelected,
     canDeleteSelected,
     canSaveJson,
+    isDecorMode: decorModeState.active,
+    decorTargetName: decorModeState.targetName,
+    enterDecorMode,
+    exitDecorMode,
+    selectedFigureSizeCm,
+    setSelectedFigureSizeCm,
     addFurniture,
     cancelFurniturePlacement,
     deleteSelectedObject,

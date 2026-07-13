@@ -352,6 +352,39 @@
   background: rgba(255, 255, 255, 0.24);
 }
 
+/* 서랍장 꾸미기 모드 배너 — 배치 배너와 같은 형태이되 강조 색으로 구분하고,
+   상단 중앙의 선택 툴바와 겹치지 않게 화면 하단에 둔다 */
+.room-scene-editor-decor-banner {
+  top: auto;
+  bottom: 18px;
+  background: rgba(30, 64, 138, 0.95);
+}
+
+/* 꾸미기 모드 중 피규어 배치 안내 — 하단의 꾸미기 배너 바로 위에 쌓는다 */
+.room-scene-editor-placement-banner--stacked {
+  top: auto;
+  bottom: 66px;
+}
+
+.room-scene-editor-decor-done {
+  background: rgba(255, 255, 255, 0.92);
+  color: #1e408a;
+}
+
+.room-scene-editor-decor-done:hover {
+  background: #fff;
+}
+
+/* 서랍장 꾸미기 시작 버튼 */
+.room-scene-editor-selection-tool--decor {
+  background: rgba(30, 64, 138, 0.12);
+  color: #1e408a;
+}
+
+.room-scene-editor-selection-tool--decor:hover {
+  background: rgba(30, 64, 138, 0.22);
+}
+
 .room-scene-editor-error {
   position: absolute;
   left: 18px;

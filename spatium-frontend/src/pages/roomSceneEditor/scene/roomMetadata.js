@@ -15,6 +15,40 @@ import {
   isUsdWallMesh,
 } from "./wallColliders";
 
+// 서랍장 위에 올린 피규어 하나를 저장 가능한 JSON으로 변환한다. position/transform은
+// 부모(서랍장 root) 로컬 좌표계 기준이다 — 서랍장이 나중에 다른 위치로 이동해도 피규어의
+// 상대 배치가 그대로 복원되도록 하기 위함이다.
+export function decorationToJson(figureRoot) {
+  const item = figureRoot.userData.roomItem || {};
+  const halfSize = figureRoot.userData.localObb?.halfSize;
+  const dimensions = halfSize
+    ? {
+        x: Number((halfSize.x * 2).toFixed(4)),
+        y: Number((halfSize.y * 2).toFixed(4)),
+        z: Number((halfSize.z * 2).toFixed(4)),
+      }
+    : item.dimensions;
+  const matrix = new THREE.Matrix4().compose(
+    figureRoot.position,
+    figureRoot.quaternion,
+    figureRoot.scale,
+  );
+
+  return {
+    catalogId: item.catalogId,
+    name: item.name,
+    category: item.category || "figure",
+    path: item.path || item.modelUrl,
+    modelUrl: item.modelUrl,
+    dimensions,
+    transform: {
+      columns: columnsFromMatrix(matrix).map((column) =>
+        column.map((value) => Number(value.toFixed(6))),
+      ),
+    },
+  };
+}
+
 // 가구/문/창문 오브젝트 하나를 저장 가능한 JSON(위치/회전/치수/충돌 정보)으로 변환한다.
 // 선택 정보 패널 표시와 metadata 저장(createReplayableMetadataJson) 양쪽에서 공통으로 쓰인다.
 export function objectToEditableJson(object) {
@@ -40,6 +74,10 @@ export function objectToEditableJson(object) {
     Number(item.dimensions?.y) || fallbackSize.y,
     Number(item.dimensions?.z) || fallbackSize.z,
   );
+  // 피규어는 크기 슬라이더의 균일 스케일이 root.scale에 들어가므로, 표시 치수에 반영한다.
+  if (object.userData.isDecorFigure) {
+    stableSize.multiplyScalar(object.scale.x);
+  }
   const matrix = new THREE.Matrix4().compose(
     object.position,
     object.quaternion,
@@ -85,6 +123,9 @@ export function objectToEditableJson(object) {
       hasCollision: collisions.length > 0,
       with: collisions,
     },
+    // 서랍장 꾸미기로 올려둔 피규어들(부모 로컬 transform 기준). 피규어가 없는 오브젝트는
+    // 빈 배열이다.
+    decorations: (object.userData.decorRoots || []).map(decorationToJson),
   };
 }
 
@@ -335,6 +376,7 @@ export function createReplayableMetadataJson(
       modelUrl: edit.modelUrl,
       dimensions: edit.dimensions,
       transform: edit.transform,
+      decorations: edit.decorations || [],
     };
   });
 

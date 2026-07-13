@@ -78,6 +78,9 @@ function ThreeDEditor() {
   );
   const [projectRoomsError, setProjectRoomsError] = useState("");
   const [manualOpen, setManualOpen] = useState(false);
+  // 서랍장 꾸미기 모드 여부(에디터가 onDecorModeChanged로 알려준다). 모드 중에는 카탈로그가
+  // 피규어 목록으로 바뀌고, 클릭 시 크기 입력 없이 바로 서랍장 위에 올려놓는다.
+  const [isDecorMode, setIsDecorMode] = useState(false);
   const [pendingCatalogItem, setPendingCatalogItem] = useState(null);
   const [sizeDraftCm, setSizeDraftCm] = useState({
     width: 0,
@@ -159,6 +162,12 @@ function ThreeDEditor() {
     const query = catalogSearch.trim().toLowerCase();
 
     return mergedCatalog.filter((item) => {
+      // 꾸미기 모드에서는 서랍장에 올릴 수 있는 것만 보여준다 — imgto3d로 만든
+      // 사용자 가구(피규어)와 figure 카테고리 항목.
+      if (isDecorMode && !item.isUserFurniture && item.category !== "figure") {
+        return false;
+      }
+
       const matchesCategory =
         activeCategory === USER_FURNITURE_CATEGORY
           ? Boolean(item.isUserFurniture)
@@ -173,7 +182,7 @@ function ThreeDEditor() {
 
       return matchesCategory && matchesSearch;
     });
-  }, [activeCategory, catalogSearch, mergedCatalog]);
+  }, [activeCategory, catalogSearch, isDecorMode, mergedCatalog]);
 
   useEffect(() => {
     let isMounted = true;
@@ -413,6 +422,13 @@ function ThreeDEditor() {
   };
 
   const handleAddFurniture = (item) => {
+    // 꾸미기 모드: 크기 입력 모달 없이 바로 서랍장 위에 올려놓는다(피규어 크기는
+    // 에디터 쪽에서 자동으로 소품 크기로 정규화된다).
+    if (isDecorMode) {
+      editorRef.current?.addFurniture(item);
+      return;
+    }
+
     if (editorRef.current?.isReplacingSelected) {
       editorRef.current?.addFurniture(item);
       return;
@@ -757,6 +773,7 @@ function ThreeDEditor() {
                   roomScene={roomScene}
                   onSceneChanged={handleSceneChanged}
                   onFloorColorLoaded={setFloorColor}
+                  onDecorModeChanged={setIsDecorMode}
                 />
               )}
             </div>
@@ -776,6 +793,12 @@ function ThreeDEditor() {
                 type="button"
                 className={`ed-viewbar-btn${isSkyview ? " ed-viewbar-active" : ""}`}
                 onClick={toggleSkyview}
+                disabled={isDecorMode}
+                title={
+                  isDecorMode
+                    ? "서랍장 꾸미기 중에는 Skyview를 사용할 수 없습니다"
+                    : undefined
+                }
               >
                 <svg
                   viewBox="0 0 24 24"
