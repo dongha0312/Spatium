@@ -2,6 +2,8 @@ import React, { useMemo, useState } from "react";
 import { createUserFurniture } from "../../springApi/FurnitureSpringBootApi";
 
 const CATEGORIES = [
+  // 서랍장 꾸미기(3D 에디터)에서 서랍장 위에 올려놓는 소품용 카테고리
+  { code: "figure", label: "피규어·소품" },
   { code: "bathtub", label: "욕조" },
   { code: "bed", label: "침대" },
   { code: "chair", label: "의자" },

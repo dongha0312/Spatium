@@ -413,6 +413,52 @@ object.userData.collisions = ["wall"]
 
 ---
 
+## 서랍장 꾸미기 (피규어)
+
+모델 GLB가 `public/data/3d_models/editable_furniture/` 폴더에 있는 일반 가구
+(예: `editable_bookcase.glb`)를 선택하면 "서랍장 꾸미기" 버튼이 나타난다
+(`isDecoratableModelPath()` — 일반 카탈로그 GLB는 통짜 형태라 선반 안쪽 표면이 없어서,
+꾸미기 전용으로 만든 모델만 폴더로 구분해 허용한다). 클릭 시:
+
+1. 현재 카메라 시점/OrbitControls 제한을 저장하고 서랍장 **정면에서 25도 위**로
+   내려다보는 시점으로 전환한다(선반 안쪽 바닥이 보이도록. `scene/decorCamera.js`의
+   `computeDecorView` — 로컬 +Z를 방 중심 쪽으로 정렬해 정면을 판정하고, OBB가 FOV에
+   들어오는 거리를 계산. 전환 애니메이션은 `scene/cameraTransitions.js`).
+2. 전환 후 orbit은 정면 기준 좌우 ±50도 / 상하 ±30도, 줌은 근접 범위로 제한된다.
+3. 좌측 카탈로그가 피규어 목록(imgto3d 사용자 가구 + `figure` 카테고리)으로 바뀌고,
+   클릭하면 크기 모달 없이 "선반 클릭 배치" 모드가 시작된다 — 서랍장의 원하는 층
+   (위를 향한 면)을 클릭하면 그 자리에 올라간다(최대 변 0.35m로 자동 축소).
+4. "완료" 버튼으로 저장해둔 원래 시점/컨트롤 제한으로 복귀한다.
+
+### 충돌/배치 기준
+
+피규어는 벽 충돌 OBB 체계의 대상이 아니다(`shouldConstrainToWalls`에서 `isDecorFigure`
+제외). 대신 **서랍장의 실제 삼각형 메시에 대한 raycast**(`scene/decorSurface.js`)로
+배치가 제한된다:
+
+- 포인터 ray를 서랍장 렌더링 mesh(투명 hitBox 제외)에 쏴서, 월드 법선의 Y가 0.7 이상인
+  "위를 향한 면"(상판, 선반 안쪽 바닥)에만 스냅한다.
+- 포인터가 표면 밖(허공/옆면)으로 나가면 현재 층 높이의 수평면과 포인터 교차점을 목표로
+  삼아, 벽 충돌 이동 제한과 같은 sweep 방식(step 분할 + 축별 슬라이드,
+  `constrainedSupportPoint`)으로 표면 가장자리까지만 부드럽게 미끄러진다 — 가장자리에서
+  얼어붙거나 튀지 않는다.
+- 최초 배치도 같은 판정을 쓴다 — 사용자가 클릭한 층의 표면 지점에 그대로 놓인다
+  (`resolvePendingFigurePlacement`).
+
+### 부모-자식 구조와 저장
+
+피규어(`sourceType: "figure"`)는 서랍장 root group의 **자식**으로 부착된다
+(`userData.decorRoots`에 역참조). 서랍장을 이동/회전하면 피규어도 함께 움직인다.
+저장 시 `objectToEditableJson()`이 서랍장 항목에 `decorations` 배열(부모 로컬 transform
+기준)을 포함시키고, 로드 시 가구 생성 후 자식으로 재부착한다. 피규어의 회전은 기존 회전
+슬라이더, 교체/삭제는 기존 교체·삭제 버튼을 재사용한다. 크기는 전용 슬라이더로 조절한다
+(최대 변 5~50cm, root.scale 균일 스케일 — scale이 transform matrix에 저장되므로 저장/복원
+코드 변경 없이 유지되며, 조절 시 바닥면이 놓인 표면에 붙어 있도록 Y를 함께 보정한다).
+
+제약: 서랍장 자체를 다른 가구로 "교체"하면 올려둔 피규어는 함께 삭제된다.
+
+---
+
 ## 벽 표시와 측정 표시
 
 ### 카메라 기준 벽 투명화
@@ -591,6 +637,9 @@ POST /api/rooms/save
 | 치수 label/단위 포맷 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/measurementLabels.js` |
 | 가구 모델 생성 방식 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/objectFactory.js` |
 | 벽 충돌 판정 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/collision.js` |
+| 카메라 전환 애니메이션 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/cameraTransitions.js` |
+| 서랍장 꾸미기 표면 스냅 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/decorSurface.js` |
+| 서랍장 꾸미기 카메라/정면 판정 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/decorCamera.js` |
 | 벽 콜라이더 생성 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/wallColliders.js` |
 | 저장 JSON 구조 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/roomMetadata.js` |
 | 방 면적/치수 계산 수정 | `spatium-frontend/src/pages/roomSceneEditor/scene/roomMeasurements.js` |

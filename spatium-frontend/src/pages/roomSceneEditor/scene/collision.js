@@ -170,12 +170,16 @@ export function restoreValidTransform(object) {
 
 // 이 오브젝트 자체가 "벽을 넘으면 안 되는" 제약 대상인지 판단한다.
 // 일반 가구만 해당하고, 문/창문과 ignoreWallConstraint 플래그가 켜진 것은 제외한다.
+// 서랍장 위 피규어(isDecorFigure)는 서랍장 표면 raycast로만 배치가 제한되므로
+// 벽 제약 대상이 아니다 — 서랍장이 벽에 붙어 있으면 피규어가 벽 경계 판정에 걸려
+// 회전/배치가 부당하게 막히기 때문이다.
 export function shouldConstrainToWalls(object) {
   const category =
     object?.userData.roomItem?.category || object?.userData.category;
   return Boolean(
     object?.userData.editable &&
     !object.userData.ignoreWallConstraint &&
+    !object.userData.isDecorFigure &&
     category !== "door" &&
     category !== "window",
   );
@@ -526,11 +530,15 @@ export function wallBlocksObjectObb(objectObb, wall) {
 }
 
 // 이 오브젝트에 대해 "벽과 겹치는지" 충돌 표시(빨간 박스 등)를 계산해야 하는지 판단한다.
+// 피규어는 벽 충돌 대상이 아니므로 제외한다.
 export function shouldCheckFurnitureCollision(object) {
   const category =
     object?.userData.roomItem?.category || object?.userData.category;
   return Boolean(
-    object?.userData.editable && category !== "door" && category !== "window",
+    object?.userData.editable &&
+    !object.userData.isDecorFigure &&
+    category !== "door" &&
+    category !== "window",
   );
 }
 

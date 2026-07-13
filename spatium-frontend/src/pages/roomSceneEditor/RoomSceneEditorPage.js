@@ -1,9 +1,16 @@
-import { forwardRef, useImperativeHandle } from "react";
+import { forwardRef, useEffect, useImperativeHandle } from "react";
 import { useRoomSceneEditor } from "./hooks/useRoomSceneEditor";
+import { isDecoratableModelPath } from "./scene/decorSurface";
 import "./RoomSceneEditorPage.css";
 
 const ROTATION_STOPS = [-180, -90, 0, 90, 180];
-const REPLACEABLE_TYPES = new Set(["object", "door", "window", "opening"]);
+const REPLACEABLE_TYPES = new Set([
+  "object",
+  "door",
+  "window",
+  "opening",
+  "figure",
+]);
 
 // Three.js 씬(useRoomSceneEditor)을 렌더링하는 뷰포트 + 선택된 오브젝트의 정보 패널/
 // 회전·높이 슬라이더/교체·삭제 툴바를 그리는 컴포넌트. 상위(3dEditor.js)는 ref를 통해
@@ -17,6 +24,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     roomScene = null,
     onSceneChanged,
     onFloorColorLoaded,
+    onDecorModeChanged,
   },
   ref,
 ) {
@@ -30,6 +38,12 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     isReplacingSelected,
     isPlacingFurniture,
     canSaveJson,
+    isDecorMode,
+    decorTargetName,
+    enterDecorMode,
+    exitDecorMode,
+    selectedFigureSizeCm,
+    setSelectedFigureSizeCm,
     addFurniture,
     cancelFurniturePlacement,
     deleteSelectedObject,
@@ -48,16 +62,30 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     onFloorColorLoaded,
   });
 
+  // 상위 화면(3dEditor.js)이 꾸미기 모드에 맞춰 카탈로그 필터/Skyview 버튼 등을
+  // 바꿀 수 있게 모드 변경을 알려준다.
+  useEffect(() => {
+    onDecorModeChanged?.(isDecorMode);
+  }, [isDecorMode, onDecorModeChanged]);
+
   // 선택된 오브젝트 종류에 따라 어떤 컨트롤을 보여줄지 결정한다.
   const canShowSelectionControls = REPLACEABLE_TYPES.has(
     selectedItem?.sourceType,
   );
-  const canDeleteSelected = selectedItem?.sourceType === "object";
+  const isFigureSelected = selectedItem?.sourceType === "figure";
+  const canDeleteSelected =
+    selectedItem?.sourceType === "object" || isFigureSelected;
   const canDeleteReference =
     selectedItem?.sourceType === "door" ||
     selectedItem?.sourceType === "window";
   const canShowElevationControl = selectedItem?.sourceType === "object";
   const isOpeningSelected = selectedItem?.sourceType === "opening";
+  // 꾸미기 전용 모델(editable_furniture 폴더 GLB)을 선택했을 때만
+  // "서랍장 꾸미기" 버튼을 보여준다.
+  const canDecorateSelected =
+    !isDecorMode &&
+    selectedItem?.sourceType === "object" &&
+    isDecoratableModelPath(selectedItem?.path || selectedItem?.modelUrl);
 
   const handleRotationChange = (event) => {
     setSelectedRotationDegrees(Number(event.target.value));
@@ -65,6 +93,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
 
   const handleElevationChange = (event) => {
     setSelectedElevationCm(Number(event.target.value));
+  };
+
+  const handleFigureSizeChange = (event) => {
+    setSelectedFigureSizeCm(Number(event.target.value));
   };
 
   const handleDeleteAsOpening = () => {
@@ -103,10 +135,36 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     <div className="room-scene-editor-page">
       <div ref={containerRef} className="room-scene-editor-viewport" />
 
-      {/* 가구 배치 모드 안내 배너 — 바닥을 클릭할 때까지 표시된다 */}
+      {/* 서랍장 꾸미기 모드 배너 — 완료 버튼으로 원래 시점에 복귀한다 */}
+      {isDecorMode && (
+        <div className="room-scene-editor-placement-banner room-scene-editor-decor-banner">
+          <span>
+            {decorTargetName || "서랍장"} 꾸미기 — 왼쪽 목록에서 피규어를
+            클릭해 올려놓고, 드래그로 위치를 조정하세요.
+          </span>
+          <button
+            type="button"
+            className="room-scene-editor-placement-cancel room-scene-editor-decor-done"
+            onClick={exitDecorMode}
+          >
+            완료
+          </button>
+        </div>
+      )}
+
+      {/* 가구/피규어 배치 모드 안내 배너 — 위치를 클릭할 때까지 표시된다.
+          꾸미기 모드 중에는 꾸미기 배너 아래에 겹치지 않게 표시한다. */}
       {isPlacingFurniture && (
-        <div className="room-scene-editor-placement-banner">
-          <span>가구를 놓을 위치를 바닥에서 클릭하세요.</span>
+        <div
+          className={`room-scene-editor-placement-banner${
+            isDecorMode ? " room-scene-editor-placement-banner--stacked" : ""
+          }`}
+        >
+          <span>
+            {isDecorMode
+              ? "피규어를 놓을 층(선반)을 클릭하세요."
+              : "가구를 놓을 위치를 바닥에서 클릭하세요."}
+          </span>
           <button
             type="button"
             className="room-scene-editor-placement-cancel"
@@ -126,7 +184,9 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
           <div className="room-scene-editor-info-subtitle">
             {isOpeningSelected
               ? "개구부"
-              : selectedItem.category || selectedItem.sourceType}
+              : isFigureSelected
+                ? "피규어"
+                : selectedItem.category || selectedItem.sourceType}
           </div>
           <dl className="room-scene-editor-info-list">
             <div>
@@ -186,6 +246,26 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
               </div>
             </div>
           )}
+          {/* 피규어 크기 슬라이더 — 최대 변 길이(cm) 기준 균일 스케일 */}
+          {isFigureSelected && selectedFigureSizeCm > 0 && (
+            <div className="room-scene-editor-elevation-panel">
+              <div className="room-scene-editor-elevation-value">
+                크기 : {selectedFigureSizeCm}cm
+              </div>
+              <div className="room-scene-editor-elevation-track-wrap">
+                <input
+                  type="range"
+                  className="room-scene-editor-elevation-slider"
+                  min="5"
+                  max="50"
+                  step="1"
+                  value={selectedFigureSizeCm}
+                  onChange={handleFigureSizeChange}
+                  aria-label="Figure size"
+                />
+              </div>
+            </div>
+          )}
           {canShowElevationControl && selectedMaxElevationCm > 0 && (
             <div className="room-scene-editor-elevation-panel">
               <div className="room-scene-editor-elevation-value">
@@ -206,6 +286,18 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
             </div>
           )}
           <div className="room-scene-editor-selection-toolbar">
+            {canDecorateSelected && (
+              <button
+                type="button"
+                className="room-scene-editor-selection-tool room-scene-editor-selection-tool--decor"
+                onClick={enterDecorMode}
+                title="서랍장을 정면에서 보며 피규어를 올려놓습니다"
+              >
+                <span className="room-scene-editor-selection-tool-icon">
+                  서랍장 꾸미기
+                </span>
+              </button>
+            )}
             <button
               type="button"
               className={`room-scene-editor-selection-tool${
