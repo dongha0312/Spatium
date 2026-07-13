@@ -160,6 +160,7 @@ async def remove_background(
     target_class: str | None = Form(None),
     object_query: str | None = Form(None),
 ) -> dict[str, str]:
+    print("업로드 된 파일 크기 : ", image.size)
     validate_image(image)
     image_bytes = await image.read()
     if len(image_bytes) > settings.max_upload_bytes:

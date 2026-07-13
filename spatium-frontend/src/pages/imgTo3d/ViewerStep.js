@@ -123,7 +123,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
   const gizmoModeRef = useRef(null);
   const modelLoadTokenRef = useRef(0);
   const [scale, setScale] = useState(1);
-  const [floorSnap, setFloorSnap] = useState(false);
+  const [floorSnap, setFloorSnap] = useState(true);
   const [gizmoMode, setGizmoMode] = useState(null); // null | "translate" | "rotate"
   const [fileName, setFileName] = useState(null); // null이면 플레이스홀더 박스
   const [baseSize, setBaseSize] = useState({ ...BOX_SIZE }); // 스케일 1 기준 모델 크기(m)
