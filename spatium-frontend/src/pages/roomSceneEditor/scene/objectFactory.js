@@ -231,9 +231,9 @@ export function fitModelToTargetSize(model, targetSize) {
   model.updateWorldMatrix(true, true);
 }
 
-// 일부 문/창문 GLB 템플릿에 섞여 있는, 원래 모델과 무관한 부산물(예: UI 킷 잔여물,
-// 화면/스크린 mesh)을 이름 패턴으로 찾아서 제거한다.
-function removeReferenceModelArtifacts(model) {
+// 일부 GLB 템플릿(문/창문/가구 공통)에 섞여 있는, 원래 모델과 무관한 부산물
+// (예: UI 킷 잔여물의 검은/흰 판, 화면/스크린 mesh)을 이름 패턴으로 찾아서 제거한다.
+function removeModelArtifacts(model) {
   const artifactNamePatterns = [/^Blender Bros Sci-Fi UI Pack/i, /^Solid 25$/i];
   const artifactMaterialPatterns = [
     /^\.?Blender Bros Sci-Fi UI Pack/i,
@@ -313,6 +313,7 @@ export function createEditableFurnitureModel(modelTemplate, item, index) {
   root.quaternion.copy(transform.quaternion);
   root.scale.copy(transform.scale);
 
+  removeModelArtifacts(model);
   model.traverse((object) => {
     if (object.isMesh) {
       object.castShadow = true;
@@ -432,7 +433,7 @@ export function createDoorModel(doorTemplate, item, index, wallColliders = []) {
   root.quaternion.copy(transform.quaternion);
   root.scale.copy(transform.scale);
 
-  removeReferenceModelArtifacts(model);
+  removeModelArtifacts(model);
   cloneRenderableMaterials(model);
   applyGlassTransparency(model);
   model.traverse((object) => {
@@ -508,7 +509,7 @@ export function createWindowModel(
   root.quaternion.copy(transform.quaternion);
   root.scale.copy(transform.scale);
 
-  removeReferenceModelArtifacts(model);
+  removeModelArtifacts(model);
   cloneRenderableMaterials(model);
   applyGlassTransparency(model);
   model.traverse((object) => {

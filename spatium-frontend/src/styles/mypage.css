@@ -1169,3 +1169,35 @@
   cursor: wait;
   opacity: .6;
 }
+
+/* 내 가구 카드 : "정보" 드롭다운으로 펼쳐지는 상세 정보 */
+.mp-fur-details {
+  padding: 12px 22px 16px;
+}
+
+.mp-fur-detail-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--bd);
+  font-size: 13px;
+}
+
+.mp-fur-detail-row:last-child {
+  border-bottom: none;
+}
+
+.mp-fur-detail-label {
+  color: var(--t3);
+  flex-shrink: 0;
+}
+
+.mp-fur-detail-value {
+  color: var(--t);
+  font-weight: 600;
+  text-align: right;
+  word-break: break-all;
+  min-width: 0;
+}
