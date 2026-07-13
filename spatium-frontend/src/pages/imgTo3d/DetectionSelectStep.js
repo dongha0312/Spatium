@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { mockDetect } from "./mockData";
 
-// 3단계: GroundingDINO detection 결과(목업) 중 사용자가 원하는 객체 하나를 선택
+// 3단계: GroundingDINO detection 결과(목업) 중 사용자가 원하는 객체 하나를 선택 -> 이거 이제 안 쓰는 듯
 function DetectionSelectStep({ image, normalized, detections, onDetections, selectedId, onSelect }) {
   const [loading, setLoading] = useState(false);
 

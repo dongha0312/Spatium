@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
+import { ViewHelper } from "three/examples/jsm/helpers/ViewHelper.js";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
@@ -148,6 +149,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     camera.position.set(2.4, 1.8, 2.8);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.autoClear = false;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     mount.appendChild(renderer.domElement);
@@ -156,6 +158,12 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     controls.enableDamping = true;
     controls.rotateSpeed = 0.3;
     controls.target.set(0, BOX_SIZE.h / 2, 0);
+
+    const viewHelper = new ViewHelper(camera, renderer.domElement);
+    viewHelper.location.top = 12;
+    viewHelper.location.right = 12;
+    viewHelper.setLabels("X", "Y", "Z");
+    viewHelper.center.copy(controls.target);
 
     scene.add(new THREE.HemisphereLight(0xfff8ef, 0x8a7561, 1.1));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -363,6 +371,24 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     }
     updateOverlay();
 
+    // 모델 크기에 맞춰 카메라가 지나치게 멀어지지 않도록 제한
+    function updateZoomLimit(target = threeRef.current?.model || model) {
+      target.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(target);
+      if (bounds.isEmpty()) return;
+      const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+      controls.maxDistance = Math.max(4.2, sphere.radius * 6);
+
+      const cameraOffset = camera.position.clone().sub(controls.target);
+      if (cameraOffset.length() > controls.maxDistance) {
+        camera.position.copy(controls.target).add(
+          cameraOffset.setLength(controls.maxDistance)
+        );
+      }
+      controls.update();
+    }
+    updateZoomLimit();
+
     // 기즈모 모드 전환 — 기즈모가 켜지면 링/핸들 직접 조작은 잠시 숨긴다
     function setGizmo(mode) {
       if (mode) {
@@ -535,7 +561,9 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     const animate = () => {
       raf = requestAnimationFrame(animate);
       controls.update();
+      renderer.clear();
       renderer.render(scene, camera);
+      viewHelper.render(renderer);
     };
     animate();
 
@@ -554,6 +582,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
       transformControls,
       snapToFloor,
       updateOverlay,
+      updateZoomLimit,
       autoAlign,
       setGizmo,
     };
@@ -566,6 +595,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
       renderer.domElement.removeEventListener("pointermove", handlePointerMove, true);
       renderer.domElement.removeEventListener("pointerup", handlePointerEnd, true);
       renderer.domElement.removeEventListener("pointercancel", handlePointerEnd, true);
+      viewHelper.dispose();
       transformControls.dispose();
       controls.dispose();
       const t = threeRef.current;
@@ -589,6 +619,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     t.model.scale.setScalar(scale * (t.model.userData.baseScale || 1));
     if (floorSnapRef.current) t.snapToFloor();
     t.updateOverlay();
+    t.updateZoomLimit();
   }, [scale, fileName]);
 
   // 바닥 접지 토글 반영
@@ -619,6 +650,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     t.model = next;
     t.scene.add(next);
     t.transformControls.attach(next);
+    t.updateZoomLimit(next);
   }, []);
 
   const loadGlb = useCallback(
@@ -840,14 +872,14 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
           >
             {loadingModel ? "불러오는 중…" : "GLB 파일 불러오기"}
           </button>
-          {fileName && (
+          {/* {fileName && (
             <>
               <div className="it3-file-meta">{fileName}</div>
               <button type="button" className="it3-btn-ghost" onClick={restorePlaceholder}>
                 기본 박스로 되돌리기
               </button>
             </>
-          )}
+          )} */}
           <input
             ref={fileRef}
             type="file"
