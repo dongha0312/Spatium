@@ -399,6 +399,19 @@ function ThreeDEditor() {
     setActiveCategory(null);
   };
 
+  // 카탈로그 아래 "내 가구 생성" 버튼 : 이미지→3D 가구 만들기 페이지로 이동
+  const handleCreateUserFurniture = () => {
+    if (hasUnsavedChanges) {
+      const confirmed = window.confirm(
+        "수정중인 방이 저장되지 않았습니다. 그래도 가구 만들기 페이지로 이동하시겠습니까?",
+      );
+      if (!confirmed) return;
+      setHasUnsavedChanges(false);
+    }
+
+    navigate("/member/imgto3d");
+  };
+
   const handleAddFurniture = (item) => {
     if (editorRef.current?.isReplacingSelected) {
       editorRef.current?.addFurniture(item);
@@ -558,7 +571,7 @@ function ThreeDEditor() {
               className="ed-mypage-btn"
               onClick={handleGoMypage}
             >
-              마이페이지
+              내 공간
             </button>
             {/* 닉네임 클릭 : 우측 "내 정보" 패널 열기 */}
             <AvatarButton
@@ -683,6 +696,19 @@ function ThreeDEditor() {
               ))}
             </div>
 
+            {session &&
+              (activeCategory === null ||
+                activeCategory === USER_FURNITURE_CATEGORY) && (
+                <div className="ed-cat-create-wrap">
+                  <button
+                    type="button"
+                    className="ed-cat-create-btn"
+                    onClick={handleCreateUserFurniture}
+                  >
+                    + 내 가구 생성
+                  </button>
+                </div>
+              )}
             <div className="ed-cat-products">
               {catalogError && (
                 <div className="ed-cat-empty">{catalogError}</div>
@@ -906,7 +932,7 @@ function ThreeDEditor() {
             onClick={handleCancel}
             disabled={isSaving}
           >
-            마이페이지로 돌아가기
+            내 공간으로 돌아가기
           </button>
           <button
             type="button"
