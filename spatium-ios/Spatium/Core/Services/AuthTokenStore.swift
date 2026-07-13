@@ -20,7 +20,18 @@ final class AuthTokenStore: ObservableObject {
     @Published private(set) var isLoggedIn: Bool
 
     private init() {
-        isLoggedIn = Self.read(account: Self.accessAccount) != nil
+        let storedAccessToken = Self.read(account: Self.accessAccount)
+        #if DEBUG
+        isLoggedIn = storedAccessToken != nil
+        #else
+        if storedAccessToken?.hasPrefix("mock_") == true {
+            Self.delete(account: Self.accessAccount)
+            Self.delete(account: Self.refreshAccount)
+            isLoggedIn = false
+        } else {
+            isLoggedIn = storedAccessToken != nil
+        }
+        #endif
     }
 
     var accessToken: String? {
@@ -32,6 +43,12 @@ final class AuthTokenStore: ObservableObject {
     }
 
     func save(_ tokens: AuthTokens) {
+        #if !DEBUG
+        guard !tokens.accessToken.hasPrefix("mock_"), !tokens.refreshToken.hasPrefix("mock_") else {
+            clear()
+            return
+        }
+        #endif
         Self.write(tokens.accessToken, account: Self.accessAccount)
         Self.write(tokens.refreshToken, account: Self.refreshAccount)
         isLoggedIn = true

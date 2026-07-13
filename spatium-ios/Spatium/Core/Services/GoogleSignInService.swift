@@ -39,6 +39,7 @@ final class GoogleSignInService: NSObject {
     private var session: ASWebAuthenticationSession?
     func signIn() async throws -> GoogleSignInResult {
         guard SpatiumSocialConfig.isGoogleConfigured else {
+            #if DEBUG
             // Fall back to a mock Google login result for simulation/testing in simulator
             try await Task.sleep(nanoseconds: 800_000_000)
             return GoogleSignInResult(
@@ -48,6 +49,9 @@ final class GoogleSignInService: NSObject {
                 email: "test.google@spatium.com",
                 providerUserId: "google_123456789"
             )
+            #else
+            throw GoogleSignInError.notConfigured
+            #endif
         }
 
         let codeVerifier = Self.randomURLSafeString(length: 64)

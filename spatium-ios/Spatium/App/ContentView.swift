@@ -69,6 +69,8 @@ struct ContentView: View {
 
 struct MainTabView: View {
     @StateObject private var projectStore = ProjectStore()
+    @EnvironmentObject private var userFurnitureStore: UserFurnitureStore
+    @ObservedObject private var tokenStore = AuthTokenStore.shared
     @State private var selectedTab: AppTab = .home
     /// 스크롤 컨테이너가 보여줄 탭. 가구 만들기(고정 레이아웃) 탭으로 가 있는 동안에는
     /// 마지막 스크롤 탭 화면을 유지해, 페이드 아웃 중에 내용이 사라지지 않게 한다.
@@ -81,10 +83,13 @@ struct MainTabView: View {
     @State private var scanProject: ScanProject?
     @State private var showScanner = false
     @State private var isScanning = false
+    @State private var scanReturnTab: AppTab = .home
+    @State private var flowErrorMessage: String?
     @State private var showShareSheet = false
     @State private var shareItems: [Any] = []
     @State private var exporting = false
     @State private var uploading = false
+    @State private var isRefreshing = false
     @State private var exportError: String?
     @State private var uploadMessage: String?
 
@@ -112,11 +117,17 @@ struct MainTabView: View {
                     .padding(.bottom, 28)
                 }
                 .scrollIndicators(.hidden)
+                .refreshable {
+                    await refreshVisibleContent()
+                }
                 .opacity(selectedTab == .imgTo3D ? 0 : 1)
                 .scaleEffect(selectedTab == .imgTo3D ? 0.97 : 1)
                 .allowsHitTesting(selectedTab != .imgTo3D)
 
-                ImgTo3DView()
+                ImgTo3DView {
+                    selectedProjectID = nil
+                    selectedTab = .rooms
+                }
                     .frame(maxWidth: 520, maxHeight: .infinity)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.horizontal, 12)
@@ -127,22 +138,28 @@ struct MainTabView: View {
             }
             .animation(tabContentAnimation, value: selectedTab)
             .onChange(of: selectedTab) { _, newValue in
+                UIApplication.shared.sendAction(
+                    #selector(UIResponder.resignFirstResponder),
+                    to: nil,
+                    from: nil,
+                    for: nil
+                )
                 if newValue != .imgTo3D {
                     scrollContentTab = newValue
                 }
             }
-            .safeAreaInset(edge: .top, spacing: 0) {
-                AppHeader(selectedTab: selectedTab)
-            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 AppFooter(selectedTab: $selectedTab)
             }
-            // 가구 만들기 탭: 입력 필드가 모두 화면 위쪽이라 키보드 회피가 필요 없고,
-            // 키보드가 올라올 때 푸터가 따라 올라오며 카드가 찌그러지는 것을 막는다.
-            // (다른 탭은 화면 아래쪽 필드가 있어 기본 키보드 회피를 유지)
+            // 가구 만들기 탭은 입력 필드가 화면 위쪽에 있어 키보드에 맞춰
+            // 전체 화면과 푸터를 압축하지 않는다. 입력 모달은 fullScreenCover가
+            // 자체 안전영역을 관리한다.
             .ignoresSafeArea(.keyboard, edges: selectedTab == .imgTo3D ? .bottom : [])
+            .safeAreaInset(edge: .top, spacing: 0) {
+                AppHeader(selectedTab: selectedTab)
+            }
         }
-        .sheet(isPresented: $showNewProjectSheet, onDismiss: {
+        .fullScreenCover(isPresented: $showNewProjectSheet, onDismiss: {
             if shouldStartScanAfterProjectSheetDismiss {
                 shouldStartScanAfterProjectSheetDismiss = false
                 startNewScan()
@@ -157,13 +174,20 @@ struct MainTabView: View {
                     let project = ScanProject(room: room, photos: photos)
                     scanProject = project
                     selectedTab = .scan
+                    isScanning = false
                     showScanner = false
                     registerRoom(for: project)
                 },
                 onError: { error in
-                    exportError = error.localizedDescription
-                    selectedTab = .scan
+                    flowErrorMessage = "스캔 실패: \(error.localizedDescription)"
+                    isScanning = false
                     showScanner = false
+                    selectedTab = scanReturnTab
+                },
+                onCancel: {
+                    isScanning = false
+                    showScanner = false
+                    selectedTab = scanReturnTab
                 }
             )
         }
@@ -171,6 +195,27 @@ struct MainTabView: View {
             ShareSheet(activityItems: shareItems)
         }
         .tint(SpatiumTheme.accent)
+        .task(id: tokenStore.accessToken) {
+            await userFurnitureStore.refreshFromBackend()
+        }
+        .alert(
+            "요청을 완료하지 못했습니다",
+            isPresented: Binding(
+                get: { flowErrorMessage != nil || projectStore.lastErrorMessage != nil },
+                set: { isPresented in
+                    guard !isPresented else { return }
+                    flowErrorMessage = nil
+                    projectStore.lastErrorMessage = nil
+                }
+            )
+        ) {
+            Button("확인", role: .cancel) {
+                flowErrorMessage = nil
+                projectStore.lastErrorMessage = nil
+            }
+        } message: {
+            Text(flowErrorMessage ?? projectStore.lastErrorMessage ?? "알 수 없는 오류가 발생했습니다.")
+        }
         #if DEBUG
         .onAppear {
             if ProcessInfo.processInfo.arguments.contains("-UITestSettings") {
@@ -219,6 +264,19 @@ struct MainTabView: View {
                     onRenameRoom: { room, newName in
                         Task { await projectStore.renameRoom(roomID: room.id, projectID: project.id, newName: newName) }
                     },
+                    onDeleteProject: {
+                        let projectID = project.id
+                        Task {
+                            await projectStore.deleteProject(projectID: projectID)
+                            guard projectStore.project(withID: projectID) == nil else { return }
+                            selectedProjectID = nil
+                            if activeProjectID == projectID {
+                                activeProjectID = nil
+                                activeRoomID = nil
+                                scanProject = nil
+                            }
+                        }
+                    },
                     onDeleteRoom: { room in
                         Task { await projectStore.deleteRoom(roomID: room.id, projectID: project.id) }
                     }
@@ -226,10 +284,14 @@ struct MainTabView: View {
             } else {
                 ProjectListView(
                     projects: projectStore.projects,
+                    userFurniture: userFurnitureStore.items,
                     onCreateProject: startNewProjectFlow,
                     onOpenProject: { project in
                         selectedProjectID = project.id
                         Task { await projectStore.loadRooms(projectID: project.id) }
+                    },
+                    onDeleteFurniture: { furniture in
+                        try await userFurnitureStore.delete(furniture)
                     }
                 )
             }
@@ -268,13 +330,38 @@ struct MainTabView: View {
         .spring(response: 0.38, dampingFraction: 0.85)
     }
 
+    /// 홈·프로젝트·스캔·설정 탭의 공통 당겨서 새로고침 동작.
+    /// 화면별로 서로 다른 캐시가 남지 않도록 프로젝트, 가구, 프로필을 함께 갱신하고
+    /// 프로젝트 상세 화면에서는 선택한 프로젝트의 방 목록까지 다시 불러온다.
+    private func refreshVisibleContent() async {
+        // 빠르게 여러 번 당겨도 동일한 동기화 작업과 보류 중인 가구 업로드가
+        // 중복 실행되지 않도록 한 번의 새로고침만 허용한다.
+        guard !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        // 당겨서 새로고침은 캐시를 유지하는 비차단 동작이다. 일시적인 네트워크
+        // 실패를 전역 오류 팝업으로 바꾸지 않고 현재 화면의 데이터를 그대로 둔다.
+        async let projects: Void = projectStore.refresh(silently: true)
+        async let furniture: Void = userFurnitureStore.refreshFromBackend()
+        async let profile: Void = CurrentUserStore.shared.refresh()
+        _ = await (projects, furniture, profile)
+
+        guard scrollContentTab == .rooms,
+              let selectedProjectID,
+              projectStore.project(withID: selectedProjectID) != nil else {
+            return
+        }
+        await projectStore.loadRooms(projectID: selectedProjectID, silently: true)
+    }
+
     private func startNewProjectFlow() {
         shouldStartScanAfterProjectSheetDismiss = false
         showNewProjectSheet = true
     }
 
-    private func handleProjectCreated(name: String) async {
-        let project = await projectStore.createProject(name: name)
+    private func handleProjectCreated(name: String) async throws {
+        let project = try await projectStore.createProject(name: name)
         activeProjectID = project.id
         selectedProjectID = project.id
         shouldStartScanAfterProjectSheetDismiss = true
@@ -286,6 +373,11 @@ struct MainTabView: View {
     }
 
     private func startNewScan() {
+        guard RoomCaptureSession.isSupported else {
+            flowErrorMessage = "이 기기는 RoomPlan 방 스캔을 지원하지 않아요. LiDAR가 탑재된 iPhone 또는 iPad에서 다시 시도해 주세요."
+            return
+        }
+        scanReturnTab = selectedTab
         scanProject = nil
         activeRoomID = nil
         exportError = nil
@@ -414,4 +506,5 @@ private struct ModernBackground: View {
 
 #Preview {
     ContentView()
+        .environmentObject(UserFurnitureStore())
 }

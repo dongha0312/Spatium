@@ -10,6 +10,7 @@ final class ProjectStore: ObservableObject {
     private let service = ProjectService()
     private let cacheFileURL: URL
     private var cancellables: Set<AnyCancellable> = []
+    private var isRefreshing = false
 
     init(cacheFileURL: URL? = nil) {
         self.cacheFileURL = cacheFileURL ?? Self.defaultCacheFileURL()
@@ -23,14 +24,14 @@ final class ProjectStore: ObservableObject {
             .sink { [weak self] loggedIn in
                 guard let self else { return }
                 if loggedIn {
-                    Task { await self.refresh() }
+                    Task { await self.refresh(silently: true) }
                 } else {
                     self.clearLocalData()
                 }
             }
             .store(in: &cancellables)
 
-        Task { await refresh() }
+        Task { await refresh(silently: true) }
     }
 
     /// 로그아웃/계정 전환 시 메모리와 디스크 캐시를 모두 비운다.
@@ -46,32 +47,48 @@ final class ProjectStore: ObservableObject {
     }
 
     /// 서버에서 최신 프로젝트 목록을 받아옵니다. 실패 시 기존(캐시/로컬)을 유지합니다.
-    func refresh() async {
-        guard AuthTokenStore.shared.isLoggedIn else { return }
+    func refresh(silently: Bool = false) async {
+        guard AuthTokenStore.shared.isLoggedIn, !isRefreshing else { return }
+        isRefreshing = true
+        defer { isRefreshing = false }
+
         do {
             projects = try await service.fetchProjects()
             lastErrorMessage = nil
             saveCache()
-            await refreshRoomCounts()
+            await refreshRoomCounts(silently: silently)
+        } catch is CancellationError {
+            return
         } catch {
-            lastErrorMessage = error.localizedDescription
+            if !silently {
+                lastErrorMessage = error.localizedDescription
+            }
         }
     }
 
     @discardableResult
-    func createProject(name: String) async -> SpatiumProject {
+    func createProject(name: String) async throws -> SpatiumProject {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            throw ProjectStoreError.emptyProjectName
+        }
+
+        if !AuthTokenStore.shared.isLoggedIn {
+            let local = SpatiumProject(id: Self.newLocalID(), name: trimmed)
+            projects.insert(local, at: 0)
+            saveCache()
+            return local
+        }
+
         do {
-            let created = try await service.createProject(name: name)
+            let created = try await service.createProject(name: trimmed)
             projects.insert(created, at: 0)
             lastErrorMessage = nil
             saveCache()
             return created
         } catch {
             lastErrorMessage = error.localizedDescription
-            let local = SpatiumProject(id: Self.newLocalID(), name: name)
-            projects.insert(local, at: 0)
-            saveCache()
-            return local
+            throw error
         }
     }
 
@@ -133,7 +150,7 @@ final class ProjectStore: ObservableObject {
         saveCache()
     }
 
-    func loadRooms(projectID: String) async {
+    func loadRooms(projectID: String, silently: Bool = false) async {
         guard !projectID.hasPrefix("local-") else { return }
         do {
             let rooms = try await service.fetchRooms(projectID: projectID)
@@ -144,8 +161,12 @@ final class ProjectStore: ObservableObject {
             saveCache()
             // 목록 API에는 항목 수가 없으므로, 각 방의 스캔 JSON에서 실제 개수를 받아 채운다.
             await refreshItemCounts(projectID: projectID, rooms: rooms)
+        } catch is CancellationError {
+            return
         } catch {
-            lastErrorMessage = error.localizedDescription
+            if !silently {
+                lastErrorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -170,6 +191,7 @@ final class ProjectStore: ObservableObject {
         guard !trimmed.isEmpty,
               let index = projects.firstIndex(where: { $0.id == projectID }) else { return }
 
+        let previousName = projects[index].name
         projects[index].name = trimmed
         saveCache()
 
@@ -182,14 +204,21 @@ final class ProjectStore: ObservableObject {
             try await service.renameProject(projectID: projectID, newName: trimmed)
             lastErrorMessage = nil
         } catch {
+            if let currentIndex = projects.firstIndex(where: { $0.id == projectID }) {
+                projects[currentIndex].name = previousName
+                saveCache()
+            }
             lastErrorMessage = error.localizedDescription
         }
     }
 
     func renameRoom(roomID: String, projectID: String, newName: String) async {
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty,
+              let projectIndex = projects.firstIndex(where: { $0.id == projectID }),
+              let roomIndex = projects[projectIndex].rooms.firstIndex(where: { $0.id == roomID }) else { return }
 
+        let previousName = projects[projectIndex].rooms[roomIndex].roomType
         updateRoom(roomID: roomID, projectID: projectID) { $0.roomType = trimmed }
 
         guard !projectID.hasPrefix("local-"), !roomID.hasPrefix("local-") else {
@@ -201,6 +230,28 @@ final class ProjectStore: ObservableObject {
             try await service.renameRoom(roomID: roomID, newName: trimmed)
             lastErrorMessage = nil
         } catch {
+            updateRoom(roomID: roomID, projectID: projectID) { $0.roomType = previousName }
+            lastErrorMessage = error.localizedDescription
+        }
+    }
+
+    func deleteProject(projectID: String) async {
+        guard let projectIndex = projects.firstIndex(where: { $0.id == projectID }) else { return }
+        let removedProject = projects.remove(at: projectIndex)
+        saveCache()
+
+        guard !projectID.hasPrefix("local-") else {
+            lastErrorMessage = nil
+            return
+        }
+
+        do {
+            try await service.deleteProject(projectID: projectID)
+            lastErrorMessage = nil
+        } catch {
+            let restoredIndex = min(projectIndex, projects.count)
+            projects.insert(removedProject, at: restoredIndex)
+            saveCache()
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -265,7 +316,7 @@ final class ProjectStore: ObservableObject {
         saveCache()
     }
 
-    private func refreshRoomCounts() async {
+    private func refreshRoomCounts(silently: Bool) async {
         let projectIDs = projects
             .map(\.id)
             .filter { !$0.hasPrefix("local-") }
@@ -278,7 +329,9 @@ final class ProjectStore: ObservableObject {
                 lastErrorMessage = nil
                 saveCache()
             } catch {
-                lastErrorMessage = error.localizedDescription
+                if !silently {
+                    lastErrorMessage = error.localizedDescription
+                }
             }
         }
     }
@@ -309,5 +362,13 @@ final class ProjectStore: ObservableObject {
     private func saveCache() {
         guard let data = try? JSONEncoder.spatiumAPI.encode(projects) else { return }
         try? data.write(to: cacheFileURL, options: .atomic)
+    }
+}
+
+private enum ProjectStoreError: LocalizedError {
+    case emptyProjectName
+
+    var errorDescription: String? {
+        "프로젝트 이름을 입력해 주세요."
     }
 }

@@ -46,15 +46,24 @@ struct AppHeader: View {
                 currentUser.clear()
             }
         }
-        .sheet(isPresented: $showLoginSheet) {
+        .fullScreenCover(isPresented: $showLoginSheet) {
             LoginView(onLoggedIn: {})
         }
-        .sheet(isPresented: $showProfileSheet, onDismiss: {
+        .fullScreenCover(isPresented: $showProfileSheet, onDismiss: {
             // 프로필 수정(닉네임/이미지) 후 헤더도 최신 상태로 갱신.
             Task { await currentUser.refresh() }
         }) {
             ProfileEditView()
         }
+        #if DEBUG
+        .onAppear {
+            guard ProcessInfo.processInfo.arguments.contains("-UITestProfileSheet") else { return }
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(300))
+                showProfileSheet = true
+            }
+        }
+        #endif
     }
 
     @ViewBuilder
@@ -94,19 +103,8 @@ struct AppHeader: View {
     }
 
     private var avatar: some View {
-        Group {
-            if let url = currentUser.avatarURL {
-                AsyncImage(url: url) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                    default:
-                        avatarPlaceholder
-                    }
-                }
-            } else {
-                avatarPlaceholder
-            }
+        ProfileImageView(source: currentUser.avatarSource) {
+            avatarPlaceholder
         }
         .frame(width: 26, height: 26)
         .clipShape(Circle())

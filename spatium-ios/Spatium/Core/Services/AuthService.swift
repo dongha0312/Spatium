@@ -52,16 +52,20 @@ struct AuthService {
             termsAgreed: termsAgreed,
             privacyAgreed: privacyAgreed
         )
-        let _: SpatiumAPIEnvelope<EmptyAPIData> = try await client.send(
+        let envelope: SpatiumAPIEnvelope<UserSummary> = try await client.send(
             method: "POST", path: "/api/users", body: body, requiresAuth: false
         )
-        return UserSummary(userId: "0", email: email, nickname: nickname, profileImageUrl: nil)
+        guard let user = envelope.data else {
+            throw SpatiumAPIError.decoding(URLError(.cannotParseResponse))
+        }
+        return user
     }
 
     /// 소셜로그인: POST /api/auth/social-sessions
     /// 성공(200)하면 토큰을 저장하고 사용자 정보를 반환합니다.
     /// 미가입 계정이면 서버가 에러를 내려주며, 호출한 쪽에서 소셜회원가입으로 유도합니다.
     func socialLogin(_ request: SocialLoginRequest) async throws -> UserSummary {
+        #if DEBUG
         // 시뮬레이터(mock idToken)에서는 서버 없이 로그인된 것으로 처리.
         if request.idToken.hasPrefix("mock_") {
             try await Task.sleep(nanoseconds: 800_000_000)
@@ -74,6 +78,7 @@ struct AuthService {
             tokenStore.save(AuthTokens(accessToken: "mock_access_token", refreshToken: "mock_refresh_token"))
             return dummyUser
         }
+        #endif
 
         // 실서버 응답을 그대로 따른다. 성공이면 토큰 저장, 실패(미가입 404 등)는 호출부로 전파해
         // 회원가입 유도/에러 표시가 정확히 동작하도록 한다. (가짜 세션을 만들지 않음)
@@ -87,16 +92,21 @@ struct AuthService {
 
     /// 소셜회원가입: POST /api/auth/social-users (토큰 미반환 → 가입 후 다시 소셜로그인 필요)
     func socialSignUp(_ request: SocialSignUpRequest) async throws -> UserSummary {
+        #if DEBUG
         // 시뮬레이터(mock idToken)에서는 서버 없이 성공 처리.
         if request.idToken.hasPrefix("mock_") {
             try await Task.sleep(nanoseconds: 800_000_000)
             return UserSummary(userId: "9999", email: "", nickname: request.nickname, profileImageUrl: nil)
         }
+        #endif
         // 실서버에서는 실패를 그대로 전파해야 원인을 알 수 있다. (mock 폴백으로 삼키지 않음)
-        let _: SpatiumAPIEnvelope<EmptyAPIData> = try await client.send(
+        let envelope: SpatiumAPIEnvelope<UserSummary> = try await client.send(
             method: "POST", path: "/api/auth/social-users", body: request, requiresAuth: false
         )
-        return UserSummary(userId: "0", email: "", nickname: request.nickname, profileImageUrl: nil)
+        guard let user = envelope.data else {
+            throw SpatiumAPIError.decoding(URLError(.cannotParseResponse))
+        }
+        return user
     }
 
     /// 토큰 재발급: POST /api/auth/token — refreshToken으로 새 access/refresh 쌍을 받아 저장합니다.

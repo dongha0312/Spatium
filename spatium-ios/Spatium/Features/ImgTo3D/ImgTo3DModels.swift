@@ -40,7 +40,6 @@ enum ImgTo3DUploadImage {
 enum ImgTo3DStep: Int, CaseIterable, Identifiable {
     case upload
     case name
-    case detection
     case segmentation
     case generation
     case correction
@@ -52,7 +51,6 @@ enum ImgTo3DStep: Int, CaseIterable, Identifiable {
         switch self {
         case .upload: "사진 업로드"
         case .name: "객체명 입력"
-        case .detection: "객체 선택"
         case .segmentation: "배경 제거"
         case .generation: "3D 생성"
         case .correction: "모델 보정"
@@ -64,7 +62,6 @@ enum ImgTo3DStep: Int, CaseIterable, Identifiable {
         switch self {
         case .upload: "사진"
         case .name: "이름"
-        case .detection: "선택"
         case .segmentation: "분리"
         case .generation: "생성"
         case .correction: "보정"
@@ -82,66 +79,89 @@ struct ImgTo3DNormalizedName: Equatable {
     let tags: [String]
 }
 
-struct ImgTo3DDetection: Identifiable, Equatable {
-    let id: Int
-    let label: String
-    let score: Double
-    /// 이미지 크기에 대한 0...1 정규화 좌표.
-    let x: Double
-    let y: Double
-    let width: Double
-    let height: Double
-}
-
-enum ImgTo3DMockPipeline {
-    private struct NameEntry {
-        let matches: [String]
-        let english: String
-        let tags: [String]
-    }
-
-    private static let names = [
-        NameEntry(matches: ["협탁", "침대 옆"], english: "nightstand / bedside table", tags: ["nightstand", "bedside table", "side table"]),
-        NameEntry(matches: ["의자"], english: "chair", tags: ["chair", "armchair"]),
-        NameEntry(matches: ["책상"], english: "desk", tags: ["desk", "table"]),
-        NameEntry(matches: ["침대"], english: "bed", tags: ["bed", "bed frame"]),
-        NameEntry(matches: ["소파"], english: "sofa / couch", tags: ["sofa", "couch"]),
-        NameEntry(matches: ["옷장"], english: "wardrobe", tags: ["wardrobe", "closet"]),
-        NameEntry(matches: ["선반"], english: "shelf", tags: ["shelf", "bookshelf"]),
-        NameEntry(matches: ["조명", "스탠드"], english: "lamp", tags: ["lamp", "floor lamp"])
-    ]
-
-    static func normalize(_ input: String) async throws -> ImgTo3DNormalizedName {
-        try await Task.sleep(for: .milliseconds(900))
-        try Task.checkCancellation()
-        if let hit = names.first(where: { entry in
-            entry.matches.contains(where: input.contains)
-        }) {
-            return ImgTo3DNormalizedName(input: input, english: hit.english, tags: hit.tags)
-        }
-        return ImgTo3DNormalizedName(input: input, english: "furniture object", tags: ["furniture", "object"])
-    }
-
-    static func detect(label: String) async throws -> [ImgTo3DDetection] {
-        try await Task.sleep(for: .milliseconds(1_100))
-        try Task.checkCancellation()
-        return [
-            .init(id: 1, label: label, score: 0.94, x: 0.12, y: 0.18, width: 0.36, height: 0.62),
-            .init(id: 2, label: label, score: 0.81, x: 0.55, y: 0.30, width: 0.30, height: 0.48),
-            .init(id: 3, label: label, score: 0.63, x: 0.40, y: 0.08, width: 0.22, height: 0.26)
-        ]
-    }
-}
-
 enum ImgTo3DCategory: String, CaseIterable, Identifiable {
-    case chair = "의자"
-    case table = "테이블 · 책상"
+    case bathtub = "욕조"
     case bed = "침대"
-    case storage = "수납장"
-    case light = "조명"
+    case chair = "의자"
+    case dishwasher = "식기 세척기"
+    case fireplace = "벽난로"
+    case oven = "오븐"
+    case refrigerator = "냉장고"
+    case sink = "싱크대"
+    case sofa = "소파"
+    case stairs = "계단"
+    case storage = "수납"
+    case stove = "가스레인지"
+    case table = "책상"
+    case television = "TV"
+    case toilet = "변기"
+    case washerDryer = "세탁기·건조기"
     case other = "기타"
 
     var id: String { rawValue }
+
+    var code: String {
+        switch self {
+        case .bathtub: "bathtub"
+        case .bed: "bed"
+        case .chair: "chair"
+        case .dishwasher: "dishwasher"
+        case .fireplace: "fireplace"
+        case .oven: "oven"
+        case .refrigerator: "refrigerator"
+        case .sink: "sink"
+        case .sofa: "sofa"
+        case .stairs: "stairs"
+        case .storage: "storage"
+        case .stove: "stove"
+        case .table: "table"
+        case .television: "television"
+        case .toilet: "toilet"
+        case .washerDryer: "washerDryer"
+        case .other: "other"
+        }
+    }
+}
+
+enum ImgTo3DSegmentationProvider: String, CaseIterable, Identifiable {
+    case groundedSAM2 = "grounded_sam2"
+    case yolo
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .groundedSAM2: "GroundingDINO + SAM2"
+        case .yolo: "YOLO"
+        }
+    }
+}
+
+enum ImgTo3DGenerationProvider: String, CaseIterable, Identifiable {
+    case localTripoSR = "local_triposr"
+    case localStableFast3D = "local_stable_fast_3d"
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .localTripoSR: "TripoSR"
+        case .localStableFast3D: "Stable Fast 3D"
+        }
+    }
+}
+
+enum ImgTo3DRemesh: String, CaseIterable, Identifiable {
+    case none
+    case triangle
+    case quad
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .none: "없음"
+        case .triangle: "Triangle"
+        case .quad: "Quad"
+        }
+    }
 }
 
 enum ImgTo3DViewerMode: String, CaseIterable, Identifiable {

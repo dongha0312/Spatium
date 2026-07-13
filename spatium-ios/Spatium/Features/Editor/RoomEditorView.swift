@@ -25,6 +25,7 @@ private enum SurfaceColorPicker: Equatable {
 struct RoomEditorView: View {
     @StateObject private var viewModel: RoomEditorViewModel
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var userFurnitureStore: UserFurnitureStore
 
     /// 같은 프로젝트의 다른 방들. 2개 이상이면 툴바의 방 이름이 드롭다운으로 바뀝니다.
     private let availableRooms: [RoomRecord]
@@ -35,6 +36,7 @@ struct RoomEditorView: View {
     /// 저장 안 된 변경이 있을 때 방 전환 확인용으로 보관해 두는 대상 방.
     @State private var pendingRoomSwitch: RoomRecord?
     @State private var activeGroup: String? = nil
+    @State private var catalogSearch = ""
     @State private var priceBannerVisible = true
     /// 벽/바닥 중 하나만 열리는 단일 플로팅 팔레트. 툴바 자체의 높이는 항상 고정한다.
     @State private var activeSurfaceColorPicker: SurfaceColorPicker?
@@ -92,8 +94,19 @@ struct RoomEditorView: View {
     }
 
     private var visibleItems: [FurnitureCatalogItem] {
-        guard let activeGroup else { return FurnitureCatalog.items }
-        return FurnitureCatalog.items.filter { $0.group == activeGroup }
+        let query = catalogSearch.trimmingCharacters(in: .whitespacesAndNewlines)
+        return userFurnitureStore.catalogItems.filter { item in
+            let matchesGroup = FurnitureCatalog.matches(item, groupFilter: activeGroup)
+            let matchesSearch = query.isEmpty
+                || item.name.localizedCaseInsensitiveContains(query)
+                || item.group.localizedCaseInsensitiveContains(query)
+                || item.category.localizedCaseInsensitiveContains(query)
+            return matchesGroup && matchesSearch
+        }
+    }
+
+    private var catalogGroups: [String] {
+        FurnitureCatalog.editorGroups(in: userFurnitureStore.catalogItems)
     }
 
     var body: some View {
@@ -305,14 +318,23 @@ struct RoomEditorView: View {
     private var catalogSheet: some View {
         VStack(spacing: 0) {
             zoneHeader
+            catalogSearchField
             categoryFilters
 
             ScrollView {
                 LazyVStack(spacing: 8) {
-                    ForEach(visibleItems) { item in
-                        CatalogProductRow(item: item) {
-                            Haptics.selection()
-                            viewModel.place(catalogItem: item)
+                    if visibleItems.isEmpty {
+                        Text(catalogEmptyMessage)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(SpatiumTheme.soft)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 34)
+                    } else {
+                        ForEach(visibleItems) { item in
+                            CatalogProductRow(item: item) {
+                                Haptics.selection()
+                                viewModel.place(catalogItem: item)
+                            }
                         }
                     }
                 }
@@ -356,7 +378,18 @@ struct RoomEditorView: View {
                 CategoryChip(title: "전체", systemImage: "square.grid.2x2", isActive: activeGroup == nil) {
                     selectGroup(nil)
                 }
-                ForEach(FurnitureCatalog.groups, id: \.self) { group in
+                CategoryChip(
+                    title: "사용자 가구",
+                    systemImage: "person.crop.square.filled.and.at.rectangle",
+                    isActive: activeGroup == FurnitureCatalog.userFurnitureFilterID
+                ) {
+                    selectGroup(
+                        activeGroup == FurnitureCatalog.userFurnitureFilterID
+                            ? nil
+                            : FurnitureCatalog.userFurnitureFilterID
+                    )
+                }
+                ForEach(catalogGroups, id: \.self) { group in
                     CategoryChip(
                         title: group,
                         systemImage: furnitureGroupIcon(group),
@@ -372,11 +405,48 @@ struct RoomEditorView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(SpatiumTheme.border.opacity(0.7)).frame(height: 1) }
     }
 
+    private var catalogSearchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(SpatiumTheme.soft)
+            TextField("가구 검색하기", text: $catalogSearch)
+                .textInputAutocapitalization(.never)
+            if !catalogSearch.isEmpty {
+                Button {
+                    catalogSearch = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(SpatiumTheme.soft)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("검색어 지우기")
+            }
+        }
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+        .background(SpatiumTheme.elevatedSurface)
+        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.sm).stroke(SpatiumTheme.border, lineWidth: 1))
+        .padding(.horizontal, 18)
+        .padding(.bottom, 4)
+    }
+
     /// 칩 선택: 가벼운 햅틱 + 리스트 전환 애니메이션.
     private func selectGroup(_ group: String?) {
         Haptics.selection()
         withAnimation(.easeOut(duration: 0.18)) {
             activeGroup = group
+        }
+    }
+
+    private var catalogEmptyMessage: String {
+        switch activeGroup {
+        case FurnitureCatalog.userFurnitureFilterID:
+            "등록된 사용자 가구가 없습니다"
+        case FurnitureCatalog.otherGroup:
+            "기타 카테고리에 등록된 가구가 없습니다"
+        default:
+            "조건에 맞는 가구가 없습니다"
         }
     }
 
@@ -837,13 +907,24 @@ private struct CategoryChip: View {
 /// 그룹별 대표 아이콘 — 카테고리 칩과 상품 행이 같은 아이콘 언어를 공유합니다.
 private func furnitureGroupIcon(_ group: String) -> String {
     switch group {
+    case "욕조": "bathtub.fill"
     case "침대": "bed.double.fill"
     case "의자": "chair.fill"
+    case "식기 세척기", "세탁기·건조기": "washer.fill"
+    case "벽난로": "fireplace.fill"
+    case "오븐", "가스레인지": "oven.fill"
+    case "냉장고": "refrigerator.fill"
+    case "싱크대": "sink.fill"
     case "소파": "sofa.fill"
     case "책상": "table.furniture.fill"
     case "수납": "cabinet.fill"
+    case "조명": "lamp.table.fill"
     case "문": "door.left.hand.open"
     case "창문": "window.vertical.open"
+    case "계단": "stairs"
+    case "TV": "tv.fill"
+    case "변기": "toilet.fill"
+    case "기타": "cube.fill"
     default: "square.grid.2x2"
     }
 }
@@ -874,10 +955,20 @@ private struct CatalogProductRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(item.name)
-                        .font(.footnote.weight(.bold))
-                        .foregroundStyle(SpatiumTheme.text)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(item.name)
+                            .font(.footnote.weight(.bold))
+                            .foregroundStyle(SpatiumTheme.text)
+                            .lineLimit(1)
+                        if item.source == .user {
+                            Text("내 가구")
+                                .font(.system(size: 8, weight: .black))
+                                .foregroundStyle(SpatiumTheme.accent)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 2)
+                                .background(SpatiumTheme.accent.opacity(0.09), in: Capsule())
+                        }
+                    }
                     Text("\(item.group) · \(dimensionText)")
                         .font(.caption2)
                         .foregroundStyle(SpatiumTheme.soft)

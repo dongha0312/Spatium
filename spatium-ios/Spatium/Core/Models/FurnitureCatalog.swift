@@ -30,6 +30,11 @@ struct FurnitureCategoryModels: Identifiable {
     var options: [FurnitureModelOption] { [defaultOption] + variantOptions }
 }
 
+enum FurnitureCatalogSource: String, Hashable {
+    case builtIn
+    case user
+}
+
 /// 3D 에디터 카탈로그의 개별 상품. 프런트엔드 `furniture_catalog.json`과 동일한 구성
 /// (그룹/카테고리/치수/모델 파일)을 앱 번들 GLB에 매핑합니다.
 struct FurnitureCatalogItem: Identifiable, Hashable {
@@ -46,10 +51,16 @@ struct FurnitureCatalogItem: Identifiable, Hashable {
     let depth: Double
     /// 번들 GLB 파일명(확장자 제외), 예: "wooden_bed".
     let modelFileName: String
+    /// 기본 제공 모델인지 사용자가 만든 모델인지 구분합니다.
+    var source: FurnitureCatalogSource = .builtIn
 }
 
 enum FurnitureCatalog {
-    /// 프런트엔드 furniture_catalog.json과 1:1 매핑되는 전체 상품 목록(20종·6그룹).
+    /// 실제 상품 그룹과 겹치지 않는 가상 필터. 사용자가 만든 모든 가구를 모아 보여줍니다.
+    static let userFurnitureFilterID = "__userFurniture__"
+    static let otherGroup = "기타"
+
+    /// 프런트엔드 furniture_catalog.json과 맞춘 전체 상품 목록(22종·8그룹).
     static let items: [FurnitureCatalogItem] = [
         .init(id: "default_bed", name: "기본 침대", group: "침대", category: "bed", width: 1.2, height: 0.55, depth: 2.1, modelFileName: "bed"),
         .init(id: "wooden_bed", name: "원목 침대", group: "침대", category: "bed", width: 1.2, height: 0.55, depth: 2.1, modelFileName: "wooden_bed"),
@@ -69,15 +80,35 @@ enum FurnitureCatalog {
         .init(id: "white_door", name: "화이트 도어", group: "문", category: "door", width: 0.9, height: 2.1, depth: 0.12, modelFileName: "white_door"),
         .init(id: "wooden_door", name: "우드 도어", group: "문", category: "door", width: 0.9, height: 2.1, depth: 0.12, modelFileName: "wooden_door"),
         .init(id: "default_window", name: "기본 창문", group: "창문", category: "window", width: 0.9, height: 1.0, depth: 0.1, modelFileName: "window"),
+        .init(id: "tong_glass", name: "통유리", group: "창문", category: "window", width: 0.9, height: 1.0, depth: 0.1, modelFileName: "window"),
         .init(id: "single_window", name: "싱글 창문", group: "창문", category: "window", width: 0.75, height: 1.0, depth: 0.1, modelFileName: "single_window"),
-        .init(id: "double_window", name: "더블 창문", group: "창문", category: "window", width: 1.2, height: 1.0, depth: 0.1, modelFileName: "double_window")
+        .init(id: "double_window", name: "더블 창문", group: "창문", category: "window", width: 1.2, height: 1.0, depth: 0.1, modelFileName: "double_window"),
+        .init(id: "default_stairs", name: "계단", group: "계단", category: "stairs", width: 1.2, height: 2.8, depth: 4.59, modelFileName: "stairs")
     ]
 
     /// 상품 등장 순서를 보존한 고유 그룹 목록(필터 칩용).
     static let groups: [String] = {
+        groups(in: items)
+    }()
+
+    static func groups(in items: [FurnitureCatalogItem]) -> [String] {
         var seen = Set<String>()
         return items.compactMap { seen.insert($0.group).inserted ? $0.group : nil }
-    }()
+    }
+
+    /// 룸 에디터의 카테고리 순서. `기타`는 항목이 없어도 항상 마지막에 노출합니다.
+    static func editorGroups(in items: [FurnitureCatalogItem]) -> [String] {
+        groups(in: items).filter { $0 != otherGroup } + [otherGroup]
+    }
+
+    /// 추가/교체 화면이 공유하는 카테고리 필터 규칙입니다.
+    static func matches(_ item: FurnitureCatalogItem, groupFilter: String?) -> Bool {
+        guard let groupFilter else { return true }
+        if groupFilter == userFurnitureFilterID {
+            return item.source == .user
+        }
+        return item.group == groupFilter
+    }
 
     static let categories: [FurnitureCategoryModels] = [
         .init(

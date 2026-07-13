@@ -58,19 +58,20 @@ struct UserService {
         var request = URLRequest(url: environment.appendingPathComponent("/api/users/me/avatar"))
         request.httpMethod = "PUT"
 
-        let boundary = UUID().uuidString
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        let form = MultipartFormData(parts: [
+            MultipartFormPart(
+                name: "image",
+                data: imageData,
+                fileName: "avatar.jpg",
+                contentType: "image/jpeg"
+            )
+        ])
+        request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
         if let token = AuthTokenStore.shared.accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 
-        var body = Data()
-        body.append("--\(boundary)\r\n")
-        body.append("Content-Disposition: form-data; name=\"avatar\"; filename=\"avatar.jpg\"\r\n")
-        body.append("Content-Type: image/jpeg\r\n\r\n")
-        body.append(imageData)
-        body.append("\r\n--\(boundary)--\r\n")
-        request.httpBody = body
+        request.httpBody = form.body
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse else {

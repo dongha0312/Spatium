@@ -11,6 +11,7 @@ final class CurrentUserStore: ObservableObject {
 
     private let service = UserService()
     private var cancellables: Set<AnyCancellable> = []
+    private var isRefreshing = false
 
     private init() {
         // 로그아웃하면 즉시 비우고, 새로 로그인하면 다시 받아온다.
@@ -36,11 +37,8 @@ final class CurrentUserStore: ObservableObject {
         return profile.email.split(separator: "@").first.map(String.init)
     }
 
-    /// 프로필 이미지 URL(있을 때만).
-    var avatarURL: URL? {
-        guard let urlString = profile?.profileImageUrl, !urlString.isEmpty else { return nil }
-        return URL(string: urlString)
-    }
+    /// 백엔드는 일반 URL 또는 data URL(base64)을 내려줄 수 있습니다.
+    var avatarSource: String? { profile?.profileImageUrl }
 
     /// 아직 로드된 프로필이 없을 때만 서버에서 받아온다.
     func refreshIfNeeded() async {
@@ -54,7 +52,27 @@ final class CurrentUserStore: ObservableObject {
             profile = nil
             return
         }
-        profile = try? await service.fetchProfile()
+        guard !isRefreshing else { return }
+
+        let accessToken = AuthTokenStore.shared.accessToken
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        do {
+            let refreshedProfile = try await service.fetchProfile()
+            // 로그아웃이나 계정 전환 중 시작된 오래된 응답을 새 세션에 반영하지 않는다.
+            guard AuthTokenStore.shared.isLoggedIn,
+                  AuthTokenStore.shared.accessToken == accessToken else {
+                return
+            }
+            profile = refreshedProfile
+        } catch is CancellationError {
+            return
+        } catch {
+            // 프로필 갱신은 캐시 보존형 동작이다. 네트워크가 잠시 끊겨도 헤더의
+            // 닉네임과 프로필 이미지를 지우지 않고 마지막으로 받은 값을 유지한다.
+            return
+        }
     }
 
     /// 로그아웃 등으로 세션이 사라졌을 때 호출.

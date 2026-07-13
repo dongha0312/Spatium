@@ -4,10 +4,10 @@ enum Gender: Codable {
     case male
     case female
 
-    private var backendValue: Int {
+    private var backendValue: String {
         switch self {
-        case .male: 0
-        case .female: 1
+        case .male: "0"
+        case .female: "1"
         }
     }
 

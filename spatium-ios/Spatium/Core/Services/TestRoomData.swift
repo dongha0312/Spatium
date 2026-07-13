@@ -62,6 +62,35 @@ struct RoomPlanExportJSON: Decodable {
 
 /// 번들에 내장된 테스트 스캔 로더.
 enum TestRoomData {
+    struct AddedFurniture {
+        let name: String
+        let modelName: String
+        let width: Double
+        let height: Double
+        let depth: Double
+        let positionX: Double
+        let positionY: Double
+        let positionZ: Double
+        var rotationY: Double = 0
+
+        func makeItem() -> EditableScanItem {
+            var item = EditableScanItem(
+                userAddedNamed: name,
+                width: width,
+                height: height,
+                depth: depth
+            )
+            item.detectedCategory = name
+            item.positionX = positionX
+            item.positionY = positionY
+            item.positionZ = positionZ
+            item.detectedRotationY = rotationY
+            item.modelName = modelName
+            item.editNote = "개발자 테스트 가구"
+            return item
+        }
+    }
+
     struct Scan: Identifiable {
         let id: String
         let title: String
@@ -70,9 +99,14 @@ enum TestRoomData {
         let usdzResource: String
         let area: Double
         let ceilingHeight: Double
+        var addedFurniture: [AddedFurniture] = []
 
         func load() -> (items: [EditableScanItem], usdzURL: URL?)? {
-            TestRoomData.load(jsonResource: jsonResource, usdzResource: usdzResource)
+            guard var loaded = TestRoomData.load(jsonResource: jsonResource, usdzResource: usdzResource) else {
+                return nil
+            }
+            loaded.items.append(contentsOf: addedFurniture.map { $0.makeItem() })
+            return loaded
         }
     }
 
@@ -102,7 +136,19 @@ enum TestRoomData {
             jsonResource: "room_scan_other_2",
             usdzResource: "room_scan_other_2",
             area: 16,
-            ceilingHeight: 2.4
+            ceilingHeight: 2.4,
+            addedFurniture: [
+                AddedFurniture(
+                    name: "사용자 생성 가구 테스트",
+                    modelName: "usr_dfcb0a2619784c6faa11b2bfe17eb363",
+                    width: 1.0,
+                    height: 1.2,
+                    depth: 0.8,
+                    positionX: 0.3,
+                    positionY: -0.524,
+                    positionZ: -5.5
+                )
+            ]
         ),
         Scan(
             id: "other-room-3",

@@ -1,8 +1,10 @@
 import SwiftUI
 
 struct SettingsView: View {
+    #if DEBUG
     @State private var versionTapCount = 0
     @State private var showDeveloperSettings = false
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -21,14 +23,20 @@ struct SettingsView: View {
             SupportSection()
 
             SettingsGroup(title: "앱") {
+                #if DEBUG
                 SettingsInfoRow(systemImage: "number", title: "버전", value: appVersion)
                     .contentShape(Rectangle())
                     .onTapGesture(perform: handleVersionTap)
+                #else
+                SettingsInfoRow(systemImage: "number", title: "버전", value: appVersion)
+                #endif
             }
         }
+        #if DEBUG
         .sheet(isPresented: $showDeveloperSettings) {
             DeveloperSettingsSheet()
         }
+        #endif
     }
 
     private var appVersion: String {
@@ -37,17 +45,19 @@ struct SettingsView: View {
         return "\(version) (\(build))"
     }
 
+    #if DEBUG
     private func handleVersionTap() {
         versionTapCount += 1
         guard versionTapCount >= 5 else { return }
         versionTapCount = 0
         showDeveloperSettings = true
     }
+    #endif
 }
 
 private struct AccountSection: View {
     @ObservedObject private var tokenStore = AuthTokenStore.shared
-    @State private var profile: UserProfile?
+    @ObservedObject private var currentUser = CurrentUserStore.shared
     @State private var showLogin = false
     @State private var showDeleteConfirm = false
     @State private var accountActionError: String?
@@ -55,9 +65,9 @@ private struct AccountSection: View {
     var body: some View {
         SettingsGroup(title: "계정") {
             if tokenStore.isLoggedIn {
-                SettingsInfoRow(systemImage: "person.crop.circle", title: "닉네임", value: profile?.nickname ?? "불러오는 중")
+                SettingsInfoRow(systemImage: "person.crop.circle", title: "닉네임", value: currentUser.profile?.nickname ?? "불러오는 중")
                 SettingsDivider()
-                SettingsInfoRow(systemImage: "envelope", title: "이메일", value: profile?.email ?? "-")
+                SettingsInfoRow(systemImage: "envelope", title: "이메일", value: currentUser.profile?.email ?? "-")
                 SettingsDivider()
                 DestructiveSettingsButton(systemImage: "rectangle.portrait.and.arrow.right", title: "로그아웃", action: logout)
                 SettingsDivider()
@@ -96,10 +106,9 @@ private struct AccountSection: View {
         }
         .task(id: tokenStore.isLoggedIn) {
             guard tokenStore.isLoggedIn else {
-                profile = nil
                 return
             }
-            profile = try? await UserService().fetchProfile()
+            await currentUser.refreshIfNeeded()
         }
         .sheet(isPresented: $showLogin) {
             LoginView(onLoggedIn: {
@@ -284,6 +293,7 @@ private struct DestructiveSettingsButton: View {
     }
 }
 
+#if DEBUG
 private struct DeveloperSettingsSheet: View {
     @ObservedObject private var environment = SpatiumAPIEnvironment.shared
     @Environment(\.dismiss) private var dismiss
@@ -293,7 +303,11 @@ private struct DeveloperSettingsSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 18) {
                 SettingsGroup(title: "연결 (개발자 전용)") {
-                    EndpointEditor(baseURLString: $environment.baseURLString)
+                    EndpointEditor(
+                        springBaseURLString: $environment.baseURLString,
+                        imageTo3DBaseURLString: $environment.imageTo3DBaseURLString,
+                        furnitureAssetBaseURLString: $environment.furnitureAssetBaseURLString
+                    )
                 }
 
                 #if DEBUG
@@ -352,6 +366,7 @@ private struct DeveloperSettingsSheet: View {
         }
     }
 }
+#endif
 
 private struct SettingsAppHeader: View {
     var body: some View {
@@ -393,8 +408,11 @@ private struct SettingsGroup<Content: View>: View {
     }
 }
 
+#if DEBUG
 private struct EndpointEditor: View {
-    @Binding var baseURLString: String
+    @Binding var springBaseURLString: String
+    @Binding var imageTo3DBaseURLString: String
+    @Binding var furnitureAssetBaseURLString: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -402,7 +420,7 @@ private struct EndpointEditor: View {
                 SettingsIcon(systemImage: "server.rack", tint: SpatiumTheme.accent)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("CODEX API 서버")
+                    Text("Spring Boot API 서버")
                         .font(.subheadline.weight(.black))
                         .foregroundStyle(SpatiumTheme.text)
                     Text("다음 요청부터 적용 (호스트만 입력, 경로 제외)")
@@ -413,7 +431,53 @@ private struct EndpointEditor: View {
                 Spacer()
             }
 
-            TextField("http://서버IP:8080", text: $baseURLString)
+            TextField("http://서버IP:8080", text: $springBaseURLString)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.subheadline)
+                .padding(12)
+                .background(SpatiumTheme.background)
+                .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemImage: "cube.transparent", tint: SpatiumTheme.accent)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Image-to-3D FastAPI 서버")
+                        .font(.subheadline.weight(.black))
+                        .foregroundStyle(SpatiumTheme.text)
+                    Text("분리·GLB 생성 요청에 사용")
+                        .font(.caption)
+                        .foregroundStyle(SpatiumTheme.soft)
+                }
+                Spacer()
+            }
+
+            TextField("http://서버IP:8000", text: $imageTo3DBaseURLString)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.subheadline)
+                .padding(12)
+                .background(SpatiumTheme.background)
+                .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+
+            HStack(spacing: 12) {
+                SettingsIcon(systemImage: "shippingbox", tint: SpatiumTheme.accent)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("사용자 GLB 파일 서버")
+                        .font(.subheadline.weight(.black))
+                        .foregroundStyle(SpatiumTheme.text)
+                    Text("Spring이 반환하는 /data 모델 경로의 호스트")
+                        .font(.caption)
+                        .foregroundStyle(SpatiumTheme.soft)
+                }
+                Spacer()
+            }
+
+            TextField("http://서버IP:3000", text: $furnitureAssetBaseURLString)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -425,6 +489,7 @@ private struct EndpointEditor: View {
         }
     }
 }
+#endif
 
 private struct LegalLinkRow: View {
     let systemImage: String

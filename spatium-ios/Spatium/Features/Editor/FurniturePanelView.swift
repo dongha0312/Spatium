@@ -1,14 +1,14 @@
 import SwiftUI
 
 /// Furniture catalog sheet: group chips + keyword search + grid.
-/// 서버 가구 API가 아직 없으므로, 프런트엔드 furniture_catalog.json과 1:1로 매핑된
-/// 번들 카탈로그(FurnitureCatalog.items)를 데이터 소스로 사용한다. 각 항목은
-/// 번들 GLB(modelFileName)를 갖고 있어 교체/추가 시 실제 3D 모델이 바뀐다.
+/// 프런트엔드 furniture_catalog.json과 맞춘 번들 카탈로그에 사용자가 만든 가구를
+/// 병합해 보여준다. GLB가 저장된 항목은 modelFileName을 통해 실제 모델을 불러온다.
 struct FurniturePanelView: View {
     var title: String = "가구 추가"
     var onPick: (FurnitureDetail) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var userFurnitureStore: UserFurnitureStore
     @State private var selectedGroup: String?
     @State private var keyword = ""
 
@@ -50,7 +50,15 @@ struct FurniturePanelView: View {
                 CategoryChip(title: "전체", isSelected: selectedGroup == nil) {
                     selectedGroup = nil
                 }
-                ForEach(FurnitureCatalog.groups, id: \.self) { group in
+                CategoryChip(
+                    title: "사용자 가구",
+                    isSelected: selectedGroup == FurnitureCatalog.userFurnitureFilterID
+                ) {
+                    selectedGroup = selectedGroup == FurnitureCatalog.userFurnitureFilterID
+                        ? nil
+                        : FurnitureCatalog.userFurnitureFilterID
+                }
+                ForEach(FurnitureCatalog.editorGroups(in: userFurnitureStore.catalogItems), id: \.self) { group in
                     CategoryChip(title: group, isSelected: selectedGroup == group) {
                         selectedGroup = group
                     }
@@ -61,15 +69,24 @@ struct FurniturePanelView: View {
 
     private var catalogGrid: some View {
         ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 10)], spacing: 10) {
-                ForEach(filteredItems) { item in
-                    FurnitureTile(
-                        name: item.name,
-                        subtitle: dimensionLabel(width: item.width, depth: item.depth, height: item.height),
-                        systemImage: Self.icon(forCategory: item.category)
-                    ) {
-                        onPick(Self.detail(from: item))
-                        dismiss()
+            if filteredItems.isEmpty {
+                Text(emptyMessage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(SpatiumTheme.soft)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 40)
+            } else {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 10)], spacing: 10) {
+                    ForEach(filteredItems) { item in
+                        FurnitureTile(
+                            name: item.name,
+                            subtitle: (item.source == .user ? "내 가구 · " : "")
+                                + dimensionLabel(width: item.width, depth: item.depth, height: item.height),
+                            systemImage: Self.icon(forCategory: item.category)
+                        ) {
+                            onPick(Self.detail(from: item))
+                            dismiss()
+                        }
                     }
                 }
             }
@@ -78,14 +95,25 @@ struct FurniturePanelView: View {
     }
 
     private var filteredItems: [FurnitureCatalogItem] {
-        var items = FurnitureCatalog.items
+        var items = userFurnitureStore.catalogItems
         if let selectedGroup {
-            items = items.filter { $0.group == selectedGroup }
+            items = items.filter { FurnitureCatalog.matches($0, groupFilter: selectedGroup) }
         }
         let trimmed = keyword.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return items }
         return items.filter {
             $0.name.localizedCaseInsensitiveContains(trimmed) || $0.group.localizedCaseInsensitiveContains(trimmed)
+        }
+    }
+
+    private var emptyMessage: String {
+        switch selectedGroup {
+        case FurnitureCatalog.userFurnitureFilterID:
+            "등록된 사용자 가구가 없습니다"
+        case FurnitureCatalog.otherGroup:
+            "기타 카테고리에 등록된 가구가 없습니다"
+        default:
+            "조건에 맞는 가구가 없습니다"
         }
     }
 
@@ -96,13 +124,23 @@ struct FurniturePanelView: View {
 
     private static func icon(forCategory category: String) -> String {
         switch category {
+        case "bathtub": return "bathtub"
         case "bed": return "bed.double"
         case "chair": return "chair"
+        case "dishwasher", "washerDryer": return "washer"
+        case "fireplace": return "fireplace"
+        case "oven", "stove": return "oven"
+        case "refrigerator": return "refrigerator"
+        case "sink": return "sink"
         case "sofa": return "sofa"
         case "storage": return "cabinet"
         case "table": return "table.furniture"
+        case "lamp": return "lamp.table"
         case "door": return "door.left.hand.closed"
         case "window": return "window.vertical.closed"
+        case "stairs": return "stairs"
+        case "television": return "tv"
+        case "toilet": return "toilet"
         default: return "cube"
         }
     }
@@ -113,7 +151,7 @@ struct FurniturePanelView: View {
         FurnitureDetail(
             furnitureId: -(abs(item.id.hashValue % 1_000_000) + 1),
             name: item.name,
-            brand: "기본",
+            brand: item.source == .user ? "내 가구" : "기본",
             price: nil,
             width: item.width,
             depth: item.depth,

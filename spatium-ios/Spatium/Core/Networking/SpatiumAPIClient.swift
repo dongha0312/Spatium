@@ -103,7 +103,24 @@ struct SpatiumAPIClient {
         try await sendResolvingAuth(requiresAuth: requiresAuth) {
             var request = try makeRequest(method: method, path: path, query: query, requiresAuth: requiresAuth)
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try? JSONEncoder.spatiumAPI.encode(body)
+            request.httpBody = try JSONEncoder.spatiumAPI.encode(body)
+            return request
+        }
+    }
+
+    @discardableResult
+    func sendMultipart<ResponseData: Decodable>(
+        path: String,
+        parts: [MultipartFormPart],
+        requiresAuth: Bool = true,
+        timeout: TimeInterval = 120
+    ) async throws -> SpatiumAPIEnvelope<ResponseData> {
+        try await sendResolvingAuth(requiresAuth: requiresAuth) {
+            var request = try makeRequest(method: "POST", path: path, query: [:], requiresAuth: requiresAuth)
+            let form = MultipartFormData(parts: parts)
+            request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
+            request.httpBody = form.body
+            request.timeoutInterval = timeout
             return request
         }
     }

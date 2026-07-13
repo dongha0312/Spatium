@@ -15,7 +15,19 @@ struct SignUpView: View {
     @State private var errorMessage: String?
 
     private var canSubmit: Bool {
-        !email.isEmpty && !nickname.isEmpty && password.count >= 8 && termsAgreed && privacyAgreed
+        let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedNickname = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedEmail.contains("@")
+            && (2...12).contains(trimmedNickname.count)
+            && passwordIsValid
+            && termsAgreed
+            && privacyAgreed
+    }
+
+    private var passwordIsValid: Bool {
+        password.count >= 8
+            && password.range(of: "[A-Za-z]", options: .regularExpression) != nil
+            && password.range(of: "[0-9]", options: .regularExpression) != nil
     }
 
     var body: some View {
@@ -26,14 +38,14 @@ struct SignUpView: View {
                     AuthTextField(placeholder: "닉네임", text: $nickname, textContentType: .nickname, submitLabel: .next)
                     AuthTextField(placeholder: "비밀번호 (8자 이상)", text: $password, isSecure: true, textContentType: .newPassword, submitLabel: .done)
 
-                    if !password.isEmpty && password.count < 8 {
-                        Text("비밀번호는 8자 이상 입력해 주세요.")
+                    if !password.isEmpty && !passwordIsValid {
+                        Text("비밀번호는 8자 이상이며 영문과 숫자를 모두 포함해야 합니다.")
                             .font(.caption)
                             .foregroundStyle(SpatiumTheme.coral)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    DatePicker("생년월일", selection: $birthDate, displayedComponents: .date)
+                    DatePicker("생년월일", selection: $birthDate, in: ...Date(), displayedComponents: .date)
                         .padding(14)
                         .background(SpatiumTheme.surface)
                         .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
@@ -83,8 +95,10 @@ struct SignUpView: View {
 
         Task {
             do {
-                _ = try await AuthService().signUp(
-                    email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+                let trimmedEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+                let service = AuthService()
+                _ = try await service.signUp(
+                    email: trimmedEmail,
                     nickname: nickname.trimmingCharacters(in: .whitespacesAndNewlines),
                     password: password,
                     birthDate: DateFormatter.apiDateOnly.string(from: birthDate),
@@ -92,8 +106,19 @@ struct SignUpView: View {
                     termsAgreed: termsAgreed,
                     privacyAgreed: privacyAgreed
                 )
+
+                // 웹과 동일하게 가입 직후 로그인까지 이어간다. 로그인만 실패하면 계정은 이미
+                // 만들어졌으므로 로그인 화면으로 돌아가 이메일을 채워 재시도할 수 있게 한다.
+                do {
+                    _ = try await service.login(email: trimmedEmail, password: password)
+                } catch {
+                    isLoading = false
+                    onSignedUp(trimmedEmail)
+                    dismiss()
+                    return
+                }
                 isLoading = false
-                onSignedUp(email)
+                onSignedUp(trimmedEmail)
                 dismiss()
             } catch {
                 isLoading = false
@@ -102,4 +127,3 @@ struct SignUpView: View {
         }
     }
 }
-

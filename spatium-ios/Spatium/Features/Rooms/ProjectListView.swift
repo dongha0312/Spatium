@@ -2,12 +2,16 @@ import SwiftUI
 
 struct ProjectListView: View {
     let projects: [SpatiumProject]
+    let userFurniture: [UserFurniture]
     var onCreateProject: () -> Void
     var onOpenProject: (SpatiumProject) -> Void
+    var onDeleteFurniture: (UserFurniture) async throws -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             ProjectLibrarySummary(projects: projects, onCreateProject: onCreateProject)
+
+            UserFurnitureLibrary(items: userFurniture, onDelete: onDeleteFurniture)
 
             if projects.isEmpty {
                 EmptyStateCard(
@@ -22,7 +26,7 @@ struct ProjectListView: View {
                         .foregroundStyle(SpatiumTheme.text)
 
                     LazyVStack(spacing: 10) {
-                        ForEach(Array(projects.enumerated()), id: \.offset) { _, project in
+                        ForEach(projects) { project in
                             ProjectRow(project: project) {
                                 onOpenProject(project)
                             }
@@ -31,6 +35,172 @@ struct ProjectListView: View {
                 }
             }
         }
+    }
+}
+
+private struct UserFurnitureLibrary: View {
+    let items: [UserFurniture]
+    var onDelete: (UserFurniture) async throws -> Void
+
+    @State private var pendingDeletion: UserFurniture?
+    @State private var deletingID: String?
+    @State private var deletionError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("내 가구")
+                    .font(.headline.weight(.black))
+                    .foregroundStyle(SpatiumTheme.text)
+                Text("\(items.count)개")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(SpatiumTheme.accent)
+                Spacer()
+                Text("3D 에디터에서 사용 가능")
+                    .font(.caption2)
+                    .foregroundStyle(SpatiumTheme.soft)
+            }
+
+            if items.isEmpty {
+                HStack(spacing: 11) {
+                    Image(systemName: "cube.transparent")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(SpatiumTheme.accent)
+                        .frame(width: 42, height: 42)
+                        .background(SpatiumTheme.warmPanel, in: RoundedRectangle(cornerRadius: 12))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("아직 만든 가구가 없습니다")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(SpatiumTheme.text)
+                        Text("가구 만들기에서 저장하면 여기에 추가됩니다.")
+                            .font(.caption)
+                            .foregroundStyle(SpatiumTheme.soft)
+                    }
+                    Spacer()
+                }
+                .padding(14)
+                .background(SpatiumTheme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border, lineWidth: 1))
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(items) { item in
+                            UserFurnitureCard(item: item, isDeleting: deletingID == item.id) {
+                                pendingDeletion = item
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+        .confirmationDialog(
+            "가구를 삭제할까요?",
+            isPresented: Binding(
+                get: { pendingDeletion != nil },
+                set: { if !$0 { pendingDeletion = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("삭제", role: .destructive) {
+                guard let furniture = pendingDeletion else { return }
+                pendingDeletion = nil
+                deletingID = furniture.id
+                Task {
+                    do {
+                        try await onDelete(furniture)
+                    } catch {
+                        deletionError = error.localizedDescription
+                    }
+                    deletingID = nil
+                }
+            }
+            Button("취소", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text("서버와 이 기기의 내 가구 목록에서 삭제됩니다.")
+        }
+        .alert("가구 삭제 실패", isPresented: Binding(
+            get: { deletionError != nil },
+            set: { if !$0 { deletionError = nil } }
+        )) {
+            Button("확인", role: .cancel) { deletionError = nil }
+        } message: {
+            Text(deletionError ?? "")
+        }
+    }
+}
+
+private struct UserFurnitureCard: View {
+    let item: UserFurniture
+    let isDeleting: Bool
+    var onDelete: () -> Void
+
+    private var dimensions: String {
+        String(format: "%.2f × %.2f × %.2fm", item.width, item.height, item.depth)
+    }
+
+    private var icon: String {
+        switch item.category {
+        case "bathtub": "bathtub.fill"
+        case "bed": "bed.double.fill"
+        case "chair": "chair.fill"
+        case "dishwasher", "washerDryer": "washer.fill"
+        case "fireplace": "fireplace.fill"
+        case "oven", "stove": "oven.fill"
+        case "refrigerator": "refrigerator.fill"
+        case "sink": "sink.fill"
+        case "sofa": "sofa.fill"
+        case "stairs": "stairs"
+        case "storage": "cabinet.fill"
+        case "table": "table.furniture.fill"
+        case "television": "tv.fill"
+        case "toilet": "toilet.fill"
+        case "lamp": "lamp.table.fill"
+        default: "cube.fill"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Image(systemName: icon)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(SpatiumTheme.accent)
+                    .frame(width: 38, height: 38)
+                    .background(SpatiumTheme.warmPanel, in: RoundedRectangle(cornerRadius: 11))
+                Spacer()
+                Text("직접 제작")
+                    .font(.system(size: 9, weight: .black))
+                    .foregroundStyle(SpatiumTheme.accent)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                    .background(SpatiumTheme.accent.opacity(0.09), in: Capsule())
+                Button(action: onDelete) {
+                    Image(systemName: isDeleting ? "hourglass" : "trash")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(SpatiumTheme.coral)
+                        .frame(width: 28, height: 28)
+                        .background(SpatiumTheme.coral.opacity(0.08), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(isDeleting)
+                .accessibilityLabel("\(item.name) 삭제")
+            }
+            Text(item.name)
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(SpatiumTheme.text)
+                .lineLimit(1)
+            Text("\(item.categoryLabel) · \(dimensions)")
+                .font(.caption2)
+                .foregroundStyle(SpatiumTheme.soft)
+                .lineLimit(1)
+        }
+        .padding(13)
+        .frame(width: 190, alignment: .leading)
+        .background(SpatiumTheme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border, lineWidth: 1))
     }
 }
 

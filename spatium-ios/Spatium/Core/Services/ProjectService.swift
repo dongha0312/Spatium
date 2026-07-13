@@ -17,6 +17,7 @@ private struct ProjectListItem: Decodable {
     var projectName: String
     var roomCount: Int?
     var furnitureCount: Int?
+    var createdAt: String?
 }
 
 // POST /api/projects → ResponseProjectCreateDTO
@@ -58,7 +59,12 @@ struct ProjectService {
         )
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
         return data.items.map { item in
-            SpatiumProject(id: item.projectId, name: item.projectName, roomCount: item.roomCount ?? 0)
+            SpatiumProject(
+                id: item.projectId,
+                name: item.projectName,
+                createdAt: item.createdAt.flatMap(Self.parseDate) ?? Date(),
+                roomCount: item.roomCount ?? 0
+            )
         }
     }
 
@@ -75,7 +81,7 @@ struct ProjectService {
 
     /// DELETE /api/projects (JWT) body {projectId}.
     func deleteProject(projectID: String) async throws {
-        let _: SpatiumAPIEnvelope<EmptyAPIData> = try await client.send(
+        let _: SpatiumAPIEnvelope<String> = try await client.send(
             method: "DELETE",
             path: "/api/projects",
             body: ["projectId": projectID]
@@ -163,7 +169,7 @@ struct ProjectService {
 
     /// DELETE /api/rooms (JWT) body {projectId, roomId}.
     func deleteRoom(projectID: String, roomID: String) async throws {
-        let _: SpatiumAPIEnvelope<EmptyAPIData> = try await client.send(
+        let _: SpatiumAPIEnvelope<String> = try await client.send(
             method: "DELETE",
             path: "/api/rooms",
             body: ["projectId": projectID, "roomId": roomID]
@@ -254,7 +260,7 @@ struct ProjectService {
             return try await sendMultipartOnce(path: path, textFields: textFields, fileParts: fileParts)
         } catch let error as SpatiumAPIError {
             guard case .unauthorized = error,
-                  let refreshToken = await AuthTokenStore.shared.refreshToken, !refreshToken.hasPrefix("mock_") else {
+                  let refreshToken = AuthTokenStore.shared.refreshToken, !refreshToken.hasPrefix("mock_") else {
                 throw error
             }
             do {
@@ -271,14 +277,14 @@ struct ProjectService {
         textFields: [String: String],
         fileParts: [FilePart]
     ) async throws -> Response {
-        guard let baseURL = await SpatiumAPIEnvironment.shared.baseURL else {
+        guard let baseURL = SpatiumAPIEnvironment.shared.baseURL else {
             throw SpatiumAPIError.invalidBaseURL
         }
         var request = URLRequest(url: baseURL.appendingPathComponent(path))
         request.httpMethod = "POST"
         let boundary = UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        if let token = await AuthTokenStore.shared.accessToken {
+        if let token = AuthTokenStore.shared.accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 

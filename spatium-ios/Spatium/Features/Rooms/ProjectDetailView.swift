@@ -6,11 +6,14 @@ struct ProjectDetailView: View {
     var onAddRoom: () -> Void
     var onRenameProject: (String) -> Void
     var onRenameRoom: (RoomRecord, String) -> Void
+    var onDeleteProject: () -> Void
     var onDeleteRoom: (RoomRecord) -> Void
 
     @State private var renderingRoom: RoomRecord?
     @State private var isEditingProjectName = false
     @State private var editingRoom: RoomRecord?
+    @State private var pendingRoomDeletion: RoomRecord?
+    @State private var showProjectDeletion = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -19,7 +22,8 @@ struct ProjectDetailView: View {
                 onBack: onBack,
                 onEditName: {
                     isEditingProjectName = true
-                }
+                },
+                onDelete: { showProjectDeletion = true }
             )
 
             PrimaryButton(title: "이 프로젝트에 방 추가", systemImage: "camera.viewfinder", action: onAddRoom)
@@ -43,7 +47,7 @@ struct ProjectDetailView: View {
                     }
 
                     LazyVStack(spacing: 10) {
-                        ForEach(Array(project.rooms.enumerated()), id: \.offset) { _, room in
+                        ForEach(project.rooms) { room in
                             EditableRoomRow(
                                 room: room,
                                 onOpen: {
@@ -53,7 +57,7 @@ struct ProjectDetailView: View {
                                     editingRoom = room
                                 },
                                 onDelete: {
-                                    onDeleteRoom(room)
+                                    pendingRoomDeletion = room
                                 }
                             )
                         }
@@ -80,6 +84,22 @@ struct ProjectDetailView: View {
                 placeholder: "방 이름을 입력하세요",
                 initialName: room.roomType,
                 onSave: { onRenameRoom(room, $0) }
+            )
+        }
+        .sheet(item: $pendingRoomDeletion) { room in
+            ConfirmSheet(
+                title: "방을 삭제할까요?",
+                message: "‘\(room.roomType)’ 방과 저장된 3D 데이터를 삭제합니다. 이 작업은 되돌릴 수 없습니다.",
+                confirmTitle: "방 삭제",
+                onConfirm: { onDeleteRoom(room) }
+            )
+        }
+        .sheet(isPresented: $showProjectDeletion) {
+            ConfirmSheet(
+                title: "프로젝트를 삭제할까요?",
+                message: "‘\(project.resolvedName)’ 프로젝트와 포함된 모든 방을 삭제합니다. 이 작업은 되돌릴 수 없습니다.",
+                confirmTitle: "프로젝트 삭제",
+                onConfirm: onDeleteProject
             )
         }
     }
@@ -298,6 +318,7 @@ private struct ProjectDetailHeader: View {
     let project: SpatiumProject
     var onBack: () -> Void
     var onEditName: () -> Void
+    var onDelete: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
@@ -333,6 +354,17 @@ private struct ProjectDetailHeader: View {
             }
             .buttonStyle(.pressable)
             .accessibilityLabel("프로젝트 이름 수정")
+
+            Button(role: .destructive, action: onDelete) {
+                Image(systemName: "trash")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(SpatiumTheme.coral)
+                    .frame(width: 42, height: 42)
+                    .background(SpatiumTheme.coral.opacity(0.09))
+                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous))
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("프로젝트 삭제")
         }
     }
 }

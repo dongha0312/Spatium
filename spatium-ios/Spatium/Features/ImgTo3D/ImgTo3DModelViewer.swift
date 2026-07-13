@@ -1,19 +1,23 @@
 import GLTFKit2
 import SceneKit
+import simd
 import SwiftUI
 import UIKit
 
 struct ImgTo3DModelViewer: UIViewRepresentable {
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var transform: ImgTo3DModelTransform
     let mode: ImgTo3DViewerMode
     let activeAxis: ImgTo3DTransformAxis
-    let snapEnabled: Bool
     let floorSnap: Bool
     let modelURL: URL?
     let cameraPreset: ImgTo3DCameraPreset
     let cameraResetToken: Int
+    let autoAlignToken: Int
     let onInteractionBegan: () -> Void
     let onModelLoaded: (ImgTo3DModelSize, String?) -> Void
+    let onModelBoundsChanged: (ImgTo3DModelSize) -> Void
+    let onAutoAlignment: (ImgTo3DModelTransform) -> Void
 
     func makeUIView(context: Context) -> SCNView {
         let view = SCNView()
@@ -37,6 +41,7 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
         view.addGestureRecognizer(pan)
         context.coordinator.adjustmentPan = pan
         context.coordinator.sceneView = view
+        context.coordinator.updateAppearance(colorScheme: colorScheme)
         context.coordinator.apply(transform: transform, floorSnap: floorSnap)
         return view
     }
@@ -45,9 +50,11 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
         let coordinator = context.coordinator
         coordinator.parent = self
         coordinator.loadModelIfNeeded(from: modelURL)
+        coordinator.autoAlignIfNeeded(token: autoAlignToken, transform: transform)
         coordinator.resetCameraIfNeeded(token: cameraResetToken, preset: cameraPreset)
         coordinator.apply(transform: transform, floorSnap: floorSnap)
         coordinator.updateGizmo(mode: mode, axis: activeAxis)
+        coordinator.updateAppearance(colorScheme: colorScheme)
 
         let adjustsModel = mode != .orbit
         coordinator.adjustmentPan?.isEnabled = adjustsModel
@@ -77,9 +84,14 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
         private let gizmoNode = SCNNode()
         /// 로드 시점에 캐시한 모델의 컨테이너 로컬 AABB. 드래그 중 매 프레임 전체 노드를 순회하지 않기 위함.
         private var modelLocalBounds: (min: SCNVector3, max: SCNVector3)?
+        /// 자동 정렬·노이즈 내성 접지에 사용하는 실제 메시 정점의 컨테이너 로컬 좌표 샘플.
+        private var modelLocalSamples: [SIMD3<Float>] = []
         private var renderedModelURL: String?
         private var renderedCameraResetToken = 0
+        private var renderedAutoAlignToken = 0
         private var renderedCameraPreset: ImgTo3DCameraPreset = .perspective
+        private var renderedColorScheme: ColorScheme?
+        private var reportedWorldSize: ImgTo3DModelSize?
         private var panStart = ImgTo3DModelTransform.initial
         private var panLatest = ImgTo3DModelTransform.initial
 
@@ -132,16 +144,18 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
             let scale = Float(transform.scale)
             modelContainer.scale = SCNVector3(scale, scale, scale)
 
-            // 모델 중심/최저점은 로드 시점(회전 전) 기준이라 회전하면 어긋난다.
-            // 현재 회전·스케일이 반영된 월드 AABB로 수평 중심을 유지하고, 바닥 고정 시 최저점을 다시 접지한다.
+            // 모델 중심은 로드 시점(회전 전) 기준이라 회전하면 어긋난다.
+            // 현재 회전·스케일이 반영된 월드 AABB로 수평 중심을 유지한다.
             if let bounds = worldModelBounds() {
                 modelContainer.position.x += Float(transform.xPosition) - (bounds.min.x + bounds.max.x) / 2
                 modelContainer.position.z += Float(transform.zPosition) - (bounds.min.z + bounds.max.z) / 2
-                if floorSnap {
-                    modelContainer.position.y -= bounds.min.y
-                }
+            }
+            // 메시의 고립된 노이즈 정점 때문에 가구가 떠 보이지 않도록 최저점 대신 하위 1%를 접지한다.
+            if floorSnap, let floorY = sampledWorldYPercentile(0.01) {
+                modelContainer.position.y -= floorY
             }
             gizmoNode.position = modelContainer.position
+            reportWorldSizeIfNeeded()
         }
 
         func updateGizmo(mode: ImgTo3DViewerMode, axis: ImgTo3DTransformAxis) {
@@ -226,6 +240,112 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
             }
         }
 
+        /// 웹 뷰어와 같은 정점 기반 자동 정렬을 한 번 실행합니다.
+        /// 현재 yaw/scale이 포함된 방향에서 X/Z 보정 회전을 앞에 곱해 AABB 부피를 최소화합니다.
+        func autoAlignIfNeeded(token: Int, transform: ImgTo3DModelTransform) {
+            guard token != renderedAutoAlignToken, !modelLocalSamples.isEmpty else { return }
+            renderedAutoAlignToken = token
+
+            let scale = Float(transform.scale)
+            let currentOrientation = modelContainer.simdOrientation
+            let oriented = modelLocalSamples.map { currentOrientation.act($0 * scale) }
+
+            func correctionQuaternion(xDegrees: Int, zDegrees: Int) -> simd_quatf {
+                let node = SCNNode()
+                node.eulerAngles = SCNVector3(
+                    Float(xDegrees) * .pi / 180,
+                    0,
+                    Float(zDegrees) * .pi / 180
+                )
+                return node.simdOrientation
+            }
+
+            func volume(after correction: simd_quatf) -> Float {
+                var lower = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
+                var upper = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
+                for point in oriented {
+                    let value = correction.act(point)
+                    lower = simd_min(lower, value)
+                    upper = simd_max(upper, value)
+                }
+                let size = upper - lower
+                return size.x * size.y * size.z
+            }
+
+            var bestX = 0
+            var bestZ = 0
+            var bestVolume = volume(after: correctionQuaternion(xDegrees: 0, zDegrees: 0))
+
+            func search(centerX: Int, centerZ: Int, range: Int, step: Int) {
+                for x in stride(from: centerX - range, through: centerX + range, by: step) {
+                    for z in stride(from: centerZ - range, through: centerZ + range, by: step) {
+                        let candidate = correctionQuaternion(xDegrees: x, zDegrees: z)
+                        let candidateVolume = volume(after: candidate)
+                        if candidateVolume < bestVolume {
+                            bestX = x
+                            bestZ = z
+                            bestVolume = candidateVolume
+                        }
+                    }
+                }
+            }
+
+            // 웹과 동일한 코스(5°) → 파인(1°) 2단계 탐색.
+            search(centerX: 0, centerZ: 0, range: 25, step: 5)
+            search(centerX: bestX, centerZ: bestZ, range: 4, step: 1)
+
+            let correction = correctionQuaternion(xDegrees: bestX, zDegrees: bestZ)
+            let alignedOrientation = correction * currentOrientation
+            let alignedPoints = modelLocalSamples.map { alignedOrientation.act($0 * scale) }
+            guard let alignment = alignmentMetrics(for: alignedPoints) else { return }
+
+            let eulerNode = SCNNode()
+            eulerNode.simdOrientation = alignedOrientation
+            let euler = eulerNode.eulerAngles
+
+            var aligned = transform
+            aligned.xDegrees = Double(euler.x * 180 / .pi)
+            aligned.yDegrees = Double(euler.y * 180 / .pi)
+            aligned.zDegrees = Double(euler.z * 180 / .pi)
+            // apply(transform:)이 AABB 중심을 transform.x/z로 맞추므로, 그 보정을 고려해
+            // 최종 바닥 발자국 중심이 월드 원점에 오도록 목표 중심을 역산한다.
+            aligned.xPosition = Double(alignment.boundsCenter.x - alignment.footprintCenter.x)
+            aligned.yPosition = 0
+            aligned.zPosition = Double(alignment.boundsCenter.y - alignment.footprintCenter.y)
+
+            Task { @MainActor [weak self] in
+                await Task.yield()
+                self?.parent.onAutoAlignment(aligned)
+            }
+        }
+
+        func updateAppearance(colorScheme: ColorScheme) {
+            guard renderedColorScheme != colorScheme else { return }
+            renderedColorScheme = colorScheme
+            let isDark = colorScheme == .dark
+            sceneView?.backgroundColor = UIColor(hexString: isDark ? "#212A2B" : "#F2EEE6")
+            sceneView?.scene?.rootNode.enumerateChildNodes { node, _ in
+                node.geometry?.materials.forEach { material in
+                    switch material.name {
+                    case "imgTo3DFloor":
+                        material.diffuse.contents = UIColor(hexString: isDark ? "#2A3436" : "#F2EDE6")
+                    case "imgTo3DGridMinor":
+                        material.diffuse.contents = isDark
+                            ? UIColor(hexString: "#93A19D").withAlphaComponent(0.22)
+                            : UIColor(red: 0.60, green: 0.48, blue: 0.36, alpha: 0.20)
+                    case "imgTo3DGridMajor":
+                        material.diffuse.contents = isDark
+                            ? UIColor(hexString: "#93A19D").withAlphaComponent(0.42)
+                            : UIColor(red: 0.52, green: 0.40, blue: 0.28, alpha: 0.40)
+                    case "imgTo3DOrigin":
+                        material.diffuse.contents = UIColor(hexString: isDark ? "#F3EDE3" : "#5C3D2E")
+                    default:
+                        break
+                    }
+                }
+            }
+        }
+
         /// `updateUIView` 도중 SwiftUI 상태를 즉시 바꾸지 않도록 다음 메인 액터 턴에 결과를 전달합니다.
         private func reportModelLoaded(size: ImgTo3DModelSize, name: String?) {
             Task { @MainActor [weak self] in
@@ -291,7 +411,6 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
                 panLatest = next
                 parent.transform = next
             case .ended:
-                guard parent.snapEnabled else { return }
                 var snapped = panLatest
                 switch parent.mode {
                 case .orbit: return
@@ -371,6 +490,92 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
             modelContainer.childNodes.forEach { $0.removeFromParentNode() }
             modelContainer.addChildNode(node)
             modelLocalBounds = hierarchyBounds(of: modelContainer, relativeTo: modelContainer)
+            modelLocalSamples = collectLocalSamples(of: modelContainer)
+            reportedWorldSize = nil
+        }
+
+        private func sampledWorldYPercentile(_ percentile: Float) -> Float? {
+            guard !modelLocalSamples.isEmpty else { return nil }
+            let matrix = modelContainer.simdWorldTransform
+            let ys = modelLocalSamples.map { point -> Float in
+                let world = matrix * SIMD4<Float>(point, 1)
+                return world.y
+            }.sorted()
+            let index = min(ys.count - 1, max(0, Int(Float(ys.count) * percentile)))
+            return ys[index]
+        }
+
+        private func alignmentMetrics(for points: [SIMD3<Float>]) -> (
+            boundsCenter: SIMD2<Float>, footprintCenter: SIMD2<Float>
+        )? {
+            guard !points.isEmpty else { return nil }
+            var lower = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
+            var upper = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
+            for point in points {
+                lower = simd_min(lower, point)
+                upper = simd_max(upper, point)
+            }
+            let bandTop = lower.y + (upper.y - lower.y) * 0.05
+            var footprintSum = SIMD2<Float>(repeating: 0)
+            var footprintCount: Float = 0
+            for point in points where point.y <= bandTop {
+                footprintSum += SIMD2(point.x, point.z)
+                footprintCount += 1
+            }
+            guard footprintCount > 0 else { return nil }
+            return (
+                SIMD2((lower.x + upper.x) / 2, (lower.z + upper.z) / 2),
+                footprintSum / footprintCount
+            )
+        }
+
+        private func reportWorldSizeIfNeeded() {
+            guard let bounds = worldModelBounds() else { return }
+            let size = ImgTo3DModelSize(
+                width: Double(bounds.max.x - bounds.min.x),
+                height: Double(bounds.max.y - bounds.min.y),
+                depth: Double(bounds.max.z - bounds.min.z)
+            )
+            guard reportedWorldSize != size else { return }
+            reportedWorldSize = size
+            Task { @MainActor [weak self] in
+                await Task.yield()
+                self?.parent.onModelBoundsChanged(size)
+            }
+        }
+
+        /// 지오메트리별 정점 버퍼를 최대 2,000개까지 균일 샘플링한 뒤 컨테이너 로컬 좌표로 변환합니다.
+        private func collectLocalSamples(of root: SCNNode) -> [SIMD3<Float>] {
+            var sources: [(node: SCNNode, source: SCNGeometrySource)] = []
+            var totalVertices = 0
+            root.enumerateChildNodes { node, _ in
+                guard let source = node.geometry?.sources(for: .vertex).first else { return }
+                sources.append((node, source))
+                totalVertices += source.vectorCount
+            }
+            guard totalVertices > 0 else { return [] }
+            let sampleStride = max(1, Int(ceil(Double(totalVertices) / 2_000)))
+            var samples: [SIMD3<Float>] = []
+            samples.reserveCapacity(min(totalVertices, 2_000 + sources.count))
+
+            for item in sources {
+                let source = item.source
+                guard source.usesFloatComponents,
+                      source.componentsPerVector >= 3,
+                      source.bytesPerComponent == MemoryLayout<Float>.size else { continue }
+                source.data.withUnsafeBytes { rawBuffer in
+                    for index in Swift.stride(from: 0, to: source.vectorCount, by: sampleStride) {
+                        let base = source.dataOffset + index * source.dataStride
+                        guard base + source.bytesPerComponent * 3 <= rawBuffer.count else { continue }
+                        let x = rawBuffer.loadUnaligned(fromByteOffset: base, as: Float.self)
+                        let y = rawBuffer.loadUnaligned(fromByteOffset: base + source.bytesPerComponent, as: Float.self)
+                        let z = rawBuffer.loadUnaligned(fromByteOffset: base + source.bytesPerComponent * 2, as: Float.self)
+                        let point = item.node.convertPosition(SCNVector3(x, y, z), to: modelContainer)
+                        samples.append(SIMD3(point.x, point.y, point.z))
+                    }
+                }
+            }
+            return samples
         }
 
         /// 캐시한 로컬 AABB의 8개 꼭짓점을 현재 컨테이너 변환(회전·스케일·위치)으로 월드에 투영한 AABB.
@@ -400,6 +605,7 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
             // 반사를 쓰지 않으므로 넓은 평면으로 대체한다. (경고 제거 + 렌더 비용 절감)
             let plane = SCNPlane(width: 80, height: 80)
             let material = SCNMaterial()
+            material.name = "imgTo3DFloor"
             material.diffuse.contents = UIColor { traits in
                 UIColor(hexString: traits.userInterfaceStyle == .dark ? "#2A3436" : "#F2EDE6")
             }
@@ -425,26 +631,28 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
                     ? UIColor(hexString: "#93A19D").withAlphaComponent(0.42)
                     : UIColor(red: 0.52, green: 0.40, blue: 0.28, alpha: 0.40)
             }
-            for index in -8...8 where index != 0 {
+            let halfExtent: Float = 8
+            for index in -16...16 where index != 0 {
                 let value = Float(index) * 0.5
                 let color = index.isMultiple(of: 2) ? major : minor
-                node.addChildNode(line(from: SCNVector3(value, 0.002, -4), to: SCNVector3(value, 0.002, 4), color: color))
-                node.addChildNode(line(from: SCNVector3(-4, 0.002, value), to: SCNVector3(4, 0.002, value), color: color))
+                let materialName = index.isMultiple(of: 2) ? "imgTo3DGridMajor" : "imgTo3DGridMinor"
+                node.addChildNode(line(from: SCNVector3(value, 0.002, -halfExtent), to: SCNVector3(value, 0.002, halfExtent), color: color, materialName: materialName))
+                node.addChildNode(line(from: SCNVector3(-halfExtent, 0.002, value), to: SCNVector3(halfExtent, 0.002, value), color: color, materialName: materialName))
             }
 
             // 원점(0,0,0)이 어디인지 보이도록: X축(빨강)·Z축(파랑) 중심선 + 원점 마커.
-            node.addChildNode(axisFloorLine(alongX: true, color: UIColor.systemRed.withAlphaComponent(0.55)))
-            node.addChildNode(axisFloorLine(alongX: false, color: UIColor.systemBlue.withAlphaComponent(0.55)))
+            node.addChildNode(axisFloorLine(alongX: true, length: halfExtent * 2, color: UIColor.systemRed.withAlphaComponent(0.55)))
+            node.addChildNode(axisFloorLine(alongX: false, length: halfExtent * 2, color: UIColor.systemBlue.withAlphaComponent(0.55)))
             node.addChildNode(originMarker())
             return node
         }
 
         /// 바닥 위 원점을 지나는 축 표시선. 1px 라인보다 잘 보이도록 얇은 박스로 그린다.
-        private func axisFloorLine(alongX: Bool, color: UIColor) -> SCNNode {
+        private func axisFloorLine(alongX: Bool, length: Float, color: UIColor) -> SCNNode {
             let box = SCNBox(
-                width: alongX ? 8 : 0.012,
+                width: alongX ? CGFloat(length) : 0.012,
                 height: 0.002,
-                length: alongX ? 0.012 : 8,
+                length: alongX ? 0.012 : CGFloat(length),
                 chamferRadius: 0
             )
             let material = SCNMaterial()
@@ -459,6 +667,7 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
         private func originMarker() -> SCNNode {
             let disc = SCNCylinder(radius: 0.045, height: 0.006)
             let material = SCNMaterial()
+            material.name = "imgTo3DOrigin"
             material.diffuse.contents = UIColor { traits in
                 traits.userInterfaceStyle == .dark
                     ? UIColor(hexString: "#F3EDE3")
@@ -471,12 +680,18 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
             return node
         }
 
-        private func line(from start: SCNVector3, to end: SCNVector3, color: UIColor) -> SCNNode {
+        private func line(
+            from start: SCNVector3,
+            to end: SCNVector3,
+            color: UIColor,
+            materialName: String? = nil
+        ) -> SCNNode {
             let source = SCNGeometrySource(vertices: [start, end])
             let data = Data([0, 1])
             let element = SCNGeometryElement(data: data, primitiveType: .line, primitiveCount: 1, bytesPerIndex: 1)
             let geometry = SCNGeometry(sources: [source], elements: [element])
             let material = SCNMaterial()
+            material.name = materialName
             material.diffuse.contents = color
             // 라인은 법선이 없어 조명을 받으면 검게 묻힌다. 지정한 색 그대로 그리도록 조명을 끈다.
             material.lightingModel = .constant
