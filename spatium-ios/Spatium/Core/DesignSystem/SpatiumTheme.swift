@@ -10,7 +10,13 @@ enum SpatiumTheme {
     static let background = adaptive(light: "#F2EEE6", dark: "#171D1E")
     static let surface = adaptive(light: "#FAF7F1", dark: "#313D3F")
     static let elevatedSurface = adaptive(light: "#FFFFFF", dark: "#3C4849")
-    static let chromeSurface = adaptive(light: "#FAF7F1", dark: "#141A1B", darkAlpha: 0.82)
+    /// 주요(CTA) 버튼 배경. 메인 브라운 테마의 고대비 버전 —
+    /// 라이트: 딥 에스프레소, 다크: 크림 탄으로 반전해 어느 모드에서든 또렷하게 선다.
+    static let ctaFill = adaptive(light: "#33221A", dark: "#DCC2A2")
+    /// ctaFill 위 텍스트/아이콘 색.
+    static let onCta = adaptive(light: "#F7F1E7", dark: "#2A1C12")
+    // 헤더/푸터 전용 틴트. 아래 깔린 블러(ultraThinMaterial)가 비치도록 반투명으로 유지한다.
+    static let chromeSurface = adaptive(light: "#FAF7F1", dark: "#141A1B", lightAlpha: 0.55, darkAlpha: 0.6)
     static let accent = adaptive(light: "#5C3D2E", dark: "#C3A483")
     static let accentLight = adaptive(light: "#C4956A", dark: "#DCC2A2")
     static let brown = adaptive(light: "#5C3D2E", dark: "#C3A483")
@@ -30,11 +36,11 @@ enum SpatiumTheme {
     static let backgroundGradientEnd = adaptive(light: "#FAF7F1", dark: "#212A2B")
     static let shadow = adaptive(light: "#1C120A", dark: "#000000")
 
-    private static func adaptive(light: String, dark: String, darkAlpha: CGFloat = 1) -> Color {
+    private static func adaptive(light: String, dark: String, lightAlpha: CGFloat = 1, darkAlpha: CGFloat = 1) -> Color {
         Color(UIColor { traits in
             traits.userInterfaceStyle == .dark
                 ? UIColor(hexString: dark).withAlphaComponent(darkAlpha)
-                : UIColor(hexString: light)
+                : UIColor(hexString: light).withAlphaComponent(lightAlpha)
         })
     }
 }

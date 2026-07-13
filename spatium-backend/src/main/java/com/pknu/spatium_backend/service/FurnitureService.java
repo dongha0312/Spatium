@@ -71,9 +71,34 @@ public class FurnitureService {
         }
     }
 
+    // 로그인한 회원이 생성한 가구를 삭제한다 (fur_is_active='0' soft delete).
+    // 이미 배치된 방이 GLB 경로를 계속 참조할 수 있으므로 파일은 지우지 않는다.
+    public String deleteUserFurniture(String memId, String furCode) {
+        Furniture furniture = furnitureRepository.findById(furCode)
+                .filter(f -> "1".equals(f.getFur_is_active()))
+                .orElseThrow(() -> new ApiException(404, "FURNITURE_NOT_FOUND", "가구를 찾을 수 없습니다."));
+
+        if ("1".equals(furniture.getFur_is_default()) || !memId.equals(furniture.getFur_mem())) {
+            throw new ApiException(403, "FORBIDDEN", "해당 가구를 삭제할 권한이 없습니다.");
+        }
+
+        furniture.setFur_is_active("0");
+        furnitureRepository.save(furniture);
+        return furCode;
+    }
+
     // 기본 제공 가구 카탈로그를 프론트가 기대하는 형태로 반환한다.
     public List<ResponseCatalogItemDTO> getCatalog() {
-        return furnitureRepository.findDefaultCatalog().stream()
+        return toCatalogItems(furnitureRepository.findDefaultCatalog());
+    }
+
+    // 로그인한 회원이 생성한 사용자 가구 목록을 카탈로그와 동일한 형태로 반환한다.
+    public List<ResponseCatalogItemDTO> getUserCatalog(String memId) {
+        return toCatalogItems(furnitureRepository.findUserCatalog(memId));
+    }
+
+    private List<ResponseCatalogItemDTO> toCatalogItems(List<Furniture> furnitureList) {
+        return furnitureList.stream()
                 .map(f -> new ResponseCatalogItemDTO(
                         f.getFur_code(),
                         f.getFur_name_kr(),

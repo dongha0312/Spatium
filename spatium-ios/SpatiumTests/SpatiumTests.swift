@@ -7,6 +7,9 @@
 
 import Testing
 import Foundation
+import ImageIO
+import UIKit
+import UniformTypeIdentifiers
 @testable import Spatium
 
 @MainActor
@@ -139,5 +142,48 @@ struct SpatiumTests {
     private func encodeToDictionary<T: Encodable>(_ value: T) throws -> [String: Any] {
         let data = try JSONEncoder.spatiumAPI.encode(value)
         return try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+}
+
+@MainActor
+struct ImgTo3DUploadImageTests {
+    /// 8×8 단색 이미지 — 인코딩 테스트용 최소 입력.
+    private func solidImage() -> UIImage {
+        UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+            UIColor.systemBrown.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+    }
+
+    @Test func heicPhotoConvertsToPNGForBackend() throws {
+        let image = solidImage()
+        let heicData = NSMutableData()
+        guard let cgImage = image.cgImage,
+              let destination = CGImageDestinationCreateWithData(heicData, UTType.heic.identifier as CFString, 1, nil) else {
+            return // 이 환경이 HEIC 인코딩을 지원하지 않으면 검증 불가
+        }
+        CGImageDestinationAddImage(destination, cgImage, nil)
+        guard CGImageDestinationFinalize(destination) else { return }
+
+        let normalized = try #require(ImgTo3DUploadImage.normalize(image: image, rawData: heicData as Data))
+        #expect(normalized.convertedFromIncompatibleFormat)
+        #expect(normalized.fileExtension == "png")
+        #expect(normalized.data.starts(with: [0x89, 0x50, 0x4E, 0x47]))
+    }
+
+    @Test func jpegPhotoPassesThroughUnchanged() throws {
+        let image = solidImage()
+        let jpeg = try #require(image.jpegData(compressionQuality: 0.9))
+        let normalized = try #require(ImgTo3DUploadImage.normalize(image: image, rawData: jpeg))
+        #expect(!normalized.convertedFromIncompatibleFormat)
+        #expect(normalized.fileExtension == "jpg")
+        #expect(normalized.data == jpeg)
+    }
+
+    @Test func cameraCaptureWithoutRawDataEncodesToPNG() throws {
+        let normalized = try #require(ImgTo3DUploadImage.normalize(image: solidImage(), rawData: nil))
+        #expect(!normalized.convertedFromIncompatibleFormat)
+        #expect(normalized.fileExtension == "png")
+        #expect(normalized.data.starts(with: [0x89, 0x50, 0x4E, 0x47]))
     }
 }

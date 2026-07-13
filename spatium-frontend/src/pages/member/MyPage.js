@@ -15,10 +15,14 @@ import {
   postRoom,
 } from "../../springApi/RoomSpringBootApi";
 import { deleteRoom } from "../../springApi/RoomSpringBootApi";
+import {
+  deleteUserFurniture,
+  getUserFurnitureCatalog,
+} from "../../springApi/FurnitureSpringBootApi";
 import AccountPanel from "../../components/AccountPanel";
 import AvatarButton from "../../components/AvatarButton";
 import Footer from "../../components/Footer";
-import Logo from "../../components/Logo";
+import Header from "../../components/Header";
 import MakeRoom from "../../components/MakeRoom";
 import useLogout from "../../hooks/useLogout";
 
@@ -101,6 +105,13 @@ function MyPage() {
   const [modalError, setModalError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [deletingProjectId, setDeletingProjectId] = useState(null);
+  const [myFurniture, setMyFurniture] = useState([]);
+  const [furnitureLoading, setFurnitureLoading] = useState(false);
+  const [furnitureError, setFurnitureError] = useState("");
+  const [deletingFurnitureId, setDeletingFurnitureId] = useState(null);
+  const [expandedFurnitureIds, setExpandedFurnitureIds] = useState(
+    () => new Set(),
+  );
   const autoModalHandled = useRef(false);
   const metadataFileInputRef = useRef(null);
   const roomFileInputRef = useRef(null);
@@ -144,6 +155,30 @@ function MyPage() {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  // 내가 만든 사용자 가구 목록을 불러온다 (내 가구관리 탭).
+  const loadMyFurniture = useCallback(async () => {
+    if (!getAccessToken()) return;
+
+    setFurnitureLoading(true);
+    setFurnitureError("");
+
+    try {
+      const data = await getUserFurnitureCatalog();
+      setMyFurniture(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setFurnitureError(err.message || "가구 목록을 불러오지 못했습니다.");
+    } finally {
+      setFurnitureLoading(false);
+    }
+  }, []);
+
+  // 내 가구관리 탭을 열 때마다 최신 목록으로 갱신한다.
+  useEffect(() => {
+    if (activeTab === "furniture") {
+      loadMyFurniture();
+    }
+  }, [activeTab, loadMyFurniture]);
 
   // 홈에서 "시작하기"로 진입한 경우, 새로고침/뒤로가기 시 모달이 다시 열리지 않도록 state 제거
   useEffect(() => {
@@ -352,6 +387,42 @@ function MyPage() {
     }
   };
 
+  const toggleFurnitureDetails = (furnitureId) => {
+    setExpandedFurnitureIds((previous) => {
+      const next = new Set(previous);
+
+      if (next.has(furnitureId)) {
+        next.delete(furnitureId);
+      } else {
+        next.add(furnitureId);
+      }
+
+      return next;
+    });
+  };
+
+  const handleDeleteFurniture = async (item) => {
+    const confirmed = window.confirm(`"${item.name}" 가구를 삭제하시겠습니까?`);
+    if (!confirmed) return;
+
+    if (!getAccessToken()) {
+      alert("로그인이 필요합니다.");
+      return;
+    }
+
+    setDeletingFurnitureId(item.id);
+
+    try {
+      await deleteUserFurniture(item.id);
+      setMyFurniture((prev) => prev.filter((f) => f.id !== item.id));
+      alert("가구가 삭제되었습니다.");
+    } catch (err) {
+      alert(err.message || "가구 삭제에 실패했습니다.");
+    } finally {
+      setDeletingFurnitureId(null);
+    }
+  };
+
   // 모달 열기 : mode='project'면 새 프로젝트(새 칸), mode='room'이면 해당 프로젝트에 룸 추가
   const openProjectModal = (mode = "project", projectId = null) => {
     setModalMode(mode);
@@ -435,8 +506,7 @@ function MyPage() {
 
   return (
     <div className="mp-root">
-      <div className="mp-nav">
-        <Logo prefix="mp" />
+      <Header prefix="mp">
         <div className="mp-nav-right">
           <AvatarButton
             prefix="mp"
@@ -447,7 +517,7 @@ function MyPage() {
             showCaret={false}
           />
         </div>
-      </div>
+      </Header>
 
       <div className="mp-body">
         <div className="mp-sidebar">
@@ -475,8 +545,122 @@ function MyPage() {
         <div className="mp-main">
           {activeTab === "furniture" ? (
             <div>
-              <div className="mp-main-title">내 가구관리</div>
-              <div className="mp-main-sub">준비 중인 기능입니다.</div>
+              <div className="mp-main-head" style={{ marginBottom: 22 }}>
+                <div className="mp-main-title">내 가구관리</div>
+                <div className="mp-main-head-row">
+                  <div className="mp-main-sub">
+                    {furnitureLoading
+                      ? "불러오는 중..."
+                      : `총 ${myFurniture.length}개의 가구가 있습니다`}
+                  </div>
+                  <button
+                    type="button"
+                    className="mp-new-project-btn"
+                    onClick={() => navigate("/member/imgto3d")}
+                  >
+                    + 가구 만들기
+                  </button>
+                </div>
+                {furnitureError && (
+                  <div className="mp-modal-help">{furnitureError}</div>
+                )}
+              </div>
+
+              <div className="mp-projects-list">
+                {myFurniture.map((item) => {
+                  const isExpanded = expandedFurnitureIds.has(item.id);
+                  const sizeText = item.dimensions
+                    ? `${(item.dimensions.x || 0).toFixed(2)}m × ${(
+                        item.dimensions.y || 0
+                      ).toFixed(2)}m × ${(item.dimensions.z || 0).toFixed(2)}m`
+                    : "-";
+
+                  return (
+                    <div
+                      className={`mp-room-card ${
+                        isExpanded ? "is-expanded" : "is-collapsed"
+                      }`}
+                      key={item.id}
+                    >
+                      <div className="mp-room-card-header">
+                        <div className="mp-room-card-title">🪑 {item.name}</div>
+                        <div className="mp-room-card-actions">
+                          <button
+                            type="button"
+                            className="mp-project-collapse-btn"
+                            onClick={() => toggleFurnitureDetails(item.id)}
+                            aria-expanded={isExpanded}
+                            aria-controls={`furniture-details-${item.id}`}
+                            title={isExpanded ? "정보 접기" : "정보 보기"}
+                          >
+                            <span className="mp-project-collapse-label">
+                              정보
+                            </span>
+                            <svg
+                              className="mp-project-collapse-icon"
+                              aria-hidden="true"
+                              viewBox="0 0 16 16"
+                              fill="none"
+                            >
+                              <path
+                                d={
+                                  isExpanded
+                                    ? "M4 10L8 6L12 10"
+                                    : "M4 6L8 10L12 6"
+                                }
+                                stroke="currentColor"
+                                strokeWidth="1.75"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            className="mp-project-delete-btn"
+                            disabled={deletingFurnitureId === item.id}
+                            onClick={() => handleDeleteFurniture(item)}
+                          >
+                            {deletingFurnitureId === item.id
+                              ? "삭제 중..."
+                              : "삭제"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div
+                        id={`furniture-details-${item.id}`}
+                        className={`mp-project-rooms ${
+                          isExpanded ? "is-expanded" : ""
+                        }`}
+                        aria-hidden={!isExpanded}
+                        inert={!isExpanded ? "" : undefined}
+                      >
+                        <div className="mp-project-rooms-inner">
+                          <div className="mp-fur-details">
+                            <div className="mp-fur-detail-row">
+                              <span className="mp-fur-detail-label">
+                                카테고리
+                              </span>
+                              <span className="mp-fur-detail-value">
+                                {item.group || item.category || "-"}
+                              </span>
+                            </div>
+                            <div className="mp-fur-detail-row">
+                              <span className="mp-fur-detail-label">
+                                크기 (가로 × 높이 × 깊이)
+                              </span>
+                              <span className="mp-fur-detail-value">
+                                {sizeText}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           ) : (
             <div>

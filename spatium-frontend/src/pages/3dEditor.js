@@ -9,18 +9,24 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import "../styles/3deditor.css";
 import AccountPanel from "../components/AccountPanel";
 import AvatarButton from "../components/AvatarButton";
-import Logo from "../components/Logo";
+import Header from "../components/Header";
 import RoomSceneEditorPage from "./roomSceneEditor/RoomSceneEditorPage";
 import { getAccessToken, getLoginSession } from "../utils/authSession";
 import { getMyInfo } from "../springApi/MemberSpringBootApi";
 import { getProjectInfo } from "../springApi/ProjectSpringBootAPi";
 import { getRoomList, getRoomSceneData } from "../springApi/RoomSpringBootApi";
-import { getFurnitureCatalog } from "../springApi/FurnitureSpringBootApi";
+import {
+  getFurnitureCatalog,
+  getUserFurnitureCatalog,
+} from "../springApi/FurnitureSpringBootApi";
 import useLogout from "../hooks/useLogout";
 import useProjectStats from "../hooks/useProjectStats";
 import { FLOOR_COLORS } from "./roomSceneEditor/scene/floorColor";
 
 const WALL_COLORS = ["#F5F0EA", "#E8DCC8", "#C4956A", "#3A3A3A"];
+
+// 카테고리 필터에서 "사용자 가구"를 구분하기 위한 값. 실제 가구 group과 겹치지 않게 한다.
+const USER_FURNITURE_CATEGORY = "__userFurniture__";
 
 function normalizeCatalogItem(item) {
   return {
@@ -45,6 +51,7 @@ function ThreeDEditor() {
 
   const [roomDropdownOpen, setRoomDropdownOpen] = useState(false);
   const [furnitureCatalog, setFurnitureCatalog] = useState([]);
+  const [userFurnitureCatalog, setUserFurnitureCatalog] = useState([]);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [activeCategory, setActiveCategory] = useState(null);
   const [catalogError, setCatalogError] = useState("");
@@ -134,21 +141,30 @@ function ThreeDEditor() {
     navigate("/");
   });
 
+  // 기본 카탈로그 + 사용자 가구를 합친 목록. 검색/카테고리 필터는 이 목록을 대상으로 한다.
+  const mergedCatalog = useMemo(
+    () => [...furnitureCatalog, ...userFurnitureCatalog],
+    [furnitureCatalog, userFurnitureCatalog],
+  );
+
   const categoryFilters = useMemo(
     () =>
       Array.from(
-        new Set(furnitureCatalog.map((item) => item.group).filter(Boolean)),
+        new Set(mergedCatalog.map((item) => item.group).filter(Boolean)),
       ),
-    [furnitureCatalog],
+    [mergedCatalog],
   );
 
   const visibleCatalogItems = useMemo(() => {
     const query = catalogSearch.trim().toLowerCase();
 
-    return furnitureCatalog.filter((item) => {
-      const matchesCategory = activeCategory
-        ? item.group === activeCategory
-        : true;
+    return mergedCatalog.filter((item) => {
+      const matchesCategory =
+        activeCategory === USER_FURNITURE_CATEGORY
+          ? Boolean(item.isUserFurniture)
+          : activeCategory
+            ? item.group === activeCategory
+            : true;
       const haystack = [item.name, item.group, item.category]
         .filter(Boolean)
         .join(" ")
@@ -157,7 +173,7 @@ function ThreeDEditor() {
 
       return matchesCategory && matchesSearch;
     });
-  }, [activeCategory, catalogSearch, furnitureCatalog]);
+  }, [activeCategory, catalogSearch, mergedCatalog]);
 
   useEffect(() => {
     let isMounted = true;
@@ -183,6 +199,35 @@ function ThreeDEditor() {
       isMounted = false;
     };
   }, []);
+
+  // 로그인 상태면 내가 만든 사용자 가구 목록도 불러온다.
+  useEffect(() => {
+    if (!session) {
+      setUserFurnitureCatalog([]);
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    getUserFurnitureCatalog()
+      .then((data) => {
+        if (!isMounted) return;
+        setUserFurnitureCatalog(
+          (Array.isArray(data) ? data : []).map((item) => ({
+            ...normalizeCatalogItem(item),
+            isUserFurniture: true,
+          })),
+        );
+      })
+      .catch((error) => {
+        console.warn("사용자 가구 목록 조회 실패:", error);
+        if (isMounted) setUserFurnitureCatalog([]);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session]);
 
   useEffect(() => {
     let isMounted = true;
@@ -354,6 +399,19 @@ function ThreeDEditor() {
     setActiveCategory(null);
   };
 
+  // 카탈로그 아래 "내 가구 생성" 버튼 : 이미지→3D 가구 만들기 페이지로 이동
+  const handleCreateUserFurniture = () => {
+    if (hasUnsavedChanges) {
+      const confirmed = window.confirm(
+        "수정중인 방이 저장되지 않았습니다. 그래도 가구 만들기 페이지로 이동하시겠습니까?",
+      );
+      if (!confirmed) return;
+      setHasUnsavedChanges(false);
+    }
+
+    navigate("/member/imgto3d");
+  };
+
   const handleAddFurniture = (item) => {
     if (editorRef.current?.isReplacingSelected) {
       editorRef.current?.addFurniture(item);
@@ -481,8 +539,7 @@ function ThreeDEditor() {
 
   return (
     <div className="ed-root">
-      <div className="ed-nav">
-        <Logo prefix="ed" />
+      <Header prefix="ed">
         <div className="ed-nav-center">{roomLabel}</div>
         <div className="ed-nav-status">
           {isSaving && <span className="ed-save-state">저장중...</span>}
@@ -513,7 +570,7 @@ function ThreeDEditor() {
               className="ed-mypage-btn"
               onClick={handleGoMypage}
             >
-              마이페이지
+              내 공간
             </button>
             {/* 닉네임 클릭 : 우측 "내 정보" 패널 열기 */}
             <AvatarButton
@@ -531,7 +588,7 @@ function ThreeDEditor() {
             <span className="ed-av-name">마이페이지</span>
           </Link>
         )}
-      </div>
+      </Header>
 
       <div className="ed-wrap">
         <div className="ed-toolbar">
@@ -613,6 +670,19 @@ function ThreeDEditor() {
               >
                 All
               </button>
+              {session && (
+                <button
+                  type="button"
+                  className={`ed-cat-filter${
+                    activeCategory === USER_FURNITURE_CATEGORY
+                      ? " ed-active"
+                      : ""
+                  }`}
+                  onClick={() => selectCategory(USER_FURNITURE_CATEGORY)}
+                >
+                  사용자 가구
+                </button>
+              )}
               {categoryFilters.map((category) => (
                 <button
                   key={category}
@@ -625,13 +695,28 @@ function ThreeDEditor() {
               ))}
             </div>
 
+            {session &&
+              (activeCategory === null ||
+                activeCategory === USER_FURNITURE_CATEGORY) && (
+                <div className="ed-cat-create-wrap">
+                  <button
+                    type="button"
+                    className="ed-cat-create-btn"
+                    onClick={handleCreateUserFurniture}
+                  >
+                    + 내 가구 생성
+                  </button>
+                </div>
+              )}
             <div className="ed-cat-products">
               {catalogError && (
                 <div className="ed-cat-empty">{catalogError}</div>
               )}
               {!catalogError && visibleCatalogItems.length === 0 && (
                 <div className="ed-cat-empty">
-                  가구정보를 불러오지 못했습니다
+                  {activeCategory === USER_FURNITURE_CATEGORY
+                    ? "등록된 사용자 가구가 없습니다"
+                    : "가구정보를 불러오지 못했습니다"}
                 </div>
               )}
               {visibleCatalogItems.map((item) => (
@@ -846,7 +931,7 @@ function ThreeDEditor() {
             onClick={handleCancel}
             disabled={isSaving}
           >
-            마이페이지로 돌아가기
+            내 공간으로 돌아가기
           </button>
           <button
             type="button"

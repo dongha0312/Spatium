@@ -1,4 +1,41 @@
 import Foundation
+import ImageIO
+import UIKit
+import UniformTypeIdentifiers
+
+/// 업로드용 이미지 정규화. 백엔드 딥러닝 파이프라인(YOLO · GroundingDINO · SAM2)은
+/// HEIC을 읽지 못하므로, PNG/JPEG가 아닌 포맷은 선택 시점에 PNG로 변환해 둔다.
+enum ImgTo3DUploadImage {
+    struct Normalized: Equatable {
+        let data: Data
+        let fileExtension: String
+        /// 원본 파일이 PNG/JPEG가 아니어서(대표적으로 HEIC) PNG로 재인코딩됐는지.
+        let convertedFromIncompatibleFormat: Bool
+    }
+
+    /// rawData가 있으면(사진 보관함) 포맷을 판별해 PNG/JPEG는 원본 그대로,
+    /// 그 외(HEIC 등)는 PNG로 변환한다. rawData가 없으면(카메라 촬영) PNG로 인코딩한다.
+    static func normalize(image: UIImage, rawData: Data?) -> Normalized? {
+        if let rawData, let type = sourceType(of: rawData) {
+            if type.conforms(to: .png) {
+                return Normalized(data: rawData, fileExtension: "png", convertedFromIncompatibleFormat: false)
+            }
+            if type.conforms(to: .jpeg) {
+                return Normalized(data: rawData, fileExtension: "jpg", convertedFromIncompatibleFormat: false)
+            }
+            guard let png = image.pngData() else { return nil }
+            return Normalized(data: png, fileExtension: "png", convertedFromIncompatibleFormat: true)
+        }
+        guard let png = image.pngData() else { return nil }
+        return Normalized(data: png, fileExtension: "png", convertedFromIncompatibleFormat: false)
+    }
+
+    private static func sourceType(of data: Data) -> UTType? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let identifier = CGImageSourceGetType(source) as String? else { return nil }
+        return UTType(identifier)
+    }
+}
 
 enum ImgTo3DStep: Int, CaseIterable, Identifiable {
     case upload

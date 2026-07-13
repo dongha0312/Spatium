@@ -8,7 +8,7 @@ import {
   postSocialLogin,
 } from "../../springApi/MemberSpringBootApi";
 import Footer from "../../components/Footer";
-import Logo from "../../components/Logo";
+import Header from "../../components/Header";
 
 // 이메일 형식 검증용 정규식
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -136,14 +136,13 @@ function LoginPage({ onLoginSuccess }) {
   return (
     <div className="lg-root">
       {/* 상단 네비게이션 */}
-      <div className="lg-nav">
-        <Logo prefix="lg" />
+      <Header prefix="lg">
         <div className="lg-nav-right">
           <Link to="/auth/signup" className="lg-btn-out">
             회원가입
           </Link>
         </div>
-      </div>
+      </Header>
 
       {/* 로그인 폼 (화면 정중앙 배치) */}
       <div className="lg-auth-wrap">

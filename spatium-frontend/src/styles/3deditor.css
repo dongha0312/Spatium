@@ -26,7 +26,7 @@
 .ed-nav {
   display: flex;
   align-items: center;
-  height: 52px;
+  height: 63px;
   padding: 0 24px;
   background: var(--sur);
   border-bottom: 1px solid var(--bd);
@@ -915,7 +915,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 16px;
+  padding: 5px 12px 12px 12px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   /* 행이 남는 세로 공간만큼 늘어나지 않도록 위쪽부터 내용 높이로 채운다 */
@@ -967,6 +967,32 @@
 .ed-cat-product-meta {
   font-size: 11px;
   color: var(--t3);
+}
+
+/* All / 사용자 가구 필터일 때 목록 위에 고정 노출되는 내 가구 생성 버튼.
+   스크롤되는 .ed-cat-products 바깥에 있어서 목록을 내려도 항상 보인다. */
+.ed-cat-create-wrap {
+  padding: 8px 12px;
+  flex-shrink: 0;
+  /* border-bottom: 1px solid var(--bd); */
+}
+
+.ed-cat-create-btn {
+  width: 100%;
+  min-height: 44px;
+  border: 1px dashed var(--ga);
+  border-radius: 8px;
+  background: #F6ECDF;
+  color: var(--g);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ed-cat-create-btn:hover {
+  background: #EFE0CC;
+  border-style: solid;
 }
 
 .ed-cat-banner {

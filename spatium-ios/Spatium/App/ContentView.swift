@@ -70,6 +70,9 @@ struct ContentView: View {
 struct MainTabView: View {
     @StateObject private var projectStore = ProjectStore()
     @State private var selectedTab: AppTab = .home
+    /// 스크롤 컨테이너가 보여줄 탭. 가구 만들기(고정 레이아웃) 탭으로 가 있는 동안에는
+    /// 마지막 스크롤 탭 화면을 유지해, 페이드 아웃 중에 내용이 사라지지 않게 한다.
+    @State private var scrollContentTab: AppTab = .home
     @State private var selectedProjectID: String?
     @State private var activeProjectID: String?
     @State private var activeRoomID: String?
@@ -89,31 +92,43 @@ struct MainTabView: View {
         ZStack {
             ModernBackground().ignoresSafeArea()
 
-            Group {
-                if selectedTab == .imgTo3D {
-                    currentScreen
-                        .id(selectedTab)
-                        .transition(tabContentTransition)
-                        .frame(maxWidth: 520, maxHeight: .infinity)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                } else {
-                    ScrollView {
-                        VStack(spacing: 18) {
-                            currentScreen
-                                .id(selectedTab)
-                                .transition(tabContentTransition)
-                        }
-                        .id("main-screen-top")
-                        .frame(maxWidth: 520)
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 18)
-                        .padding(.top, 18)
-                        .padding(.bottom, 28)
+            // 가구 만들기(고정 레이아웃)와 나머지 탭(스크롤)을 if/else로 갈아끼우면
+            // 분기 교체가 transition 없이 하드 컷으로 끝난다(프레임 캡처로 확인).
+            // 두 컨테이너를 상시 겹쳐두고 opacity/scale로 전환해 다른 탭 간 이동과
+            // 동일한 페이드+스케일을 보장한다. 부수 효과로 가구 만들기 진행 상태도
+            // 탭을 오가도 유지된다.
+            ZStack {
+                ScrollView {
+                    VStack(spacing: 18) {
+                        screen(for: scrollContentTab)
+                            .id(scrollContentTab)
+                            .transition(tabContentTransition)
                     }
-                    .scrollIndicators(.hidden)
-                    .animation(tabContentAnimation, value: selectedTab)
+                    .id("main-screen-top")
+                    .frame(maxWidth: 520)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 18)
+                    .padding(.bottom, 28)
+                }
+                .scrollIndicators(.hidden)
+                .opacity(selectedTab == .imgTo3D ? 0 : 1)
+                .scaleEffect(selectedTab == .imgTo3D ? 0.97 : 1)
+                .allowsHitTesting(selectedTab != .imgTo3D)
+
+                ImgTo3DView()
+                    .frame(maxWidth: 520, maxHeight: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .opacity(selectedTab == .imgTo3D ? 1 : 0)
+                    .scaleEffect(selectedTab == .imgTo3D ? 1 : 0.97)
+                    .allowsHitTesting(selectedTab == .imgTo3D)
+            }
+            .animation(tabContentAnimation, value: selectedTab)
+            .onChange(of: selectedTab) { _, newValue in
+                if newValue != .imgTo3D {
+                    scrollContentTab = newValue
                 }
             }
             .safeAreaInset(edge: .top, spacing: 0) {
@@ -122,6 +137,10 @@ struct MainTabView: View {
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 AppFooter(selectedTab: $selectedTab)
             }
+            // 가구 만들기 탭: 입력 필드가 모두 화면 위쪽이라 키보드 회피가 필요 없고,
+            // 키보드가 올라올 때 푸터가 따라 올라오며 카드가 찌그러지는 것을 막는다.
+            // (다른 탭은 화면 아래쪽 필드가 있어 기본 키보드 회피를 유지)
+            .ignoresSafeArea(.keyboard, edges: selectedTab == .imgTo3D ? .bottom : [])
         }
         .sheet(isPresented: $showNewProjectSheet, onDismiss: {
             if shouldStartScanAfterProjectSheetDismiss {
@@ -160,13 +179,22 @@ struct MainTabView: View {
             if ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D") {
                 selectedTab = .imgTo3D
             }
+            // 탭 전환 애니메이션 검증용: 앱 실행 후 자동으로 홈 → 가구만들기 → 스캔 순으로 전환한다.
+            if ProcessInfo.processInfo.arguments.contains("-UITestTabToggle") {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(2))
+                    selectedTab = .imgTo3D
+                    try? await Task.sleep(for: .seconds(2))
+                    selectedTab = .scan
+                }
+            }
         }
         #endif
     }
 
     @ViewBuilder
-    private var currentScreen: some View {
-        switch selectedTab {
+    private func screen(for tab: AppTab) -> some View {
+        switch tab {
         case .home:
             HomeDashboardView(
                 projects: projectStore.projects,
@@ -225,7 +253,8 @@ struct MainTabView: View {
                 EmptyScanView(onStartScan: startNewProjectFlow)
             }
         case .imgTo3D:
-            ImgTo3DView()
+            // 가구 만들기는 스크롤 컨테이너가 아니라 body의 상시 레이어로 렌더링된다.
+            EmptyView()
         case .settings:
             SettingsView()
         }
