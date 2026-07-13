@@ -417,10 +417,10 @@ private struct HomeEmptyProjectsCard: View {
                     Image(systemName: "arrow.right")
                         .font(.caption.weight(.bold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(SpatiumTheme.onCta)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(SpatiumTheme.accent)
+                .background(SpatiumTheme.ctaFill)
                 .clipShape(Capsule())
                 .padding(.top, 4)
             }

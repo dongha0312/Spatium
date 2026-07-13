@@ -28,6 +28,7 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
         view.autoenablesDefaultLighting = false
         view.defaultCameraController.interactionMode = .orbitTurntable
         view.defaultCameraController.inertiaEnabled = true
+        view.defaultCameraController.target = SCNVector3(0, 0.45, 0)
         lockCameraRoll(view)
 
         let pan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePan(_:)))
@@ -74,6 +75,8 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
 
         private let modelContainer = SCNNode()
         private let gizmoNode = SCNNode()
+        /// 로드 시점에 캐시한 모델의 컨테이너 로컬 AABB. 드래그 중 매 프레임 전체 노드를 순회하지 않기 위함.
+        private var modelLocalBounds: (min: SCNVector3, max: SCNVector3)?
         private var renderedModelURL: String?
         private var renderedCameraResetToken = 0
         private var renderedCameraPreset: ImgTo3DCameraPreset = .perspective
@@ -131,7 +134,7 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
 
             // 모델 중심/최저점은 로드 시점(회전 전) 기준이라 회전하면 어긋난다.
             // 현재 회전·스케일이 반영된 월드 AABB로 수평 중심을 유지하고, 바닥 고정 시 최저점을 다시 접지한다.
-            if let bounds = hierarchyBounds(of: modelContainer, relativeTo: nil) {
+            if let bounds = worldModelBounds() {
                 modelContainer.position.x += Float(transform.xPosition) - (bounds.min.x + bounds.max.x) / 2
                 modelContainer.position.z += Float(transform.zPosition) - (bounds.min.z + bounds.max.z) / 2
                 if floorSnap {
@@ -367,28 +370,104 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
         private func replaceModel(with node: SCNNode) {
             modelContainer.childNodes.forEach { $0.removeFromParentNode() }
             modelContainer.addChildNode(node)
+            modelLocalBounds = hierarchyBounds(of: modelContainer, relativeTo: modelContainer)
+        }
+
+        /// 캐시한 로컬 AABB의 8개 꼭짓점을 현재 컨테이너 변환(회전·스케일·위치)으로 월드에 투영한 AABB.
+        private func worldModelBounds() -> (min: SCNVector3, max: SCNVector3)? {
+            guard let local = modelLocalBounds else { return nil }
+            var lower = SCNVector3(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude)
+            var upper = SCNVector3(-Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude)
+            for x in [local.min.x, local.max.x] {
+                for y in [local.min.y, local.max.y] {
+                    for z in [local.min.z, local.max.z] {
+                        let point = modelContainer.convertPosition(SCNVector3(x, y, z), to: nil)
+                        lower.x = min(lower.x, point.x)
+                        lower.y = min(lower.y, point.y)
+                        lower.z = min(lower.z, point.z)
+                        upper.x = max(upper.x, point.x)
+                        upper.y = max(upper.y, point.y)
+                        upper.z = max(upper.z, point.z)
+                    }
+                }
+            }
+            return (lower, upper)
         }
 
         private func makeFloor() -> SCNNode {
-            let floor = SCNFloor()
-            floor.reflectivity = 0
+            // SCNFloor는 반사 패스를 항상 구성해 reflectivity 0이면
+            // "Pass FloorPass is not linked to the rendering graph" 콘솔 경고를 남긴다.
+            // 반사를 쓰지 않으므로 넓은 평면으로 대체한다. (경고 제거 + 렌더 비용 절감)
+            let plane = SCNPlane(width: 80, height: 80)
             let material = SCNMaterial()
             material.diffuse.contents = UIColor { traits in
                 UIColor(hexString: traits.userInterfaceStyle == .dark ? "#2A3436" : "#F2EDE6")
             }
             material.roughness.contents = 1
-            floor.materials = [material]
-            return SCNNode(geometry: floor)
+            material.isDoubleSided = true
+            plane.materials = [material]
+            let node = SCNNode(geometry: plane)
+            node.eulerAngles.x = -Float.pi / 2
+            return node
         }
 
         private func makeGrid() -> SCNNode {
             let node = SCNNode()
-            let color = UIColor(red: 0.60, green: 0.48, blue: 0.36, alpha: 0.24)
-            for index in -8...8 {
+            // 고정 브라운 톤은 다크 모드 바닥(#2A3436) 위에서 거의 보이지 않아 모드별로 나눈다.
+            // 1m 주요선은 진하게, 0.5m 보조선은 연하게 구분해 바닥 스케일이 읽히게 한다.
+            let minor = UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? UIColor(hexString: "#93A19D").withAlphaComponent(0.22)
+                    : UIColor(red: 0.60, green: 0.48, blue: 0.36, alpha: 0.20)
+            }
+            let major = UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? UIColor(hexString: "#93A19D").withAlphaComponent(0.42)
+                    : UIColor(red: 0.52, green: 0.40, blue: 0.28, alpha: 0.40)
+            }
+            for index in -8...8 where index != 0 {
                 let value = Float(index) * 0.5
+                let color = index.isMultiple(of: 2) ? major : minor
                 node.addChildNode(line(from: SCNVector3(value, 0.002, -4), to: SCNVector3(value, 0.002, 4), color: color))
                 node.addChildNode(line(from: SCNVector3(-4, 0.002, value), to: SCNVector3(4, 0.002, value), color: color))
             }
+
+            // 원점(0,0,0)이 어디인지 보이도록: X축(빨강)·Z축(파랑) 중심선 + 원점 마커.
+            node.addChildNode(axisFloorLine(alongX: true, color: UIColor.systemRed.withAlphaComponent(0.55)))
+            node.addChildNode(axisFloorLine(alongX: false, color: UIColor.systemBlue.withAlphaComponent(0.55)))
+            node.addChildNode(originMarker())
+            return node
+        }
+
+        /// 바닥 위 원점을 지나는 축 표시선. 1px 라인보다 잘 보이도록 얇은 박스로 그린다.
+        private func axisFloorLine(alongX: Bool, color: UIColor) -> SCNNode {
+            let box = SCNBox(
+                width: alongX ? 8 : 0.012,
+                height: 0.002,
+                length: alongX ? 0.012 : 8,
+                chamferRadius: 0
+            )
+            let material = SCNMaterial()
+            material.diffuse.contents = color
+            material.lightingModel = .constant
+            box.materials = [material]
+            let node = SCNNode(geometry: box)
+            node.position = SCNVector3(0, 0.003, 0)
+            return node
+        }
+
+        private func originMarker() -> SCNNode {
+            let disc = SCNCylinder(radius: 0.045, height: 0.006)
+            let material = SCNMaterial()
+            material.diffuse.contents = UIColor { traits in
+                traits.userInterfaceStyle == .dark
+                    ? UIColor(hexString: "#F3EDE3")
+                    : UIColor(hexString: "#5C3D2E")
+            }
+            material.lightingModel = .constant
+            disc.materials = [material]
+            let node = SCNNode(geometry: disc)
+            node.position = SCNVector3(0, 0.004, 0)
             return node
         }
 
@@ -399,6 +478,8 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
             let geometry = SCNGeometry(sources: [source], elements: [element])
             let material = SCNMaterial()
             material.diffuse.contents = color
+            // 라인은 법선이 없어 조명을 받으면 검게 묻힌다. 지정한 색 그대로 그리도록 조명을 끈다.
+            material.lightingModel = .constant
             geometry.materials = [material]
             return SCNNode(geometry: geometry)
         }

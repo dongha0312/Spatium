@@ -1,3 +1,4 @@
+import Photos
 import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
@@ -7,7 +8,11 @@ struct ImgTo3DView: View {
     @State private var step: ImgTo3DStep = .upload
     @State private var photoItem: PhotosPickerItem?
     @State private var image: UIImage?
+    /// 서버 전송용으로 정규화된 이미지(HEIC → PNG 변환 포함).
+    @State private var uploadImage: ImgTo3DUploadImage.Normalized?
     @State private var showCamera = false
+    @State private var showPhotoGallery = false
+    @State private var showPhotoPermissionAlert = false
 
     @State private var objectName = ""
     @State private var normalizedName: ImgTo3DNormalizedName?
@@ -75,6 +80,11 @@ struct ImgTo3DView: View {
             }
             .ignoresSafeArea()
         }
+        .sheet(isPresented: $showPhotoGallery) {
+            GalleryPickerSheet { item in
+                photoItem = item
+            }
+        }
         .fileImporter(
             isPresented: $showModelImporter,
             allowedContentTypes: [UTType(filenameExtension: "glb") ?? .data],
@@ -95,8 +105,22 @@ struct ImgTo3DView: View {
         } message: {
             Text(alertMessage ?? "")
         }
+        .alert("사진 접근 권한이 필요해요", isPresented: $showPhotoPermissionAlert) {
+            Button("설정 열기") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("취소", role: .cancel) {}
+        } message: {
+            Text("가구 사진을 선택하려면 설정에서 Spatium의 사진 접근을 허용해주세요.")
+        }
         #if DEBUG
         .onAppear {
+            // 스크린샷 검증용: 권한 요청을 포함한 갤러리 열기 흐름을 바로 실행한다.
+            if ProcessInfo.processInfo.arguments.contains("-UITestImgTo3DGallery") {
+                openGalleryWithPermission()
+            }
             // 스크린샷 검증용: -UITestImgTo3DGLB <경로> 로 지정한 GLB를 바로 보정 단계에서 연다.
             // -UITestImgTo3DRotX <도> 를 함께 주면 X축 회전을 미리 적용한 상태로 시작한다(수동 축 보정 재현).
             let args = ProcessInfo.processInfo.arguments
@@ -150,11 +174,20 @@ struct ImgTo3DView: View {
                         }
                     }
                     .frame(width: 19, height: 19)
+                    .overlay {
+                        // 완료·현재 단계가 같은 색이라 구분이 안 되던 것 — 현재 단계에만 옅은 링을 두른다.
+                        if item == step {
+                            Circle()
+                                .stroke(SpatiumTheme.accent.opacity(0.35), lineWidth: 2.5)
+                                .padding(-3)
+                        }
+                    }
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel("\(item.rawValue + 1)단계, \(item.title)")
                     .accessibilityAddTraits(item == step ? .isSelected : [])
                 }
             }
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: step)
         }
         .padding(.horizontal, 13)
         .padding(.vertical, 9)
@@ -184,6 +217,7 @@ struct ImgTo3DView: View {
         ) {
             if let image {
                 VStack(spacing: 14) {
+                    Spacer(minLength: 0)
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
@@ -191,22 +225,26 @@ struct ImgTo3DView: View {
                         .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
                         .accessibilityLabel("선택한 가구 사진")
-                    PhotosPicker(selection: $photoItem, matching: .images) {
-                        Label("다른 사진 선택", systemImage: "arrow.triangle.2.circlepath")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 15)
-                            .background(SpatiumTheme.warmPanel)
-                            .foregroundStyle(SpatiumTheme.accent)
-                            .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
-                            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                    if uploadImage?.convertedFromIncompatibleFormat == true {
+                        Label("HEIC 사진을 인식 가능한 PNG로 자동 변환했어요", systemImage: "checkmark.seal.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(SpatiumTheme.success)
+                    }
+                    Spacer(minLength: 0)
+                    SecondaryButton(title: "다른 사진 선택", systemImage: "arrow.triangle.2.circlepath") {
+                        openGalleryWithPermission()
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(spacing: 16) {
+                    Spacer(minLength: 0)
                     Image(systemName: "photo.on.rectangle.angled")
-                        .font(.system(size: 44, weight: .medium))
-                        .foregroundStyle(SpatiumTheme.accentLight)
+                        .font(.system(size: 34, weight: .semibold))
+                        .foregroundStyle(SpatiumTheme.accent)
+                        .frame(width: 84, height: 84)
+                        .background(SpatiumTheme.accent.opacity(0.1), in: Circle())
+                        .overlay(Circle().stroke(SpatiumTheme.accent.opacity(0.16), lineWidth: 1))
                     VStack(spacing: 5) {
                         Text("사진 한 장을 선택하세요")
                             .font(.headline.weight(.black))
@@ -215,10 +253,12 @@ struct ImgTo3DView: View {
                             .font(.caption)
                             .foregroundStyle(SpatiumTheme.soft)
                     }
+                    Spacer(minLength: 0)
                     HStack(spacing: 10) {
-                        PhotosPicker(selection: $photoItem, matching: .images) {
+                        Button { openGalleryWithPermission() } label: {
                             PickerActionLabel(title: "사진 보관함", systemImage: "photo.stack")
                         }
+                        .buttonStyle(.pressable)
                         if UIImagePickerController.isSourceTypeAvailable(.camera) {
                             Button { showCamera = true } label: {
                                 PickerActionLabel(title: "카메라", systemImage: "camera.fill")
@@ -227,9 +267,9 @@ struct ImgTo3DView: View {
                         }
                     }
                 }
-                .padding(.vertical, 30)
+                .padding(.vertical, 24)
                 .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(SpatiumTheme.warmPanel.opacity(0.65))
                 .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
                 .overlay {
@@ -300,7 +340,7 @@ struct ImgTo3DView: View {
         ) {
             if isDetecting {
                 LoadingNote(text: "GroundingDINO가 “\(normalizedName?.english ?? "가구")” 객체를 찾고 있어요…")
-                    .padding(.vertical, 40)
+                    .frame(maxHeight: .infinity)
             } else if let image {
                 VStack(spacing: 12) {
                     DetectionImage(
@@ -331,7 +371,7 @@ struct ImgTo3DView: View {
         ) {
             if !segmentationReady {
                 LoadingNote(text: "SAM2가 선택한 가구를 분리하고 있어요…")
-                    .padding(.vertical, 40)
+                    .frame(maxHeight: .infinity)
             } else if let image, let detection = selectedDetection {
                 VStack(spacing: 14) {
                     SegmentationImage(image: image, detection: detection, showOriginal: showOriginal)
@@ -442,12 +482,11 @@ struct ImgTo3DView: View {
             } label: {
                 Label("자동 보정", systemImage: "wand.and.stars")
                     .font(.caption.weight(.black))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(SpatiumTheme.onCta)
                     .padding(.horizontal, 12)
                     .frame(height: 34)
-                    .background(LinearGradient(colors: [SpatiumTheme.accentLight, SpatiumTheme.accent], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .background(SpatiumTheme.ctaFill)
                     .clipShape(Capsule())
-                    .shadow(color: SpatiumTheme.accent.opacity(0.2), radius: 6, y: 3)
             }
             .buttonStyle(.pressable)
 
@@ -455,15 +494,6 @@ struct ImgTo3DView: View {
 
             CorrectionIconButton(systemImage: "arrow.uturn.backward", label: "실행 취소", enabled: !undoHistory.isEmpty, action: undoCorrection)
             CorrectionIconButton(systemImage: "arrow.uturn.forward", label: "다시 실행", enabled: !redoHistory.isEmpty, action: redoCorrection)
-            // "magnet" 심볼은 SF Symbols에 없어 빈 아이콘으로 렌더링됨 — 격자 스냅 의미의 그리드 아이콘 사용.
-            CorrectionIconButton(
-                systemImage: snapEnabled ? "square.grid.3x3.fill" : "square.grid.3x3",
-                label: snapEnabled ? "스냅 끄기" : "스냅 켜기",
-                enabled: true
-            ) {
-                snapEnabled.toggle()
-                Haptics.selection()
-            }
 
             Menu {
                 Button("GLB 파일 불러오기", systemImage: "doc.badge.plus") { showModelImporter = true }
@@ -510,6 +540,7 @@ struct ImgTo3DView: View {
         .frame(maxHeight: .infinity)
         .frame(minHeight: 185)
         .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
         .overlay(alignment: .bottom) {
             Label(viewerHint, systemImage: viewerMode.hintSystemImage)
                 .font(.caption2.weight(.bold))
@@ -656,9 +687,13 @@ struct ImgTo3DView: View {
     private var saveStep: some View {
         if saved {
             VStack(spacing: 14) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 64, weight: .bold))
+                Spacer(minLength: 0)
+                Image(systemName: "checkmark")
+                    .font(.system(size: 36, weight: .black))
                     .foregroundStyle(SpatiumTheme.success)
+                    .frame(width: 88, height: 88)
+                    .background(SpatiumTheme.success.opacity(0.12), in: Circle())
+                    .overlay(Circle().stroke(SpatiumTheme.success.opacity(0.2), lineWidth: 1))
                     .symbolEffect(.bounce, value: saved)
                 Text("가구 목록에 추가했어요!")
                     .font(.title2.weight(.black))
@@ -667,14 +702,15 @@ struct ImgTo3DView: View {
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(SpatiumTheme.soft)
+                Spacer(minLength: 0)
                 PrimaryButton(
                     title: "새 모델 만들기",
                     systemImage: "plus.square.on.square",
                     action: resetWizard
                 )
-                .padding(.top, 8)
             }
-            .padding(.vertical, 26)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             StepShell(
                 systemImage: "square.and.arrow.down.fill",
@@ -755,13 +791,13 @@ struct ImgTo3DView: View {
                         .background(SpatiumTheme.elevatedSurface, in: Circle())
                     Text("이전")
                 }
-                    .font(.headline)
+                    .font(.system(size: 16, weight: .bold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
+                    .padding(.vertical, 12)
                     .background(SpatiumTheme.warmPanel)
                     .foregroundStyle(SpatiumTheme.accent)
-                    .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                    .overlay(Capsule().stroke(SpatiumTheme.border, lineWidth: 1))
+                    .clipShape(Capsule())
                     .opacity(step.previous == nil ? 0.35 : 1)
             }
             .buttonStyle(.pressable)
@@ -777,16 +813,15 @@ struct ImgTo3DView: View {
                         Text("다음")
                         Image(systemName: "chevron.right")
                             .frame(width: 27, height: 27)
-                            .background(.white.opacity(0.18), in: Circle())
+                            .background(SpatiumTheme.onCta.opacity(0.16), in: Circle())
                     }
-                    .font(.headline)
+                    .font(.system(size: 16, weight: .bold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 11)
-                    .background(LinearGradient(colors: [SpatiumTheme.accentLight, SpatiumTheme.accent], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
-                    .opacity(canAdvance ? 1 : 0.45)
-                    .saturation(canAdvance ? 1 : 0.6)
+                    .padding(.vertical, 12)
+                    .background(SpatiumTheme.ctaFill)
+                    .foregroundStyle(SpatiumTheme.onCta)
+                    .clipShape(Capsule())
+                    .opacity(canAdvance ? 1 : 0.4)
                 }
                 .buttonStyle(.pressable)
                 .disabled(!canAdvance)
@@ -828,6 +863,29 @@ struct ImgTo3DView: View {
         return String(format: "%.2fm × %.2fm × %.2fm", modelSize.width * scale, modelSize.height * scale, modelSize.depth * scale)
     }
 
+    /// 사진 보관함 접근 권한을 확인/요청한 뒤 갤러리 선택 시트를 연다.
+    /// 처음이면 시스템 권한 대화상자가 뜨고, 이미 거부된 상태면 설정으로 안내한다.
+    private func openGalleryWithPermission() {
+        switch PHPhotoLibrary.authorizationStatus(for: .readWrite) {
+        case .authorized, .limited:
+            showPhotoGallery = true
+        case .notDetermined:
+            PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+                Task { @MainActor in
+                    if status == .authorized || status == .limited {
+                        showPhotoGallery = true
+                    } else {
+                        showPhotoPermissionAlert = true
+                    }
+                }
+            }
+        case .denied, .restricted:
+            showPhotoPermissionAlert = true
+        @unknown default:
+            showPhotoPermissionAlert = true
+        }
+    }
+
     private func loadPhoto(_ item: PhotosPickerItem) async {
         guard let data = try? await item.loadTransferable(type: Data.self),
               let loadedImage = UIImage(data: data) else {
@@ -835,10 +893,10 @@ struct ImgTo3DView: View {
             Haptics.error()
             return
         }
-        setImage(loadedImage)
+        setImage(loadedImage, rawData: data)
     }
 
-    private func setImage(_ newImage: UIImage) {
+    private func setImage(_ newImage: UIImage, rawData: Data? = nil) {
         image = newImage
         normalizedName = nil
         detections = []
@@ -846,6 +904,17 @@ struct ImgTo3DView: View {
         segmentationReady = false
         resetGeneratedModelState()
         Haptics.success()
+
+        // PNG 인코딩은 수백 ms 걸릴 수 있어 백그라운드에서 처리한다.
+        uploadImage = nil
+        Task.detached(priority: .userInitiated) {
+            let normalized = ImgTo3DUploadImage.normalize(image: newImage, rawData: rawData)
+            await MainActor.run {
+                // 처리 중에 다른 사진으로 바뀌었으면 결과를 버린다.
+                guard image == newImage else { return }
+                uploadImage = normalized
+            }
+        }
     }
 
     /// 사진·이름·선택 객체가 바뀌면 그 입력으로 만들었던 이후 결과는 모두 무효입니다.
@@ -1029,6 +1098,7 @@ struct ImgTo3DView: View {
         step = .upload
         photoItem = nil
         image = nil
+        uploadImage = nil
         objectName = ""
         normalizedName = nil
         detections = []
@@ -1085,6 +1155,52 @@ private struct StepShell<Content: View>: View {
     }
 }
 
+/// 갤러리형 사진 선택 시트. 시스템 단일 선택 피커는 한 번 탭하면 바로 확정돼
+/// 잘못 누른 사진이 그대로 진행되므로, 인라인 피커(연속 선택)로 체크 표시를 확인한 뒤
+/// 하단 버튼으로 확정하는 2단계 선택을 제공한다.
+private struct GalleryPickerSheet: View {
+    var onPicked: (PhotosPickerItem) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selection: [PhotosPickerItem] = []
+
+    var body: some View {
+        NavigationStack {
+            PhotosPicker(
+                selection: $selection,
+                maxSelectionCount: 1,
+                selectionBehavior: .continuous,
+                matching: .images
+            ) {
+                Text("사진 보관함")
+            }
+            .photosPickerStyle(.inline)
+            .photosPickerDisabledCapabilities(.selectionActions)
+            .photosPickerAccessoryVisibility(.hidden, edges: .bottom)
+            .navigationTitle("사진 선택")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("취소") { dismiss() }
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(SpatiumTheme.accent)
+                }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                PrimaryButton(title: "이 사진 사용", systemImage: "checkmark") {
+                    guard let item = selection.first else { return }
+                    onPicked(item)
+                    dismiss()
+                }
+                .disabled(selection.isEmpty)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 10)
+                .background(.thinMaterial)
+            }
+        }
+    }
+}
+
 /// PhotosPicker처럼 Button이 아닌 컨테이너에서도 PrimaryButton과 같은 모습을 내는 라벨.
 private struct PickerActionLabel: View {
     let title: String
@@ -1092,12 +1208,12 @@ private struct PickerActionLabel: View {
 
     var body: some View {
         Label(title, systemImage: systemImage)
-            .font(.headline)
-            .foregroundStyle(.white)
+            .font(.system(size: 16, weight: .bold))
+            .foregroundStyle(SpatiumTheme.onCta)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 15)
-            .background(LinearGradient(colors: [SpatiumTheme.accentLight, SpatiumTheme.accent], startPoint: .topLeading, endPoint: .bottomTrailing))
-            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+            .padding(.vertical, 16)
+            .background(SpatiumTheme.ctaFill)
+            .clipShape(Capsule())
     }
 }
 
@@ -1184,6 +1300,7 @@ private struct DetectionImage: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
     }
 }
 
@@ -1256,18 +1373,12 @@ private struct ModelModeButton: View {
         Button(action: action) {
             Label(mode.rawValue, systemImage: icon)
                 .font(.caption.weight(.black))
-                .foregroundStyle(isSelected ? .white : SpatiumTheme.accent)
+                .foregroundStyle(isSelected ? SpatiumTheme.onCta : SpatiumTheme.accent)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 9)
-                .background {
-                    if isSelected {
-                        LinearGradient(colors: [SpatiumTheme.accentLight, SpatiumTheme.accent], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    } else {
-                        SpatiumTheme.warmPanel
-                    }
-                }
-                .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.sm).stroke(isSelected ? .white.opacity(0.25) : SpatiumTheme.border, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous))
+                .background(isSelected ? SpatiumTheme.ctaFill : SpatiumTheme.warmPanel)
+                .overlay(Capsule().stroke(isSelected ? .clear : SpatiumTheme.border, lineWidth: 1))
+                .clipShape(Capsule())
         }
         .buttonStyle(.pressable)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -1357,10 +1468,10 @@ private struct AxisButton: View {
         Button(action: action) {
             Text(axis)
                 .font(.caption2.monospaced().weight(.black))
-                .foregroundStyle(isSelected ? .white : SpatiumTheme.accent)
+                .foregroundStyle(isSelected ? SpatiumTheme.onCta : SpatiumTheme.accent)
                 .frame(width: 27, height: 27)
-                .background(isSelected ? SpatiumTheme.accent : SpatiumTheme.elevatedSurface, in: Circle())
-                .overlay(Circle().stroke(isSelected ? .white.opacity(0.3) : SpatiumTheme.border, lineWidth: 1))
+                .background(isSelected ? SpatiumTheme.ctaFill : SpatiumTheme.elevatedSurface, in: Circle())
+                .overlay(Circle().stroke(isSelected ? .clear : SpatiumTheme.border, lineWidth: 1))
         }
         .buttonStyle(.pressable)
         .accessibilityLabel("\(axis)축")

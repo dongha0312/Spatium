@@ -297,11 +297,11 @@ private struct ExportCard: View {
                                 .font(.subheadline.weight(.black))
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                    .background(SpatiumTheme.accent)
-                    .foregroundStyle(.white)
-                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 15)
+                    .background(SpatiumTheme.ctaFill)
+                    .foregroundStyle(SpatiumTheme.onCta)
+                    .clipShape(Capsule())
                 }
                 .buttonStyle(.pressable)
                 .disabled(exporting || uploading)
