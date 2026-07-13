@@ -389,25 +389,27 @@ function ImgTo3dPage() {
           {stepViews[step]}
 
           <footer className="it3-footer">
-        <button
-          type="button"
-          className="it3-btn-ghost"
-          disabled={step === 0}
-          onClick={() => setStep((current) => Math.max(current - 1, 0))}
-        >
-          ← 이전
-        </button>
-        {step < STEP_LABELS.length - 1 && step !== 4 && (
-          <button
-            type="button"
-            className="it3-btn-prim"
-            disabled={!canNext}
-            onClick={() => setStep((current) => current + 1)}
-          >
-            다음 →
-          </button>
-        )}
-      </footer>
+            <button
+              type="button"
+              className="it3-btn-ghost"
+              disabled={step === 0}
+              onClick={() => setStep((current) => Math.max(current - 1, 0))}
+            >
+              ← 이전
+            </button>
+            {step < STEP_LABELS.length - 1 && step !== 4 && (
+              <button
+                type="button"
+                className="it3-btn-prim"
+                disabled={!canNext}
+                onClick={() => setStep((current) => current + 1)}
+              >
+                다음 →
+              </button>
+            )}
+          </footer>
+        </div>
+      </main>
 
       <Footer />
 
