@@ -176,9 +176,6 @@ function LoginPage({ onLoginSuccess }) {
                 placeholder="비밀번호 입력"
                 onChange={(e) => setPw(e.target.value)}
               />
-              <div className="lg-form-hint">
-                <button type="button">비밀번호를 잊으셨나요?</button>
-              </div>
             </div>
 
             <div className="lg-check-row">

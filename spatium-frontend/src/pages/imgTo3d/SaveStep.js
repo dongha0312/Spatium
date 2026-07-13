@@ -73,7 +73,7 @@ function SaveStep({ objectName, normalizedName, correctedModel }) {
 
   if (saved) {
     return (
-      <div className="it3-step it3-done">
+      <div className="it3-step it3-save-step it3-done">
         <div className="it3-done-icon">✓</div>
         <h2 className="it3-step-title">가구를 저장했어요!</h2>
         <p className="it3-step-desc">
@@ -84,7 +84,7 @@ function SaveStep({ objectName, normalizedName, correctedModel }) {
   }
 
   return (
-    <div className="it3-step">
+    <div className="it3-step it3-save-step">
       <h2 className="it3-step-title">마지막으로 확인해주세요</h2>
       <p className="it3-step-desc">보정한 GLB와 가구 정보를 내 가구로 저장합니다.</p>
 
