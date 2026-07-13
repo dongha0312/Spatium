@@ -885,6 +885,67 @@
   max-width: 480px;
 }
 
+.it3-pipeline-config {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  max-width: none;
+  margin-top: 18px;
+}
+
+.it3-config-section {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  background: var(--bg);
+}
+
+.it3-config-title {
+  margin: 0;
+  font-size: 15px;
+  color: var(--t);
+}
+
+.it3-config-section .it3-hint {
+  margin-top: 0;
+  line-height: 1.5;
+}
+
+.it3-option-readonly {
+  padding: 11px 14px;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--sur);
+  font-size: 14px;
+  color: var(--t2);
+}
+
+.it3-inline-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.it3-config-preview {
+  margin: auto 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--bd);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--t2);
+}
+
+@media (max-width: 720px) {
+  .it3-pipeline-config,
+  .it3-inline-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
 .it3-field {
   display: flex;
   flex-direction: column;

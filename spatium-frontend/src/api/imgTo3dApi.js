@@ -50,8 +50,8 @@ export async function removeBackground({ image, objectQuery, segmentationProvide
   formData.append("segmentation_provider", segmentationProvider);
   if (segmentationProvider === "grounded_sam2") {
     formData.append("object_query", objectQuery);
-  } else if (/^[a-z][a-z\s-]*$/i.test(objectQuery)) {
-    formData.append("target_class", objectQuery.toLowerCase());
+  } else {
+    formData.append("target_class", "auto");
   }
 
   const response = await imageTo3dApi.post("/v1/remove-background", formData, { signal });
@@ -76,17 +76,24 @@ export async function removeBackground({ image, objectQuery, segmentationProvide
   };
 }
 
-export async function generateModel({ image, provider, signal }) {
+export async function generateModel({
+  image,
+  provider,
+  mcResolution = "256",
+  textureResolution = "1024",
+  remesh = "none",
+  signal,
+}) {
   const formData = new FormData();
   formData.append("image", image);
   formData.append("provider", provider);
   formData.append("remove_background", "false");
   formData.append("foreground_ratio", "0.85");
   if (provider === "local_stable_fast_3d") {
-    formData.append("texture_resolution", "1024");
-    formData.append("remesh", "none");
+    formData.append("texture_resolution", String(textureResolution));
+    formData.append("remesh", remesh);
   } else {
-    formData.append("mc_resolution", "256");
+    formData.append("mc_resolution", String(mcResolution));
   }
 
   const response = await imageTo3dApi.post("/v1/image-to-3d", formData, { signal });

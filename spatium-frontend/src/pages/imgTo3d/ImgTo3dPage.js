@@ -16,6 +16,9 @@ function ImgTo3dPage() {
   const [objectName, setObjectName] = useState("");
   const [segmentationProvider, setSegmentationProvider] = useState("grounded_sam2");
   const [generationProvider, setGenerationProvider] = useState("local_triposr");
+  const [mcResolution, setMcResolution] = useState("256");
+  const [textureResolution, setTextureResolution] = useState("1024");
+  const [remesh, setRemesh] = useState("none");
   const [segmentationResult, setSegmentationResult] = useState(null);
   const [segmentationStatus, setSegmentationStatus] = useState("idle");
   const [segmentationError, setSegmentationError] = useState("");
@@ -90,6 +93,30 @@ function ImgTo3dPage() {
     [resetGenerationResult],
   );
 
+  const handleMcResolutionChange = useCallback(
+    (next) => {
+      setMcResolution(next);
+      resetGenerationResult();
+    },
+    [resetGenerationResult],
+  );
+
+  const handleTextureResolutionChange = useCallback(
+    (next) => {
+      setTextureResolution(next);
+      resetGenerationResult();
+    },
+    [resetGenerationResult],
+  );
+
+  const handleRemeshChange = useCallback(
+    (next) => {
+      setRemesh(next);
+      resetGenerationResult();
+    },
+    [resetGenerationResult],
+  );
+
   useEffect(() => {
     return () => {
       cancelSegmentation();
@@ -138,6 +165,9 @@ function ImgTo3dPage() {
       const result = await generateModel({
         image: segmentationResult.file,
         provider: generationProvider,
+        mcResolution,
+        textureResolution,
+        remesh,
         signal: controller.signal,
       });
       if (generationRequestRef.current !== controller) return;
@@ -150,7 +180,14 @@ function ImgTo3dPage() {
     } finally {
       if (generationRequestRef.current === controller) generationRequestRef.current = null;
     }
-  }, [generatedAsset, generationProvider, segmentationResult]);
+  }, [
+    generatedAsset,
+    generationProvider,
+    mcResolution,
+    remesh,
+    segmentationResult,
+    textureResolution,
+  ]);
 
   const handleModelComplete = useCallback((result) => {
     setCorrectedModel(result);
@@ -175,6 +212,12 @@ function ImgTo3dPage() {
       onSegmentationProviderChange={handleSegmentationProviderChange}
       generationProvider={generationProvider}
       onGenerationProviderChange={handleGenerationProviderChange}
+      mcResolution={mcResolution}
+      onMcResolutionChange={handleMcResolutionChange}
+      textureResolution={textureResolution}
+      onTextureResolutionChange={handleTextureResolutionChange}
+      remesh={remesh}
+      onRemeshChange={handleRemeshChange}
     />,
     <SegmentationStep
       image={image}
