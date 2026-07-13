@@ -13,17 +13,23 @@ struct LoginView: View {
     @State private var password = ""
     @State private var isLoading = false
     @State private var errorMessage: String?
-    @State private var infoMessage: String?
     @State private var showSignUp = false
     @State private var pendingSocialSignUp: PendingSocialSignUp?
     @State private var appleRawNonce = ""
     @State private var googleService = GoogleSignInService()
+    /// 게스트로 만든 로컬 프로젝트 수. 로그인하면 서버 목록이 캐시를 덮어써
+    /// 사라지므로, 어떤 로그인 방식이든 진행하기 전에 미리 경고한다.
+    @State private var guestProjectsAtRisk = 0
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
                     header
+
+                    if guestProjectsAtRisk > 0 {
+                        guestDataWarning
+                    }
 
                     VStack(spacing: 12) {
                         AuthTextField(placeholder: "이메일", text: $email, keyboardType: .emailAddress, textContentType: .username, submitLabel: .next)
@@ -37,31 +43,12 @@ struct LoginView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
-                    if let infoMessage {
-                        Text(infoMessage)
-                            .font(.footnote)
-                            .foregroundStyle(SpatiumTheme.success)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
                     PrimaryButton(
                         title: isLoading ? "로그인 중..." : "로그인",
                         systemImage: "arrow.right",
                         action: login
                     )
                     .disabled(isLoading || email.isEmpty || password.isEmpty)
-
-                    Button {
-                        // 서버에 비밀번호 재설정 API가 아직 없다. 이메일을 받아 놓고 항상 실패하는
-                        // 요청을 보내는 대신, 준비 전임을 바로 안내한다. (서버 제공 시 시트 복원)
-                        errorMessage = nil
-                        infoMessage = "비밀번호 재설정은 아직 준비 중이에요. Apple/Google 로그인을 이용하거나 새 계정으로 가입해 주세요."
-                    } label: {
-                        Text("비밀번호를 잊으셨나요?")
-                            .font(.footnote)
-                            .foregroundStyle(SpatiumTheme.soft)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                    }
 
                     dividerWithLabel
 
@@ -111,6 +98,11 @@ struct LoginView: View {
                     dismiss()
                 }
             }
+            .onAppear {
+                guestProjectsAtRisk = AuthTokenStore.shared.isLoggedIn
+                    ? 0
+                    : ProjectStore.guestLocalProjectCount()
+            }
         }
     }
 
@@ -128,6 +120,25 @@ struct LoginView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(.bottom, 8)
+    }
+
+    /// 게스트 로컬 프로젝트가 로그인으로 사라지기 전에 보여주는 경고 배너.
+    private var guestDataWarning: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.subheadline)
+                .foregroundStyle(SpatiumTheme.coral)
+            Text("게스트로 만든 프로젝트 \(guestProjectsAtRisk)개는 계정으로 옮겨지지 않아요. 로그인하면 더 이상 볼 수 없습니다.")
+                .font(.footnote)
+                .foregroundStyle(SpatiumTheme.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(12)
+        .background(SpatiumTheme.coral.opacity(0.10), in: RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous)
+                .stroke(SpatiumTheme.coral.opacity(0.35), lineWidth: 1)
+        )
     }
 
     private var dividerWithLabel: some View {
@@ -174,7 +185,6 @@ struct LoginView: View {
     private func login() {
         isLoading = true
         errorMessage = nil
-        infoMessage = nil
 
         Task {
             do {

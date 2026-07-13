@@ -588,76 +588,65 @@ struct RoomEditorView: View {
 
             if let picker = activeSurfaceColorPicker {
                 surfaceColorPalette(for: picker)
-                    .offset(y: -58)
+                    .offset(y: -66)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .zIndex(1)
             }
         }
         // 팔레트가 떠도 bottom toolbar의 레이아웃 높이는 변하지 않는다.
-        .frame(height: 50)
+        .frame(height: 58)
         .zIndex(2)
         .animation(.easeOut(duration: 0.16), value: activeSurfaceColorPicker)
     }
 
     private var viewbarControls: some View {
-        HStack(spacing: 4) {
-            Button {
+        HStack(spacing: 2) {
+            viewbarButton(
+                icon: "cube.transparent",
+                title: "스카이뷰",
+                isActive: viewModel.isSkyview,
+                accessibilityLabel: "Skyview 보기"
+            ) {
                 viewModel.setViewMode(viewModel.isSkyview ? .threeD : .skyView)
                 activeSurfaceColorPicker = nil
-            } label: {
-                Image(systemName: "cube.transparent")
-                    .font(.subheadline)
-                    .foregroundStyle(viewModel.isSkyview ? SpatiumTheme.accent : SpatiumTheme.controlIcon)
-                    .frame(width: 38, height: 38)
-                    .background(viewModel.isSkyview ? SpatiumTheme.warmPanel : .clear, in: Circle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Skyview 보기")
 
-            Button {
+            viewbarButton(
+                icon: "figure.stand",
+                title: "사람 뷰",
+                isActive: viewModel.isPersonView,
+                accessibilityLabel: "사람 뷰로 방 안 둘러보기"
+            ) {
                 viewModel.setViewMode(viewModel.isPersonView ? .threeD : .person)
                 activeSurfaceColorPicker = nil
-            } label: {
-                Image(systemName: "figure.stand")
-                    .font(.subheadline)
-                    .foregroundStyle(viewModel.isPersonView ? SpatiumTheme.accent : SpatiumTheme.controlIcon)
-                    .frame(width: 38, height: 38)
-                    .background(viewModel.isPersonView ? SpatiumTheme.warmPanel : .clear, in: Circle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("사람 뷰로 방 안 둘러보기")
 
-            Rectangle().fill(SpatiumTheme.subtleDivider).frame(width: 1, height: 22)
+            Rectangle().fill(SpatiumTheme.subtleDivider).frame(width: 1, height: 26)
 
             surfaceColorButton(.wall)
             surfaceColorButton(.floor)
 
             if !viewModel.isPersonView {
-                Button {
+                viewbarButton(
+                    icon: "ruler",
+                    title: "측정",
+                    isActive: viewModel.isMeasuring,
+                    accessibilityLabel: "측정 옵션 표시"
+                ) {
                     viewModel.isMeasuring.toggle()
                     activeSurfaceColorPicker = nil
-                } label: {
-                    Image(systemName: "ruler")
-                        .font(.subheadline)
-                        .foregroundStyle(viewModel.isMeasuring ? SpatiumTheme.accent : SpatiumTheme.controlIcon)
-                        .frame(width: 38, height: 38)
-                        .background(viewModel.isMeasuring ? SpatiumTheme.warmPanel : .clear, in: Circle())
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("측정 옵션 표시")
             }
 
-            Button {
+            viewbarButton(
+                icon: "questionmark.circle",
+                title: "도움말",
+                isActive: false,
+                accessibilityLabel: "뷰 사용법 안내"
+            ) {
                 showViewHelp = true
                 activeSurfaceColorPicker = nil
-            } label: {
-                Image(systemName: "questionmark.circle")
-                    .font(.subheadline)
-                    .foregroundStyle(SpatiumTheme.controlIcon)
-                    .frame(width: 38, height: 38)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("뷰 사용법 안내")
         }
         .padding(6)
         .background(SpatiumTheme.elevatedSurface, in: Capsule())
@@ -665,20 +654,46 @@ struct RoomEditorView: View {
         .shadow(color: SpatiumTheme.shadow.opacity(0.22), radius: 14, y: 6)
     }
 
+    /// 아이콘 + 소형 라벨이 붙은 하단 툴바 버튼. 아이콘만으로는 기능 구분이 어렵다는
+    /// 피드백에 따라 모든 버튼에 이름을 붙인다.
+    private func viewbarButton(
+        icon: String,
+        title: String,
+        isActive: Bool,
+        accessibilityLabel: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.subheadline)
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .foregroundStyle(isActive ? SpatiumTheme.accent : SpatiumTheme.controlIcon)
+            .frame(width: 46, height: 46)
+            .background(
+                isActive ? SpatiumTheme.warmPanel : .clear,
+                in: RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
     private func surfaceColorButton(_ picker: SurfaceColorPicker) -> some View {
-        Button {
+        viewbarButton(
+            icon: picker.systemImage,
+            title: picker == .wall ? "벽 색" : "바닥 색",
+            isActive: activeSurfaceColorPicker == picker,
+            accessibilityLabel: picker == .wall ? "벽 색깔 바꾸기" : "바닥 색깔 바꾸기"
+        ) {
             withAnimation(.easeOut(duration: 0.16)) {
                 activeSurfaceColorPicker = activeSurfaceColorPicker == picker ? nil : picker
             }
-        } label: {
-            Image(systemName: picker.systemImage)
-                .font(.subheadline)
-                .foregroundStyle(activeSurfaceColorPicker == picker ? SpatiumTheme.accent : SpatiumTheme.controlIcon)
-                .frame(width: 38, height: 38)
-                .background(activeSurfaceColorPicker == picker ? SpatiumTheme.warmPanel : .clear, in: Circle())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(picker == .wall ? "벽 색깔 바꾸기" : "바닥 색깔 바꾸기")
     }
 
     private func surfaceColorPalette(for picker: SurfaceColorPicker) -> some View {
@@ -826,6 +841,15 @@ struct RoomEditorView: View {
 
     private var footer: some View {
         HStack(spacing: 8) {
+            // 오프라인이면 저장이 서버에 도달할 수 없으므로(프로젝트 없음 또는 방 데이터
+            // 미로드) 버튼을 비활성화하고, 눌러본 뒤에야 아는 대신 이유를 먼저 보여준다.
+            if viewModel.isOffline {
+                Text("오프라인 — 편집 내용이 서버에 저장되지 않아요")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(2)
+            }
+
             Spacer()
             Button {
                 dismiss()
@@ -849,14 +873,14 @@ struct RoomEditorView: View {
                         Text("저장하기").font(.caption.weight(.black))
                     }
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(.white.opacity(viewModel.isOffline ? 0.5 : 1))
                 .padding(.horizontal, 18)
                 .padding(.vertical, 8)
-                .background(SpatiumTheme.accent)
+                .background(SpatiumTheme.accent.opacity(viewModel.isOffline ? 0.45 : 1))
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
             .buttonStyle(.pressable)
-            .disabled(viewModel.isSaving)
+            .disabled(viewModel.isSaving || viewModel.isOffline)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)

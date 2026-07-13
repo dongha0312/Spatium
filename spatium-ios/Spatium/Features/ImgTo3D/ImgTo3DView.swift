@@ -858,29 +858,28 @@ struct ImgTo3DView: View {
 
     private var navigationActions: some View {
         HStack(spacing: 10) {
-            Button {
-                if let previous = step.previous {
+            // 첫 단계에서는 돌아갈 곳이 없으므로 비활성 버튼을 보여주지 않고 아예 숨긴다.
+            if let previous = step.previous {
+                Button {
                     Haptics.selection()
                     step = previous
+                } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: "chevron.left")
+                            .frame(width: 27, height: 27)
+                            .background(SpatiumTheme.elevatedSurface, in: Circle())
+                        Text("이전")
+                    }
+                        .font(.system(size: 16, weight: .bold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(SpatiumTheme.warmPanel)
+                        .foregroundStyle(SpatiumTheme.accent)
+                        .overlay(Capsule().stroke(SpatiumTheme.border, lineWidth: 1))
+                        .clipShape(Capsule())
                 }
-            } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "chevron.left")
-                        .frame(width: 27, height: 27)
-                        .background(SpatiumTheme.elevatedSurface, in: Circle())
-                    Text("이전")
-                }
-                    .font(.system(size: 16, weight: .bold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(SpatiumTheme.warmPanel)
-                    .foregroundStyle(SpatiumTheme.accent)
-                    .overlay(Capsule().stroke(SpatiumTheme.border, lineWidth: 1))
-                    .clipShape(Capsule())
-                    .opacity(step.previous == nil ? 0.35 : 1)
+                .buttonStyle(.pressable)
             }
-            .buttonStyle(.pressable)
-            .disabled(step.previous == nil)
 
             if let next = step.next {
                 Button {

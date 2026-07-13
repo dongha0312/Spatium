@@ -46,6 +46,17 @@ final class ProjectStore: ObservableObject {
         return directory.appendingPathComponent("projects.json")
     }
 
+    /// 게스트(비로그인)로 만들어져 아직 서버에 없는 로컬 프로젝트 수.
+    /// 로그인하면 서버 목록이 캐시를 덮어써 이 프로젝트들이 사라지므로,
+    /// 로그인 화면이 사전 경고를 띄우는 데 사용한다.
+    static func guestLocalProjectCount() -> Int {
+        guard let data = try? Data(contentsOf: defaultCacheFileURL()),
+              let cached = try? JSONDecoder.spatiumAPI.decode([SpatiumProject].self, from: data) else {
+            return 0
+        }
+        return cached.filter { $0.id.hasPrefix("local-") }.count
+    }
+
     /// 서버에서 최신 프로젝트 목록을 받아옵니다. 실패 시 기존(캐시/로컬)을 유지합니다.
     func refresh(silently: Bool = false) async {
         guard AuthTokenStore.shared.isLoggedIn, !isRefreshing else { return }
