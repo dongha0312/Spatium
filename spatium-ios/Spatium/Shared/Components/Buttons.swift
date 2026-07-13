@@ -26,23 +26,16 @@ struct PrimaryButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.headline)
+                .font(.system(size: 16, weight: .bold))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
-                .background(
-                    LinearGradient(
-                        colors: [SpatiumTheme.accentLight, SpatiumTheme.accent],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .foregroundStyle(.white)
-                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
-                .opacity(isEnabled ? 1 : 0.45)
-                .saturation(isEnabled ? 1 : 0.6)
+                .padding(.vertical, 16)
+                .background(SpatiumTheme.ctaFill)
+                .foregroundStyle(SpatiumTheme.onCta)
+                .clipShape(Capsule())
+                .opacity(isEnabled ? 1 : 0.4)
         }
         .buttonStyle(.pressable)
-        .contentShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+        .contentShape(Capsule())
     }
 }
 
@@ -62,9 +55,9 @@ struct ActionCTAButton: View {
             HStack(spacing: 13) {
                 Image(systemName: systemImage)
                     .font(.title3.weight(.bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(SpatiumTheme.onCta)
                     .frame(width: 48, height: 48)
-                    .background(.white.opacity(0.18))
+                    .background(SpatiumTheme.onCta.opacity(0.14))
                     .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous))
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -72,37 +65,26 @@ struct ActionCTAButton: View {
                         .font(.headline.weight(.black))
                     Text(subtitle)
                         .font(.caption.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.82))
+                        .foregroundStyle(SpatiumTheme.onCta.opacity(0.78))
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(SpatiumTheme.onCta)
 
                 Spacer(minLength: 4)
 
                 Image(systemName: "arrow.right")
                     .font(.subheadline.weight(.black))
-                    .foregroundStyle(tint)
+                    .foregroundStyle(SpatiumTheme.ctaFill)
                     .frame(width: 34, height: 34)
-                    .background(.white, in: Circle())
+                    .background(SpatiumTheme.onCta, in: Circle())
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(
-                    colors: [tint, tint.opacity(0.72)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous)
-                    .stroke(.white.opacity(0.22), lineWidth: 1)
-            )
+            .background(SpatiumTheme.ctaFill)
             .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
-            .shadow(color: tint.opacity(0.22), radius: 12, y: 6)
-            .opacity(isEnabled ? 1 : 0.45)
-            .saturation(isEnabled ? 1 : 0.6)
+            .shadow(color: SpatiumTheme.ctaFill.opacity(0.2), radius: 12, y: 6)
+            .opacity(isEnabled ? 1 : 0.4)
         }
         .buttonStyle(.pressable)
         .contentShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
@@ -120,16 +102,16 @@ struct SecondaryButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .font(.headline)
+                .font(.system(size: 16, weight: .bold))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 15)
+                .padding(.vertical, 16)
                 .background(SpatiumTheme.warmPanel)
                 .foregroundStyle(SpatiumTheme.accent)
-                .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
-                .opacity(isEnabled ? 1 : 0.45)
+                .overlay(Capsule().stroke(SpatiumTheme.border, lineWidth: 1))
+                .clipShape(Capsule())
+                .opacity(isEnabled ? 1 : 0.4)
         }
         .buttonStyle(.pressable)
-        .contentShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+        .contentShape(Capsule())
     }
 }

@@ -21,6 +21,7 @@ struct ScanEditSceneView: UIViewRepresentable {
         view.scene = context.coordinator.buildScene(items: items, usdzURL: usdzURL)
         view.allowsCameraControl = true
         view.pointOfView = context.coordinator.cameraNode
+        lockCameraRoll(view)
 
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
         view.addGestureRecognizer(tap)
@@ -48,6 +49,15 @@ struct ScanEditSceneView: UIViewRepresentable {
         let hasSelection = selectedItemID != nil
         view.allowsCameraControl = !hasSelection
         coordinator.movePanGesture?.isEnabled = hasSelection
+        lockCameraRoll(view)
+    }
+
+    /// SceneKit 기본 카메라 컨트롤의 두 손가락 비틀기(roll) 제스처를 끕니다.
+    /// 시점 초기화 수단이 없는 이 화면에서 화면이 옆으로 누우면 복구할 방법이 없습니다.
+    private func lockCameraRoll(_ view: SCNView) {
+        view.gestureRecognizers?
+            .compactMap { $0 as? UIRotationGestureRecognizer }
+            .forEach { $0.isEnabled = false }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -113,7 +123,8 @@ struct ScanEditSceneView: UIViewRepresentable {
             cameraNode.camera = camera
             let extent = Self.horizontalExtent(of: items)
             cameraNode.position = SCNVector3(extent * 0.9, extent * 0.85, extent * 1.25)
-            cameraNode.look(at: SCNVector3(0, 0.5, 0))
+            // look(at:)만 쓰면 기존 기울기(roll)를 유지하므로 up 벡터를 명시해 수평을 보장한다.
+            cameraNode.look(at: SCNVector3(0, 0.5, 0), up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
             scene.rootNode.addChildNode(cameraNode)
 
             let ambient = SCNNode()
