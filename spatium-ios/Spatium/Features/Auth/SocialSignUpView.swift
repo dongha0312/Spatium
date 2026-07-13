@@ -37,7 +37,7 @@ struct SocialSignUpView: View {
 
                     AuthTextField(placeholder: "닉네임", text: $nickname, textContentType: .nickname, submitLabel: .next)
 
-                    DatePicker("생년월일", selection: $birthDate, displayedComponents: .date)
+                    DatePicker("생년월일", selection: $birthDate, in: ...Date(), displayedComponents: .date)
                         .padding(14)
                         .background(SpatiumTheme.surface)
                         .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))

@@ -6,30 +6,60 @@ struct ScanCaptureSheet: View {
     @Binding var isScanning: Bool
     var onCompleted: (CapturedRoom, [UIImage]) -> Void
     var onError: (Error) -> Void
+    var onCancel: () -> Void
 
     @State private var triggerCapture = false
     @State private var capturedPhotos: [UIImage] = []
+    @State private var isCancelled = false
+    @State private var isCaptureReady = false
 
     var body: some View {
+        if RoomCaptureSession.isSupported {
+            captureContent
+        } else {
+            unsupportedContent
+        }
+    }
+
+    private var captureContent: some View {
         ZStack(alignment: .bottom) {
             RoomCaptureViewRepresentable(
                 isScanning: $isScanning,
+                isCaptureReady: $isCaptureReady,
                 triggerCapture: $triggerCapture,
                 onPhotoCaptured: { photo in
                     capturedPhotos.append(photo)
                 },
                 onScanCompleted: { room in
+                    guard !isCancelled else { return }
                     onCompleted(room, capturedPhotos)
                 },
-                onError: onError
+                onError: { error in
+                    guard !isCancelled else { return }
+                    onError(error)
+                }
             )
             .ignoresSafeArea()
 
             if isScanning {
                 VStack(spacing: 10) {
-                    ScanGuidanceBanner()
-                        .padding(.horizontal)
-                        .padding(.top, 12)
+                    HStack(alignment: .top, spacing: 10) {
+                        Button {
+                            cancelScan()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.subheadline.weight(.black))
+                                .foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .overlay(Circle().stroke(.white.opacity(0.34), lineWidth: 1))
+                        }
+                        .accessibilityLabel("스캔 취소")
+
+                        ScanGuidanceBanner()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
 
                     // 찍은 사진은 상단에 모아, 하단의 RoomPlan 미니 모델을 가리지 않게 한다.
                     if !capturedPhotos.isEmpty {
@@ -66,16 +96,21 @@ struct ScanCaptureSheet: View {
                         .background(.ultraThinMaterial, in: Circle())
                         .overlay(Circle().stroke(.white.opacity(0.34), lineWidth: 1))
                 }
-                .disabled(!isScanning)
+                .disabled(!isScanning || !isCaptureReady)
                 .accessibilityLabel("사진 촬영")
 
                 Spacer()
 
                 Button {
+                    guard isScanning, isCaptureReady else { return }
                     Haptics.impact()
+                    isCaptureReady = false
                     isScanning = false
                 } label: {
-                    Label("스캔 완료", systemImage: "checkmark.circle.fill")
+                    Label(
+                        isCaptureReady ? "스캔 완료" : "스캔 준비 중",
+                        systemImage: isCaptureReady ? "checkmark.circle.fill" : "hourglass"
+                    )
                         .font(.subheadline.weight(.black))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 18)
@@ -90,6 +125,9 @@ struct ScanCaptureSheet: View {
                         )
                         .shadow(color: .black.opacity(0.25), radius: 10, y: 4)
                 }
+                .disabled(!isScanning || !isCaptureReady)
+                .opacity(isCaptureReady ? 1 : 0.68)
+                .accessibilityIdentifier("scan-finish-button")
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
@@ -104,6 +142,31 @@ struct ScanCaptureSheet: View {
             }
         }
         .animation(.default, value: capturedPhotos.count)
+        .interactiveDismissDisabled(isScanning)
+    }
+
+    private var unsupportedContent: some View {
+        ZStack {
+            SpatiumTheme.background.ignoresSafeArea()
+
+            ContentUnavailableView {
+                Label("방 스캔을 지원하지 않는 기기예요", systemImage: "viewfinder.circle")
+            } description: {
+                Text("RoomPlan 방 스캔은 LiDAR가 탑재된 iPhone 또는 iPad에서 사용할 수 있어요. 가구 만들기와 프로젝트의 다른 기능은 계속 사용할 수 있습니다.")
+            } actions: {
+                Button("돌아가기", action: cancelScan)
+                    .buttonStyle(.borderedProminent)
+            }
+            .padding(24)
+        }
+    }
+
+    private func cancelScan() {
+        Haptics.impact()
+        isCancelled = true
+        isCaptureReady = false
+        isScanning = false
+        onCancel()
     }
 }
 

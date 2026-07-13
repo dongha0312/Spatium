@@ -17,103 +17,109 @@ struct ProfileEditView: View {
     private let userService = UserService()
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    if let profile = profile {
-                        // Avatar Section
-                        avatarSection
-                        
-                        // Nickname Input
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("닉네임")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(SpatiumTheme.text)
-                            
-                            TextField("닉네임을 입력하세요", text: $nickname)
+        ZStack {
+            SpatiumTheme.background.ignoresSafeArea()
+
+            NavigationStack {
+                ScrollView {
+                    VStack(spacing: 24) {
+                        if let profile = profile {
+                            // Avatar Section
+                            avatarSection
+
+                            // Nickname Input
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("닉네임")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(SpatiumTheme.text)
+
+                                TextField("닉네임을 입력하세요", text: $nickname)
+                                    .padding(14)
+                                    .background(SpatiumTheme.surface)
+                                    .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border, lineWidth: 1))
+                                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
+                            }
+
+                            // Email (Read-only)
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("이메일 계정")
+                                    .font(.subheadline.weight(.bold))
+                                    .foregroundStyle(SpatiumTheme.text)
+
+                                HStack {
+                                    Text(profile.email)
+                                        .font(.subheadline)
+                                        .foregroundStyle(SpatiumTheme.soft)
+                                    Spacer()
+                                    Image(systemName: "lock.fill")
+                                        .font(.caption)
+                                        .foregroundStyle(SpatiumTheme.muted)
+                                }
                                 .padding(14)
                                 .background(SpatiumTheme.surface)
-                                .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border, lineWidth: 1))
                                 .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
-                        }
-                        
-                        // Email (Read-only)
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("이메일 계정")
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(SpatiumTheme.text)
-                            
-                            HStack {
-                                Text(profile.email)
-                                    .font(.subheadline)
-                                    .foregroundStyle(SpatiumTheme.soft)
-                                Spacer()
-                                Image(systemName: "lock.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(SpatiumTheme.muted)
+                                .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border.opacity(0.5), lineWidth: 1))
                             }
-                            .padding(14)
-                            .background(SpatiumTheme.surface)
-                            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border.opacity(0.5), lineWidth: 1))
-                        }
-                        
-                        // Stats card
-                        statsCard(profile: profile)
 
-                        // Logout Button
-                        Button(action: logout) {
-                            HStack {
-                                Image(systemName: "rectangle.portrait.and.arrow.right")
-                                Text("로그아웃")
+                            // Stats card
+                            statsCard(profile: profile)
+
+                            // Logout Button
+                            Button(action: logout) {
+                                HStack {
+                                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                                    Text("로그아웃")
+                                }
+                                .font(.subheadline.weight(.bold))
+                                .foregroundStyle(SpatiumTheme.coral)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(SpatiumTheme.surface)
+                                .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.coral.opacity(0.2), lineWidth: 1.2))
+                                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
                             }
-                            .font(.subheadline.weight(.bold))
-                            .foregroundStyle(SpatiumTheme.coral)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(SpatiumTheme.surface)
-                            .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.coral.opacity(0.2), lineWidth: 1.2))
-                            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
+                            .buttonStyle(.pressable)
+                            .padding(.top, 8)
+                        } else {
+                            ProgressView("프로필 정보를 불러오는 중...")
+                                .padding(.top, 40)
                         }
-                        .buttonStyle(.pressable)
-                        .padding(.top, 8)
-                    } else {
-                        ProgressView("프로필 정보를 불러오는 중...")
-                            .padding(.top, 40)
+
+                        if let errorMessage {
+                            Text(errorMessage)
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.center)
+                        }
                     }
-                    
-                    if let errorMessage {
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
-                            .multilineTextAlignment(.center)
+                    .padding(20)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .background(SpatiumTheme.background.ignoresSafeArea())
+                .navigationTitle("프로필 설정")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("취소") { dismiss() }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("저장") { saveProfile() }
+                            .font(.headline.weight(.bold))
+                            .disabled(isLoading || nickname.isEmpty)
                     }
                 }
-                .padding(20)
-            }
-            .background(SpatiumTheme.background.ignoresSafeArea())
-            .navigationTitle("프로필 설정")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("취소") { dismiss() }
+                .task {
+                    await loadProfile()
+                    await loadStats()
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("저장") { saveProfile() }
-                        .font(.headline.weight(.bold))
-                        .disabled(isLoading || nickname.isEmpty)
-                }
-            }
-            .task {
-                await loadProfile()
-                await loadStats()
-            }
-            .onChange(of: selectedPhotoItem) { _, newItem in
-                if let newItem {
-                    loadSelectedPhoto(newItem)
+                .onChange(of: selectedPhotoItem) { _, newItem in
+                    if let newItem {
+                        loadSelectedPhoto(newItem)
+                    }
                 }
             }
         }
+        .accessibilityIdentifier("profile-edit-full-screen")
     }
 
     private var avatarSection: some View {
@@ -125,24 +131,18 @@ struct ProfileEditView: View {
                         .scaledToFill()
                         .frame(width: 86, height: 86)
                         .clipShape(Circle())
-                } else if let urlString = profile?.profileImageUrl, let url = URL(string: urlString) {
-                    AsyncImage(url: url) { image in
-                        image.resizable()
-                            .scaledToFill()
-                    } placeholder: {
-                        ProgressView()
-                    }
-                    .frame(width: 86, height: 86)
-                    .clipShape(Circle())
                 } else {
-                    Circle()
-                        .fill(SpatiumTheme.warmPanel)
-                        .frame(width: 86, height: 86)
-                        .overlay {
+                    ProfileImageView(source: profile?.profileImageUrl) {
+                        Circle()
+                            .fill(SpatiumTheme.warmPanel)
+                            .overlay {
                             Image(systemName: "person.fill")
                                 .font(.system(size: 32))
                                 .foregroundStyle(SpatiumTheme.accentLight)
                         }
+                    }
+                    .frame(width: 86, height: 86)
+                    .clipShape(Circle())
                 }
             }
             .overlay(alignment: .bottomTrailing) {
@@ -208,8 +208,10 @@ struct ProfileEditView: View {
         var total = 0
         await withTaskGroup(of: Int.self) { group in
             for project in projects {
+                let projectID = project.id
+                let fallbackCount = project.displayRoomCount
                 group.addTask {
-                    (try? await ProjectService().fetchRoomCount(projectID: project.id)) ?? project.displayRoomCount
+                    (try? await ProjectService().fetchRoomCount(projectID: projectID)) ?? fallbackCount
                 }
             }
             for await count in group {
@@ -220,6 +222,26 @@ struct ProfileEditView: View {
     }
 
     private func loadProfile() async {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-UITestProfileSheet") {
+            let fixture = UserProfile(
+                userId: "ui-test-user",
+                email: "ui-test@spatium.com",
+                nickname: "UI 테스트 사용자",
+                birthDate: nil,
+                gender: nil,
+                profileImageUrl: nil,
+                projectCount: 1,
+                placedFurnitureCount: 0
+            )
+            profile = fixture
+            nickname = fixture.nickname
+            projectCount = 1
+            totalRoomCount = 0
+            return
+        }
+        #endif
+
         do {
             let loaded = try await userService.fetchProfile()
             profile = loaded

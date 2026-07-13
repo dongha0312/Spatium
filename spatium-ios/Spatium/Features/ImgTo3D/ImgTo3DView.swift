@@ -4,7 +4,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 import UIKit
 
+private let modelModeTransitionAnimation = Animation.spring(response: 0.3, dampingFraction: 0.82)
+
 struct ImgTo3DView: View {
+    var onFurnitureSaved: () -> Void = {}
+
+    @EnvironmentObject private var userFurnitureStore: UserFurnitureStore
     @State private var step: ImgTo3DStep = .upload
     @State private var photoItem: PhotosPickerItem?
     @State private var image: UIImage?
@@ -16,20 +21,28 @@ struct ImgTo3DView: View {
 
     @State private var objectName = ""
     @State private var normalizedName: ImgTo3DNormalizedName?
-    @State private var isNormalizing = false
-    @State private var detections: [ImgTo3DDetection] = []
-    @State private var selectedDetectionID: Int?
-    @State private var isDetecting = false
     @State private var segmentationReady = false
+    @State private var isSegmenting = false
+    @State private var segmentedImage: UIImage?
+    @State private var segmentedPNG: Data?
+    @State private var segmentationResult: ImgTo3DSegmentationResult?
+    @State private var segmentationError: String?
     @State private var showOriginal = false
+    @State private var segmentationProvider: ImgTo3DSegmentationProvider = .groundedSAM2
 
     @State private var generationProgress = 0.0
     @State private var generated = false
+    @State private var isGenerating = false
+    @State private var generationError: String?
+    @State private var generationProvider: ImgTo3DGenerationProvider = .localTripoSR
+    @State private var mcResolution = 256
+    @State private var textureResolution = 1024
+    @State private var remesh: ImgTo3DRemesh = .none
     @State private var viewerMode: ImgTo3DViewerMode = .orbit
     @State private var activeTransformAxis: ImgTo3DTransformAxis = .free
-    @State private var snapEnabled = true
     @State private var cameraPreset: ImgTo3DCameraPreset = .perspective
     @State private var autoCorrectionApplied = false
+    @State private var autoAlignToken = 0
     @State private var cameraResetToken = 0
     @State private var undoHistory: [ImgTo3DCorrectionSnapshot] = []
     @State private var redoHistory: [ImgTo3DCorrectionSnapshot] = []
@@ -41,12 +54,16 @@ struct ImgTo3DView: View {
     @State private var showModelImporter = false
 
     @State private var saveName = ""
-    @State private var category: ImgTo3DCategory = .chair
+    @State private var category: ImgTo3DCategory = .bathtub
     @State private var isSaving = false
     @State private var saved = false
+    @State private var saveNotice: String?
     @State private var alertMessage: String?
+    @FocusState private var focusedField: ImgTo3DFocusField?
 
-    private let generationStages = ["이미지 전처리", "TripoSR 메시 생성", "텍스처 베이킹", "GLB 내보내기"]
+    private var generationStages: [String] {
+        ["이미지 전처리", "\(generationProvider.title) 메시 생성", "텍스처 베이킹", "GLB 내보내기"]
+    }
 
     var body: some View {
         VStack(spacing: 8) {
@@ -70,6 +87,9 @@ struct ImgTo3DView: View {
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
             Task { await loadPhoto(item) }
+        }
+        .onChange(of: step) { _, _ in
+            focusedField = nil
         }
         .task(id: step) {
             await prepareCurrentStep()
@@ -125,7 +145,14 @@ struct ImgTo3DView: View {
             // -UITestImgTo3DRotX <도> 를 함께 주면 X축 회전을 미리 적용한 상태로 시작한다(수동 축 보정 재현).
             let args = ProcessInfo.processInfo.arguments
             if let index = args.firstIndex(of: "-UITestImgTo3DGLB"), args.indices.contains(index + 1) {
-                importedModelURL = URL(fileURLWithPath: args[index + 1])
+                let requestedModel = args[index + 1]
+                let requestedURL = URL(fileURLWithPath: requestedModel)
+                importedModelURL = FileManager.default.fileExists(atPath: requestedURL.path)
+                    ? requestedURL
+                    : Bundle.main.url(
+                        forResource: requestedURL.deletingPathExtension().lastPathComponent,
+                        withExtension: requestedURL.pathExtension.isEmpty ? "glb" : requestedURL.pathExtension
+                    )
                 if let rotIndex = args.firstIndex(of: "-UITestImgTo3DRotX"),
                    args.indices.contains(rotIndex + 1),
                    let degrees = Double(args[rotIndex + 1]) {
@@ -201,7 +228,6 @@ struct ImgTo3DView: View {
         switch step {
         case .upload: uploadStep
         case .name: nameStep
-        case .detection: detectionStep
         case .segmentation: segmentationStep
         case .generation: generationStep
         case .correction: correctionStep
@@ -284,17 +310,16 @@ struct ImgTo3DView: View {
         StepShell(
             systemImage: "textformat.abc",
             title: "어떤 가구인가요?",
-            description: "사진에서 찾을 가구의 이름을 알려주세요. 예: 의자, 책상, 침대 옆 협탁"
+            description: "GroundingDINO + SAM2가 이 설명을 기준으로 가구를 찾아 분리합니다. 예: 회색 사무용 의자"
         ) {
-            VStack(spacing: 13) {
-                TextField("예) 침대 옆 협탁", text: $objectName)
+            ScrollView {
+                VStack(spacing: 13) {
+                    TextField("예) 침대 옆 협탁", text: $objectName)
+                    .focused($focusedField, equals: .objectName)
                     .textInputAutocapitalization(.never)
                     .submitLabel(.done)
-                    .onSubmit { normalizeName() }
                     .onChange(of: objectName) { _, _ in
                         normalizedName = nil
-                        detections = []
-                        selectedDetectionID = nil
                         resetGeneratedModelState()
                     }
                     .padding(13)
@@ -302,64 +327,71 @@ struct ImgTo3DView: View {
                     .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1.5))
                     .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
 
-                PrimaryButton(
-                    title: isNormalizing ? "변환 중…" : "번역 · 정규화",
-                    systemImage: "character.book.closed.fill",
-                    action: normalizeName
-                )
-                .disabled(!canNormalize)
+                    Label("한국어 입력은 분리 과정에서 영어 검색어로 자동 변환됩니다.", systemImage: "character.book.closed")
+                        .font(.caption)
+                        .foregroundStyle(SpatiumTheme.soft)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                if isNormalizing {
-                    LoadingNote(text: "LLM이 객체명을 영어로 정규화하고 있어요…")
-                }
-
-                if let normalizedName {
                     VStack(alignment: .leading, spacing: 10) {
-                        Text("정규화 결과")
+                        Text("객체 분리 설정")
                             .font(.caption.weight(.black))
                             .foregroundStyle(SpatiumTheme.soft)
-                        Text("“\(normalizedName.input)” → **\(normalizedName.english)**")
-                            .font(.subheadline)
-                            .foregroundStyle(SpatiumTheme.text)
-                        FlowTags(tags: normalizedName.tags)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(15)
-                    .background(SpatiumTheme.warmPanel)
-                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
-                }
-            }
-        }
-    }
-
-    private var detectionStep: some View {
-        StepShell(
-            systemImage: "viewfinder.rectangular",
-            title: "가구를 선택해주세요",
-            description: "사진에서 찾은 후보 중 3D로 만들 가구 하나를 탭하세요."
-        ) {
-            if isDetecting {
-                LoadingNote(text: "GroundingDINO가 “\(normalizedName?.english ?? "가구")” 객체를 찾고 있어요…")
-                    .frame(maxHeight: .infinity)
-            } else if let image {
-                VStack(spacing: 12) {
-                    DetectionImage(
-                        image: image,
-                        detections: detections,
-                        selectedID: selectedDetectionID,
-                        onSelect: { id in
-                            selectedDetectionID = id
-                            segmentationReady = false
-                            resetGeneratedModelState()
-                            Haptics.selection()
+                        Picker("객체 분리 모델", selection: $segmentationProvider) {
+                            ForEach(ImgTo3DSegmentationProvider.allCases) { provider in
+                                Text(provider.title).tag(provider)
+                            }
                         }
-                    )
-                    .frame(maxHeight: 250)
-                    Text(selectedDetectionID == nil ? "후보 \(detections.count)개 중 하나를 탭하세요." : "선택 완료! 다음 단계에서 배경을 제거해요.")
-                        .font(.footnote.weight(.medium))
-                        .foregroundStyle(selectedDetectionID == nil ? SpatiumTheme.soft : SpatiumTheme.success)
+                        .pickerStyle(.menu)
+                        .onChange(of: segmentationProvider) { _, _ in resetGeneratedModelState() }
+                        Text(segmentationProvider == .groundedSAM2
+                             ? "객체명을 번역해 GroundingDINO 탐지와 SAM2 마스크를 실행합니다."
+                             : "사진 중앙의 주요 객체를 YOLO로 자동 선택합니다.")
+                            .font(.caption2)
+                            .foregroundStyle(SpatiumTheme.soft)
+                    }
+                    .pipelineSettingsCard()
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("3D 생성 설정")
+                            .font(.caption.weight(.black))
+                            .foregroundStyle(SpatiumTheme.soft)
+                        Picker("3D 생성 모델", selection: $generationProvider) {
+                            ForEach(ImgTo3DGenerationProvider.allCases) { provider in
+                                Text(provider.title).tag(provider)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .onChange(of: generationProvider) { _, _ in resetGenerationResult() }
+
+                        if generationProvider == .localTripoSR {
+                            Picker("메시 해상도", selection: $mcResolution) {
+                                Text("192").tag(192)
+                                Text("256 (권장)").tag(256)
+                                Text("320").tag(320)
+                            }
+                            .pickerStyle(.menu)
+                            .onChange(of: mcResolution) { _, _ in resetGenerationResult() }
+                        } else {
+                            Picker("텍스처 해상도", selection: $textureResolution) {
+                                Text("512").tag(512)
+                                Text("1024 (권장)").tag(1024)
+                                Text("2048").tag(2048)
+                            }
+                            .pickerStyle(.menu)
+                            .onChange(of: textureResolution) { _, _ in resetGenerationResult() }
+                            Picker("리메시", selection: $remesh) {
+                                ForEach(ImgTo3DRemesh.allCases) { option in
+                                    Text(option.title).tag(option)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .onChange(of: remesh) { _, _ in resetGenerationResult() }
+                        }
+                    }
+                    .pipelineSettingsCard()
                 }
             }
+            .scrollIndicators(.hidden)
         }
     }
 
@@ -367,20 +399,46 @@ struct ImgTo3DView: View {
         StepShell(
             systemImage: "wand.and.rays",
             title: segmentationReady ? "배경을 제거했어요" : "가구를 분리하고 있어요",
-            description: "결과가 마음에 들지 않으면 이전 단계에서 다른 후보를 선택할 수 있어요."
+            description: "입력한 이름을 기준으로 대상을 찾아 투명 배경 PNG로 만듭니다."
         ) {
-            if !segmentationReady {
-                LoadingNote(text: "SAM2가 선택한 가구를 분리하고 있어요…")
+            if isSegmenting {
+                LoadingNote(text: "\(segmentationProvider.title)가 가구를 분리하고 있어요…")
                     .frame(maxHeight: .infinity)
-            } else if let image, let detection = selectedDetection {
+            } else if let sourceImage = showOriginal ? image : segmentedImage {
                 VStack(spacing: 14) {
-                    SegmentationImage(image: image, detection: detection, showOriginal: showOriginal)
+                    Image(uiImage: sourceImage)
+                        .resizable()
+                        .scaledToFit()
                         .frame(maxHeight: 230)
+                        .background(SpatiumTheme.elevatedSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
                     Toggle("원본 사진 보기", isOn: $showOriginal)
                         .font(.subheadline.weight(.bold))
                         .tint(SpatiumTheme.accent)
-                    SecondaryButton(title: "마스크 수정", systemImage: "paintbrush.pointed") {
-                        alertMessage = "마스크 브러시 편집은 백엔드 연동 후 지원 예정이에요."
+                    if let result = segmentationResult {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(result.segmentedObject)
+                                .font(.subheadline.weight(.bold))
+                            if let translated = result.translatedQuery {
+                                Text("변환된 검색어: \(translated)")
+                            }
+                            if let confidence = result.confidence {
+                                Text("탐지 신뢰도: \(confidence * 100, specifier: "%.1f")%")
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(SpatiumTheme.soft)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            } else if let segmentationError {
+                VStack(spacing: 12) {
+                    Text(segmentationError)
+                        .font(.footnote)
+                        .foregroundStyle(SpatiumTheme.coral)
+                        .multilineTextAlignment(.center)
+                    SecondaryButton(title: "다시 시도", systemImage: "arrow.clockwise") {
+                        Task { await runSegmentation() }
                     }
                 }
             }
@@ -448,6 +506,16 @@ struct ImgTo3DView: View {
                 .padding(7)
                 .background(SpatiumTheme.warmPanel.opacity(0.7))
                 .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md))
+
+                if let generationError, !isGenerating {
+                    Text(generationError)
+                        .font(.footnote)
+                        .foregroundStyle(SpatiumTheme.coral)
+                        .multilineTextAlignment(.center)
+                    SecondaryButton(title: "다시 시도", systemImage: "arrow.clockwise") {
+                        Task { await runGeneration() }
+                    }
+                }
             }
         }
     }
@@ -470,6 +538,8 @@ struct ImgTo3DView: View {
                 modelCorrectionCanvas
                 correctionModeBar
                 contextualCorrectionControls
+                    .id(viewerMode)
+                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
             }
         }
     }
@@ -522,11 +592,11 @@ struct ImgTo3DView: View {
             transform: $modelTransform,
             mode: viewerMode,
             activeAxis: activeTransformAxis,
-            snapEnabled: snapEnabled,
             floorSnap: floorSnap,
             modelURL: importedModelURL,
             cameraPreset: cameraPreset,
             cameraResetToken: cameraResetToken,
+            autoAlignToken: autoAlignToken,
             onInteractionBegan: recordCorrectionCheckpoint,
             onModelLoaded: { size, name in
                 modelSize = size
@@ -535,6 +605,14 @@ struct ImgTo3DView: View {
                     importedModelURL = nil
                     alertMessage = "GLB 파일을 불러오지 못했어요. 파일을 확인해주세요."
                 }
+            },
+            onModelBoundsChanged: { size in
+                modelSize = size
+            },
+            onAutoAlignment: { alignedTransform in
+                modelTransform = alignedTransform
+                floorSnap = true
+                Haptics.success()
             }
         )
         .frame(maxHeight: .infinity)
@@ -698,10 +776,10 @@ struct ImgTo3DView: View {
                 Text("가구 목록에 추가했어요!")
                     .font(.title2.weight(.black))
                     .foregroundStyle(SpatiumTheme.text)
-                Text("이제 3D 에디터에서 “\(saveName)”을(를) 방에 배치할 수 있어요.")
+                Text(saveNotice ?? "이제 3D 에디터에서 “\(saveName)”을(를) 방에 배치할 수 있어요.")
                     .font(.subheadline)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(SpatiumTheme.soft)
+                    .foregroundStyle(saveNotice == nil ? SpatiumTheme.soft : SpatiumTheme.accent)
                 Spacer(minLength: 0)
                 PrimaryButton(
                     title: "새 모델 만들기",
@@ -721,6 +799,7 @@ struct ImgTo3DView: View {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("가구 이름").font(.subheadline.weight(.bold))
                         TextField("가구 이름", text: $saveName)
+                            .focused($focusedField, equals: .saveName)
                             .padding(13)
                             .background(SpatiumTheme.elevatedSurface)
                             .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1.5))
@@ -752,7 +831,7 @@ struct ImgTo3DView: View {
                         Text(importedModelName ?? "spatium_furniture.glb")
                             .font(.subheadline.weight(.bold))
                             .foregroundStyle(SpatiumTheme.text)
-                        Text("glTF Binary (.glb) · 2.4 MB\(normalizedName.map { " · \($0.english)" } ?? "")")
+                        Text("glTF Binary (.glb) · \(modelFileSizeText)\(normalizedName.map { " · \($0.english)" } ?? "")")
                             .font(.caption)
                             .foregroundStyle(SpatiumTheme.soft)
                     }
@@ -761,7 +840,7 @@ struct ImgTo3DView: View {
                     .background(SpatiumTheme.warmPanel)
                     .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md))
 
-                    Text("현재 웹 기능과 동일한 목업 단계예요. 실제 object storage와 DB 저장은 백엔드 연결 후 활성화됩니다.")
+                    Text("저장한 모델은 프로젝트의 내 가구와 3D 에디터 카탈로그에서 바로 사용할 수 있어요.")
                         .font(.caption)
                         .lineSpacing(3)
                         .foregroundStyle(SpatiumTheme.soft)
@@ -829,24 +908,15 @@ struct ImgTo3DView: View {
         }
     }
 
-    private var canNormalize: Bool {
-        !objectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isNormalizing
-    }
-
     private var canAdvance: Bool {
         switch step {
         case .upload: image != nil
-        case .name: normalizedName != nil
-        case .detection: selectedDetectionID != nil
+        case .name: !objectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .segmentation: segmentationReady
         case .generation: generated
         case .correction: true
         case .save: false
         }
-    }
-
-    private var selectedDetection: ImgTo3DDetection? {
-        detections.first { $0.id == selectedDetectionID }
     }
 
     private var viewerHint: String {
@@ -859,8 +929,18 @@ struct ImgTo3DView: View {
     }
 
     private var modelDimensionText: String {
-        let scale = modelTransform.scale
-        return String(format: "%.2fm × %.2fm × %.2fm", modelSize.width * scale, modelSize.height * scale, modelSize.depth * scale)
+        String(format: "%.2fm × %.2fm × %.2fm", modelSize.width, modelSize.height, modelSize.depth)
+    }
+
+    private var modelFileSizeText: String {
+        guard let importedModelURL,
+              let size = try? importedModelURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+            return "-"
+        }
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useKB, .useMB]
+        formatter.countStyle = .file
+        return formatter.string(fromByteCount: Int64(size))
     }
 
     /// 사진 보관함 접근 권한을 확인/요청한 뒤 갤러리 선택 시트를 연다.
@@ -899,31 +979,32 @@ struct ImgTo3DView: View {
     private func setImage(_ newImage: UIImage, rawData: Data? = nil) {
         image = newImage
         normalizedName = nil
-        detections = []
-        selectedDetectionID = nil
         segmentationReady = false
         resetGeneratedModelState()
         Haptics.success()
 
-        // PNG 인코딩은 수백 ms 걸릴 수 있어 백그라운드에서 처리한다.
-        uploadImage = nil
-        Task.detached(priority: .userInitiated) {
-            let normalized = ImgTo3DUploadImage.normalize(image: newImage, rawData: rawData)
-            await MainActor.run {
-                // 처리 중에 다른 사진으로 바뀌었으면 결과를 버린다.
-                guard image == newImage else { return }
-                uploadImage = normalized
-            }
-        }
+        uploadImage = ImgTo3DUploadImage.normalize(image: newImage, rawData: rawData)
     }
 
     /// 사진·이름·선택 객체가 바뀌면 그 입력으로 만들었던 이후 결과는 모두 무효입니다.
     /// 이전 모델이 남아 새 결과처럼 보이지 않도록 생성/보정/저장 상태를 한 번에 초기화합니다.
     private func resetGeneratedModelState() {
+        segmentationReady = false
+        isSegmenting = false
+        segmentedImage = nil
+        segmentedPNG = nil
+        segmentationResult = nil
+        segmentationError = nil
+        showOriginal = false
+        resetGenerationResult()
+        saveName = ""
+    }
+
+    private func resetGenerationResult() {
         generated = false
         generationProgress = 0
-        segmentationReady = false
-        showOriginal = false
+        isGenerating = false
+        generationError = nil
         importedModelURL = nil
         importedModelName = nil
         modelSize = .init()
@@ -931,7 +1012,6 @@ struct ImgTo3DView: View {
         floorSnap = false
         viewerMode = .orbit
         activeTransformAxis = .free
-        snapEnabled = true
         cameraPreset = .perspective
         autoCorrectionApplied = false
         undoHistory.removeAll()
@@ -939,64 +1019,12 @@ struct ImgTo3DView: View {
         saved = false
     }
 
-    private func normalizeName() {
-        let input = objectName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !input.isEmpty, !isNormalizing else { return }
-        isNormalizing = true
-        normalizedName = nil
-        Task {
-            defer { isNormalizing = false }
-            do {
-                normalizedName = try await ImgTo3DMockPipeline.normalize(input)
-                Haptics.success()
-            } catch is CancellationError {
-                return
-            } catch {
-                alertMessage = "객체명을 변환하지 못했어요. 다시 시도해주세요."
-            }
-        }
-    }
-
     private func prepareCurrentStep() async {
         switch step {
-        case .detection:
-            guard detections.isEmpty, let normalizedName else { return }
-            isDetecting = true
-            do {
-                let label = normalizedName.english.split(separator: "/").first.map(String.init) ?? normalizedName.english
-                detections = try await ImgTo3DMockPipeline.detect(label: label.trimmingCharacters(in: .whitespaces))
-            } catch is CancellationError {
-                return
-            } catch {
-                alertMessage = "사진에서 가구 후보를 찾지 못했어요. 다시 시도해주세요."
-            }
-            isDetecting = false
         case .segmentation:
-            guard !segmentationReady else { return }
-            do {
-                try await Task.sleep(for: .milliseconds(1_400))
-                try Task.checkCancellation()
-                segmentationReady = true
-            } catch {
-                return
-            }
+            await runSegmentation()
         case .generation:
-            guard !generated else {
-                generationProgress = 100
-                return
-            }
-            do {
-                let frameCount = 240
-                for frame in 1...frameCount {
-                    try await Task.sleep(for: .milliseconds(16))
-                    try Task.checkCancellation()
-                    generationProgress = Double(frame) / Double(frameCount) * 100
-                }
-                generated = true
-                Haptics.success()
-            } catch {
-                return
-            }
+            await runGeneration()
         case .correction:
             guard !autoCorrectionApplied else { return }
             recordCorrectionCheckpoint()
@@ -1004,6 +1032,90 @@ struct ImgTo3DView: View {
             autoCorrectionApplied = true
         default:
             return
+        }
+    }
+
+    private func runSegmentation() async {
+        guard !segmentationReady, !isSegmenting,
+              let image,
+              !objectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard let payload = uploadImage ?? ImgTo3DUploadImage.normalize(image: image, rawData: nil) else {
+            segmentationError = "업로드 이미지를 준비하지 못했습니다."
+            return
+        }
+        isSegmenting = true
+        defer { isSegmenting = false }
+        segmentationError = nil
+        do {
+            let result = try await ImgTo3DService().removeBackground(
+                image: payload,
+                objectQuery: objectName.trimmingCharacters(in: .whitespacesAndNewlines),
+                provider: segmentationProvider
+            )
+            try Task.checkCancellation()
+            guard let resultImage = UIImage(data: result.imageData) else {
+                throw ImgTo3DServiceError.invalidResponse
+            }
+            segmentationResult = result
+            segmentedPNG = result.imageData
+            segmentedImage = resultImage
+            normalizedName = ImgTo3DNormalizedName(
+                input: objectName,
+                english: result.translatedQuery ?? result.segmentedObject,
+                tags: [result.segmentedObject]
+            )
+            segmentationReady = true
+            Haptics.success()
+        } catch is CancellationError {
+            return
+        } catch {
+            segmentationError = error.localizedDescription
+            Haptics.error()
+        }
+    }
+
+    private func runGeneration() async {
+        guard !generated, !isGenerating, let segmentedPNG else { return }
+        isGenerating = true
+        generationError = nil
+        generationProgress = max(generationProgress, 2)
+        let progressTask = Task { @MainActor in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(450))
+                if Task.isCancelled { return }
+                generationProgress = min(generationProgress + 2.5, 92)
+            }
+        }
+        defer {
+            progressTask.cancel()
+            isGenerating = false
+        }
+        do {
+            let result = try await ImgTo3DService().generateModel(
+                segmentedPNG: segmentedPNG,
+                provider: generationProvider,
+                mcResolution: mcResolution,
+                textureResolution: textureResolution,
+                remesh: remesh
+            )
+            try Task.checkCancellation()
+            let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+                .appendingPathComponent("Spatium/GeneratedModels", isDirectory: true)
+                ?? FileManager.default.temporaryDirectory.appendingPathComponent("SpatiumGeneratedModels", isDirectory: true)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let safeName = URL(fileURLWithPath: result.fileName).lastPathComponent
+            let modelURL = directory.appendingPathComponent(safeName.isEmpty ? "\(result.id).glb" : safeName)
+            try result.modelData.write(to: modelURL, options: .atomic)
+            importedModelURL = modelURL
+            importedModelName = modelURL.lastPathComponent
+            generationProgress = 100
+            generated = true
+            Haptics.success()
+        } catch is CancellationError {
+            return
+        } catch {
+            generationError = error.localizedDescription
+            Haptics.error()
         }
     }
 
@@ -1018,26 +1130,20 @@ struct ImgTo3DView: View {
     }
 
     private func selectViewerMode(_ mode: ImgTo3DViewerMode) {
-        viewerMode = mode
-        switch mode {
-        case .orbit, .scale:
-            activeTransformAxis = .free
-        case .move:
-            activeTransformAxis = .free
-        case .rotate:
-            activeTransformAxis = .y
+        withAnimation(modelModeTransitionAnimation) {
+            viewerMode = mode
+            switch mode {
+            case .orbit, .move, .scale:
+                activeTransformAxis = .free
+            case .rotate:
+                activeTransformAxis = .y
+            }
         }
         Haptics.selection()
     }
 
     private func autoAlign() {
-        modelTransform.xDegrees = 0
-        modelTransform.zDegrees = 0
-        modelTransform.xPosition = 0
-        modelTransform.yPosition = 0
-        modelTransform.zPosition = 0
-        floorSnap = true
-        Haptics.success()
+        autoAlignToken &+= 1
     }
 
     private func resetModel() {
@@ -1086,12 +1192,54 @@ struct ImgTo3DView: View {
     private func saveFurniture() {
         guard !isSaving else { return }
         isSaving = true
+        saveNotice = nil
         Task {
-            try? await Task.sleep(for: .seconds(1))
-            isSaving = false
-            saved = true
-            Haptics.success()
+            do {
+                let correctedModelURL = try makeCorrectedModelURL()
+                let furniture = try await userFurnitureStore.save(
+                    name: saveName,
+                    normalizedName: normalizedName?.english ?? saveName,
+                    category: category.code,
+                    categoryLabel: category.rawValue,
+                    width: modelSize.width,
+                    height: modelSize.height,
+                    depth: modelSize.depth,
+                    sourceModelURL: correctedModelURL
+                )
+                if furniture.serverModelPath == nil,
+                   let token = AuthTokenStore.shared.accessToken,
+                   !token.hasPrefix("mock_") {
+                    saveNotice = "서버 저장 경로가 아직 준비되지 않아 이 기기의 내 가구에 저장했어요."
+                }
+                isSaving = false
+                saved = true
+                Haptics.success()
+                try? await Task.sleep(for: .milliseconds(saveNotice == nil ? 450 : 900))
+                onFurnitureSaved()
+            } catch {
+                isSaving = false
+                alertMessage = error.localizedDescription
+                Haptics.error()
+            }
         }
+    }
+
+    private func makeCorrectedModelURL() throws -> URL? {
+        guard let importedModelURL else { return nil }
+        let accessed = importedModelURL.startAccessingSecurityScopedResource()
+        defer { if accessed { importedModelURL.stopAccessingSecurityScopedResource() } }
+        let source = try Data(contentsOf: importedModelURL)
+        let corrected = try GLBTransformBaker.bake(data: source, transform: modelTransform)
+        let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("Spatium/CorrectedModels", isDirectory: true)
+            ?? FileManager.default.temporaryDirectory.appendingPathComponent("SpatiumCorrectedModels", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let baseName = importedModelURL.deletingPathExtension().lastPathComponent
+        let destination = directory
+            .appendingPathComponent(baseName.isEmpty ? UUID().uuidString : "\(baseName)-corrected")
+            .appendingPathExtension("glb")
+        try corrected.write(to: destination, options: .atomic)
+        return destination
     }
 
     private func resetWizard() {
@@ -1101,26 +1249,52 @@ struct ImgTo3DView: View {
         uploadImage = nil
         objectName = ""
         normalizedName = nil
-        detections = []
-        selectedDetectionID = nil
         segmentationReady = false
+        isSegmenting = false
+        segmentedImage = nil
+        segmentedPNG = nil
+        segmentationResult = nil
+        segmentationError = nil
         showOriginal = false
         generationProgress = 0
         generated = false
+        isGenerating = false
+        generationError = nil
+        segmentationProvider = .groundedSAM2
+        generationProvider = .localTripoSR
+        mcResolution = 256
+        textureResolution = 1024
+        remesh = .none
         importedModelURL = nil
         importedModelName = nil
         modelTransform = .initial
         floorSnap = false
         activeTransformAxis = .free
-        snapEnabled = true
         cameraPreset = .perspective
         autoCorrectionApplied = false
         undoHistory = []
         redoHistory = []
         cameraResetToken = 0
+        autoAlignToken = 0
         saveName = ""
-        category = .chair
+        category = .bathtub
         saved = false
+        saveNotice = nil
+    }
+}
+
+private enum ImgTo3DFocusField: Hashable {
+    case objectName
+    case saveName
+}
+
+private extension View {
+    func pipelineSettingsCard() -> some View {
+        padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(SpatiumTheme.warmPanel.opacity(0.72))
+            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
     }
 }
 
@@ -1234,127 +1408,6 @@ private struct LoadingNote: View {
     }
 }
 
-private struct FlowTags: View {
-    let tags: [String]
-
-    var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 7) {
-                ForEach(tags, id: \.self) { tag in
-                    Text(tag)
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(SpatiumTheme.accent)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(SpatiumTheme.elevatedSurface, in: Capsule())
-                }
-            }
-        }
-        .scrollIndicators(.hidden)
-    }
-}
-
-private struct DetectionImage: View {
-    let image: UIImage
-    let detections: [ImgTo3DDetection]
-    let selectedID: Int?
-    let onSelect: (Int) -> Void
-
-    var body: some View {
-        Image(uiImage: image)
-            .resizable()
-            .aspectRatio(image.size.width / max(image.size.height, 1), contentMode: .fit)
-            .overlay {
-                GeometryReader { proxy in
-                    ForEach(detections) { detection in
-                        Button { onSelect(detection.id) } label: {
-                            Rectangle()
-                                .fill(SpatiumTheme.accent.opacity(selectedID == detection.id ? 0.15 : 0.04))
-                                .overlay {
-                                    Rectangle().stroke(
-                                        selectedID == detection.id ? SpatiumTheme.accent : SpatiumTheme.accentLight,
-                                        style: StrokeStyle(lineWidth: selectedID == detection.id ? 3 : 2, dash: selectedID == detection.id ? [] : [6, 4])
-                                    )
-                                }
-                                .overlay(alignment: .topLeading) {
-                                    Text("\(Int(detection.score * 100))%")
-                                        .font(.caption2.weight(.black))
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 4)
-                                        .background(selectedID == detection.id ? SpatiumTheme.accent : .black.opacity(0.62))
-                                }
-                        }
-                        .buttonStyle(.plain)
-                        .frame(
-                            width: proxy.size.width * detection.width,
-                            height: proxy.size.height * detection.height
-                        )
-                        .position(
-                            x: proxy.size.width * (detection.x + detection.width / 2),
-                            y: proxy.size.height * (detection.y + detection.height / 2)
-                        )
-                        .accessibilityLabel("\(detection.label), 정확도 \(Int(detection.score * 100))퍼센트")
-                        .accessibilityAddTraits(selectedID == detection.id ? .isSelected : [])
-                    }
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
-    }
-}
-
-private struct SegmentationImage: View {
-    let image: UIImage
-    let detection: ImgTo3DDetection
-    let showOriginal: Bool
-
-    var body: some View {
-        Image(uiImage: image)
-            .resizable()
-            .aspectRatio(image.size.width / max(image.size.height, 1), contentMode: .fit)
-            .overlay {
-                if !showOriginal {
-                    GeometryReader { proxy in
-                        ZStack(alignment: .topLeading) {
-                            Checkerboard().frame(width: proxy.size.width, height: proxy.size.height * detection.y)
-                            Checkerboard()
-                                .frame(width: proxy.size.width, height: proxy.size.height * (1 - detection.y - detection.height))
-                                .offset(y: proxy.size.height * (detection.y + detection.height))
-                            Checkerboard()
-                                .frame(width: proxy.size.width * detection.x, height: proxy.size.height * detection.height)
-                                .offset(y: proxy.size.height * detection.y)
-                            Checkerboard()
-                                .frame(width: proxy.size.width * (1 - detection.x - detection.width), height: proxy.size.height * detection.height)
-                                .offset(x: proxy.size.width * (detection.x + detection.width), y: proxy.size.height * detection.y)
-                        }
-                    }
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border))
-    }
-}
-
-private struct Checkerboard: View {
-    var body: some View {
-        Canvas { context, size in
-            let tile: CGFloat = 12
-            let columns = Int(ceil(size.width / tile))
-            let rows = Int(ceil(size.height / tile))
-            for row in 0..<rows {
-                for column in 0..<columns {
-                    let color: Color = (row + column).isMultiple(of: 2) ? .white.opacity(0.94) : .gray.opacity(0.82)
-                    context.fill(
-                        Path(CGRect(x: CGFloat(column) * tile, y: CGFloat(row) * tile, width: tile, height: tile)),
-                        with: .color(color)
-                    )
-                }
-            }
-        }
-    }
-}
-
 private struct ModelModeButton: View {
     let mode: ImgTo3DViewerMode
     let isSelected: Bool
@@ -1379,8 +1432,11 @@ private struct ModelModeButton: View {
                 .background(isSelected ? SpatiumTheme.ctaFill : SpatiumTheme.warmPanel)
                 .overlay(Capsule().stroke(isSelected ? .clear : SpatiumTheme.border, lineWidth: 1))
                 .clipShape(Capsule())
+                .scaleEffect(isSelected ? 1 : 0.98)
+                .animation(modelModeTransitionAnimation, value: isSelected)
         }
         .buttonStyle(.pressable)
+        .contentShape(Capsule())
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

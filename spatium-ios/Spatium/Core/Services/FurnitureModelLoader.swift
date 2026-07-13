@@ -84,7 +84,8 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
         let isReferenceModel = isDoorOrWindow("\(category) \(preferredModel ?? "")")
 
         if let fileName,
-           let modelURL = Bundle.main.url(forResource: fileName, withExtension: "glb"),
+           let modelURL = Bundle.main.url(forResource: fileName, withExtension: "glb")
+                ?? UserFurnitureStore.modelURL(for: fileName),
            let modelTemplate = loadModelTemplate(from: modelURL) {
             let modelNode = modelTemplate.node.clone()
             prepareModelNode(

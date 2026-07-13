@@ -80,7 +80,7 @@ struct HomeDashboardView: View {
                     HomeEmptyProjectsCard(onStartScan: onStartScan)
                 } else {
                     VStack(spacing: 10) {
-                        ForEach(Array(projects.prefix(3).enumerated()), id: \.offset) { _, project in
+                        ForEach(Array(projects.prefix(3))) { project in
                             Button {
                                 onOpenProject(project)
                             } label: {
