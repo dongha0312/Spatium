@@ -6,7 +6,9 @@ import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -35,6 +37,26 @@ public class FurnitureController {
                 "statusCode", 200,
                 "message", "가구 카탈로그 조회에 성공했습니다.",
                 "data", furnitureService.getCatalog()));
+    }
+
+    // 로그인한 회원이 생성한 사용자 가구 목록 조회
+    @GetMapping("/user")
+    public ResponseEntity<?> getUserCatalog(@AuthenticatedMemId String memId) {
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "사용자 가구 목록 조회에 성공했습니다.",
+                "data", furnitureService.getUserCatalog(memId)));
+    }
+
+    // 로그인한 회원이 생성한 가구 삭제 (soft delete)
+    @DeleteMapping("/{furCode}")
+    public ResponseEntity<?> deleteUserFurniture(
+            @AuthenticatedMemId String memId,
+            @PathVariable String furCode) {
+        return ResponseEntity.ok(Map.of(
+                "statusCode", 200,
+                "message", "가구가 삭제되었습니다.",
+                "data", furnitureService.deleteUserFurniture(memId, furCode)));
     }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
