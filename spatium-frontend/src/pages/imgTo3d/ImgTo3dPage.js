@@ -230,10 +230,10 @@ function ImgTo3dPage() {
       </ol>
 
       <main className="it3-body">
-        <div className="it3-card">{stepViews[step]}</div>
-      </main>
+        <div className="it3-card">
+          {stepViews[step]}
 
-      <footer className="it3-footer">
+          <footer className="it3-footer">
         <button
           type="button"
           className="it3-btn-ghost"
@@ -252,7 +252,9 @@ function ImgTo3dPage() {
             다음 →
           </button>
         )}
-      </footer>
+          </footer>
+        </div>
+      </main>
     </div>
   );
 }

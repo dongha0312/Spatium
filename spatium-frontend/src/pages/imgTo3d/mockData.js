@@ -1,4 +1,4 @@
-// 이미지 → 3D 파이프라인(LLM 번역 / GroundingDINO / SAM2 / TripoSR)이 아직 연동 전이므로,
+// 이미지 → 3D 파이프라인(LLM 번역 / GroundingDINO / SAM2 / TripoSR)이 아직 연동 전이므로, -> 이 파일 이제 안 쓰는 듯.
 // 각 단계가 반환할 법한 응답을 흉내내는 목업 데이터 모음.
 // 백엔드 연동 시 이 파일의 함수들만 springApi 실제 호출로 갈아끼우면 된다.
 

@@ -2,11 +2,30 @@ import React, { useMemo, useState } from "react";
 import { createUserFurniture } from "../../springApi/FurnitureSpringBootApi";
 
 const CATEGORIES = [
-  { code: "chair", label: "의자" },
-  { code: "table", label: "테이블 · 책상" },
+  { code: "bathtub", label: "욕조" },
   { code: "bed", label: "침대" },
-  { code: "storage", label: "수납장" },
-  { code: "lamp", label: "조명" },
+  { code: "chair", label: "의자" },
+  { code: "dishwasher", label: "식기 세척기" },
+  { code: "fireplace", label: "벽난로" },
+  { code: "oven", label: "오븐" },
+  { code: "refrigerator", label: "냉장고" },
+  { code: "sink", label: "싱크대" },
+  { code: "sofa", label: "소파" },
+  { code: "stairs", label: "계단" },
+  { code: "storage", label: "수납" },
+  { code: "stove", label: "가스레인지" },
+  { code: "table", label: "책상" },
+  { code: "television", label: "TV" },
+  { code: "toilet", label: "변기" },
+  { code: "washerDryer", label: "세탁기·건조기" },
+
+  // 일단 가구 아닌 것들은 가려 놓음.
+  // { code: "floor", label: "바닥" },
+  // { code: "door", label: "문" },
+  // { code: "opening", label: "개구부" },
+  // { code: "wall", label: "벽" },
+  // { code: "window", label: "창문" },
+
   { code: "other", label: "기타" },
 ];
 
@@ -56,7 +75,7 @@ function SaveStep({ objectName, normalizedName, correctedModel }) {
         <div className="it3-done-icon">✓</div>
         <h2 className="it3-step-title">가구를 저장했어요!</h2>
         <p className="it3-step-desc">
-          “{name}” 모델이 사용자 가구로 등록되었습니다. ({saved.id})
+          “{name}” 모델이 사용자 가구로 등록되었습니다.
         </p>
       </div>
     );

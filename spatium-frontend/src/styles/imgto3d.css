@@ -133,6 +133,8 @@
 }
 
 .it3-card {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 860px;
   background: var(--sur);
@@ -503,17 +505,24 @@
   color: #fff;
 }
 
+/* 모델 보정 단계는 캔버스 조작 공간을 넓게 사용한다. */
+.it3-card:has(.it3-viewer-layout) {
+  max-width: 90vw;
+}
+
 /* 6단계: 뷰어 · 보정 */
 .it3-viewer-layout {
-  display: flex;
-  gap: 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 24px;
+  align-items: stretch;
 }
 
 .it3-viewer-canvas {
   position: relative;
-  flex: 1;
   min-width: 0;
-  height: 400px;
+  height: min(62vh, 620px);
+  min-height: 500px;
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--bd);
@@ -589,8 +598,11 @@
 }
 
 .it3-viewer-panel {
-  width: 220px;
-  flex-shrink: 0;
+  width: 280px;
+  min-width: 0;
+  max-height: min(62vh, 620px);
+  overflow-y: auto;
+  padding-right: 4px;
   display: flex;
   flex-direction: column;
   gap: 18px;
@@ -637,15 +649,231 @@
 
 @media (max-width: 720px) {
   .it3-viewer-layout {
-    flex-direction: column;
+    grid-template-columns: 1fr;
+  }
+
+  .it3-viewer-canvas {
+    height: 420px;
+    min-height: 0;
   }
 
   .it3-viewer-panel {
     width: 100%;
+    max-height: none;
+    overflow-y: visible;
+    padding-right: 0;
   }
 
   .it3-card {
     padding: 24px 20px;
+  }
+}
+
+/* 큰 화면의 모델 보정 단계는 한 화면 안에 배치한다. */
+@media (min-width: 1000px) and (min-height: 680px) {
+  .it3-root:has(.it3-viewer-layout) {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .it3-root:has(.it3-viewer-layout) .it3-steps {
+    padding-top: 10px;
+  }
+
+  .it3-root:has(.it3-viewer-layout) .it3-body {
+    min-height: 0;
+    padding: 10px 16px 8px;
+  }
+
+  .it3-card:has(.it3-viewer-layout) {
+    padding: 18px 24px;
+  }
+
+  .it3-card:has(.it3-viewer-layout) .it3-step-title {
+    margin-bottom: 4px;
+    font-size: 20px;
+  }
+
+  .it3-card:has(.it3-viewer-layout) .it3-step-desc {
+    margin-bottom: 12px;
+  }
+
+  .it3-viewer-layout {
+    grid-template-columns: minmax(0, 1fr) 360px;
+    gap: 20px;
+    align-items: stretch;
+  }
+
+  .it3-viewer-canvas {
+    height: clamp(360px, calc(100vh - 235px), 620px);
+    min-height: 0;
+  }
+
+  .it3-viewer-panel {
+    width: 360px;
+    height: clamp(360px, calc(100vh - 235px), 620px);
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px 10px;
+    align-content: space-between;
+  }
+
+  .it3-viewer-panel > .it3-ctrl-group-label,
+  .it3-viewer-panel > .it3-file-meta,
+  .it3-viewer-panel > .it3-result-card,
+  .it3-viewer-panel > .it3-rot-row,
+  .it3-viewer-panel > .it3-rot-grid,
+  .it3-viewer-panel > .it3-ctrl,
+  .it3-viewer-panel > .it3-hint {
+    grid-column: 1 / -1;
+  }
+
+  .it3-viewer-panel > .it3-ctrl-group-label {
+    margin-bottom: 0;
+    padding-bottom: 3px;
+  }
+
+  .it3-viewer-panel > .it3-file-meta {
+    margin-top: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .it3-viewer-panel > .it3-btn-ghost,
+  .it3-viewer-panel > .it3-btn-prim {
+    width: 100%;
+    padding: 7px 10px;
+    font-size: 13px;
+  }
+
+  .it3-viewer-panel > .it3-btn-prim:not(:last-child) {
+    grid-column: 1 / -1;
+  }
+
+  .it3-viewer-panel .it3-btn-sm {
+    padding: 5px 0;
+  }
+
+  .it3-viewer-panel > .it3-rot-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .it3-viewer-panel > .it3-rot-grid .it3-rot-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+  }
+
+  .it3-viewer-panel > .it3-rot-grid .it3-rot-axis {
+    width: auto;
+    text-align: center;
+  }
+
+  .it3-viewer-panel > .it3-toggle {
+    align-self: center;
+    font-size: 13px;
+  }
+
+  .it3-viewer-panel > .it3-dim-card {
+    grid-column: 1;
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+
+  .it3-viewer-panel > .it3-btn-prim:last-child {
+    grid-column: 2;
+    align-self: stretch;
+  }
+
+  .it3-card:has(.it3-viewer-layout) > .it3-footer {
+    margin-top: auto;
+    padding-top: 10px;
+  }
+}
+
+/* 큰 화면의 배경 제거 단계는 이미지와 결과를 2열로 배치한다. */
+@media (min-width: 900px) and (min-height: 700px) {
+  .it3-root:has(.it3-seg-wrap) {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .it3-root:has(.it3-seg-wrap) .it3-steps {
+    padding-top: 10px;
+  }
+
+  .it3-root:has(.it3-seg-wrap) .it3-body {
+    min-height: 0;
+    padding: 10px 16px 8px;
+  }
+
+  .it3-card:has(.it3-seg-wrap) {
+    padding: 18px 24px;
+  }
+
+  .it3-step:has(.it3-seg-wrap) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+    grid-template-areas:
+      "title title"
+      "desc desc"
+      "image result"
+      "actions result";
+    column-gap: 24px;
+    row-gap: 10px;
+    align-items: start;
+  }
+
+  .it3-step:has(.it3-seg-wrap) > .it3-step-title {
+    grid-area: title;
+    margin-bottom: 0;
+    font-size: 20px;
+  }
+
+  .it3-step:has(.it3-seg-wrap) > .it3-step-desc {
+    grid-area: desc;
+    margin-bottom: 2px;
+  }
+
+  .it3-step:has(.it3-seg-wrap) > .it3-seg-wrap {
+    grid-area: image;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: clamp(400px, calc(100vh - 315px), 540px);
+  }
+
+  .it3-step:has(.it3-seg-wrap) > .it3-seg-wrap .it3-seg-img {
+    width: 100%;
+    height: 100%;
+    max-height: none;
+    object-fit: contain;
+  }
+
+  .it3-step:has(.it3-seg-wrap) > .it3-seg-actions {
+    grid-area: actions;
+    justify-content: center;
+    margin-top: 0;
+  }
+
+  .it3-step:has(.it3-seg-wrap) > .it3-result-card {
+    grid-area: result;
+    align-self: start;
+    margin: 0;
+  }
+
+  .it3-card:has(.it3-seg-wrap) > .it3-footer {
+    margin-top: auto;
+    padding-top: 10px;
   }
 }
 
@@ -710,8 +938,8 @@
 .it3-footer {
   display: flex;
   justify-content: space-between;
-  max-width: 860px;
   width: 100%;
-  margin: 0 auto;
-  padding: 0 16px 32px;
+  margin: auto 0 0;
+  padding: 20px 0 0;
+  border-top: 1px solid var(--bd);
 }
