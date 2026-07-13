@@ -9,7 +9,7 @@ import {
   postSocialLogin,
 } from "../../springApi/MemberSpringBootApi";
 import Footer from "../../components/Footer";
-import Logo from "../../components/Logo";
+import Header from "../../components/Header";
 
 function SignupPage() {
   // 로그인 페이지의 구글 소셜 로그인에서 넘어온 경우, 구글 인증 결과(이메일)가 담겨있음
@@ -108,14 +108,13 @@ function SignupPage() {
   return (
     <div className="su-root">
       {/* 상단 네비게이션 */}
-      <div className="su-nav">
-        <Logo prefix="su" />
+      <Header prefix="su">
         <div className="su-nav-right">
           <Link to="/auth/login" className="su-btn-out">
             로그인
           </Link>
         </div>
-      </div>
+      </Header>
 
       {/* 회원가입 폼 (화면 정중앙 배치) */}
       <div className="su-auth-wrap">

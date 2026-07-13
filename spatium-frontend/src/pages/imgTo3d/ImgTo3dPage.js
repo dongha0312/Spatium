@@ -1,6 +1,22 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { generateModel, getImgTo3dErrorMessage, isCanceledImgTo3dRequest, removeBackground } from "../../api/imgTo3dApi";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  generateModel,
+  getImgTo3dErrorMessage,
+  isCanceledImgTo3dRequest,
+  removeBackground,
+} from "../../api/imgTo3dApi";
 import "../../styles/imgto3d.css";
+
+import AccountPanel from "../../components/AccountPanel";
+import AvatarButton from "../../components/AvatarButton";
+import Footer from "../../components/Footer";
+import Header from "../../components/Header";
+import { getLoginSession } from "../../utils/authSession";
+import { getMyInfo } from "../../springApi/MemberSpringBootApi";
+import useLogout from "../../hooks/useLogout";
+import useProjectStats from "../../hooks/useProjectStats";
+
 import UploadStep from "./UploadStep";
 import ObjectNameStep from "./ObjectNameStep";
 import SegmentationStep from "./SegmentationStep";
@@ -8,13 +24,29 @@ import GenerateStep from "./GenerateStep";
 import ViewerStep from "./ViewerStep";
 import SaveStep from "./SaveStep";
 
-const STEP_LABELS = ["사진 업로드", "객체명 입력", "배경 제거", "3D 생성", "모델 보정", "저장"];
+const STEP_LABELS = [
+  "사진 업로드",
+  "객체명 입력",
+  "배경 제거",
+  "3D 생성",
+  "모델 보정",
+  "저장",
+];
 
 function ImgTo3dPage() {
+  const navigate = useNavigate();
+
+  // 상단바 계정 영역 : 로그인 세션 / 내 정보 패널
+  const [session, setSession] = useState(() => getLoginSession());
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [profileImage, setProfileImage] = useState(null);
+  const accountStats = useProjectStats(Boolean(session));
+
   const [step, setStep] = useState(0);
   const [image, setImage] = useState(null);
   const [objectName, setObjectName] = useState("");
-  const [segmentationProvider, setSegmentationProvider] = useState("grounded_sam2");
+  const [segmentationProvider, setSegmentationProvider] =
+    useState("grounded_sam2");
   const [generationProvider, setGenerationProvider] = useState("local_triposr");
   const [segmentationResult, setSegmentationResult] = useState(null);
   const [segmentationStatus, setSegmentationStatus] = useState("idle");
@@ -98,9 +130,51 @@ function ImgTo3dPage() {
     };
   }, [cancelGeneration, cancelSegmentation]);
 
+  // 로그인 상태면 내 정보(프로필 사진)를 불러옴
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+
+    getMyInfo()
+      .then((me) => {
+        if (active) setProfileImage(me?.profileImageUrl || null);
+      })
+      .catch((err) => {
+        console.warn("내 정보 조회 실패:", err);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [session]);
+
+  const toggleAccountPanel = () => setPanelOpen((prev) => !prev);
+
+  // 마이페이지 버튼 : 대시보드로 이동
+  const handleGoMypage = () => navigate("/member/mypage");
+
+  // 계정설정 이동 (패널 닫고 이동)
+  const handleGoAccount = () => {
+    setPanelOpen(false);
+    navigate("/member/account");
+  };
+
+  // 로그아웃 : 서버 세션 정리 후 로컬 세션 삭제
+  const handleLogout = useLogout(() => {
+    setSession(null);
+    setPanelOpen(false);
+    navigate("/");
+  });
+
   const runSegmentation = useCallback(async () => {
     const query = objectName.trim();
-    if (!image?.file || !query || segmentationResult || segmentationRequestRef.current) return;
+    if (
+      !image?.file ||
+      !query ||
+      segmentationResult ||
+      segmentationRequestRef.current
+    )
+      return;
 
     const controller = new AbortController();
     segmentationRequestRef.current = controller;
@@ -118,16 +192,26 @@ function ImgTo3dPage() {
       setSegmentationResult(result);
       setSegmentationStatus("success");
     } catch (error) {
-      if (segmentationRequestRef.current !== controller || isCanceledImgTo3dRequest(error)) return;
+      if (
+        segmentationRequestRef.current !== controller ||
+        isCanceledImgTo3dRequest(error)
+      )
+        return;
       setSegmentationStatus("error");
       setSegmentationError(getImgTo3dErrorMessage(error));
     } finally {
-      if (segmentationRequestRef.current === controller) segmentationRequestRef.current = null;
+      if (segmentationRequestRef.current === controller)
+        segmentationRequestRef.current = null;
     }
   }, [image, objectName, segmentationProvider, segmentationResult]);
 
   const runGeneration = useCallback(async () => {
-    if (!segmentationResult?.file || generatedAsset || generationRequestRef.current) return;
+    if (
+      !segmentationResult?.file ||
+      generatedAsset ||
+      generationRequestRef.current
+    )
+      return;
 
     const controller = new AbortController();
     generationRequestRef.current = controller;
@@ -144,11 +228,16 @@ function ImgTo3dPage() {
       setGeneratedAsset(result);
       setGenerationStatus("success");
     } catch (error) {
-      if (generationRequestRef.current !== controller || isCanceledImgTo3dRequest(error)) return;
+      if (
+        generationRequestRef.current !== controller ||
+        isCanceledImgTo3dRequest(error)
+      )
+        return;
       setGenerationStatus("error");
       setGenerationError(getImgTo3dErrorMessage(error));
     } finally {
-      if (generationRequestRef.current === controller) generationRequestRef.current = null;
+      if (generationRequestRef.current === controller)
+        generationRequestRef.current = null;
     }
   }, [generatedAsset, generationProvider, segmentationResult]);
 
@@ -200,22 +289,45 @@ function ImgTo3dPage() {
     />,
     <SaveStep
       objectName={objectName.trim()}
-      normalizedName={segmentationResult?.translatedQuery || segmentationResult?.segmentedObject}
+      normalizedName={
+        segmentationResult?.translatedQuery ||
+        segmentationResult?.segmentedObject
+      }
       correctedModel={correctedModel}
     />,
   ];
 
   return (
     <div className="it3-root">
-      <header className="it3-header">
-        <div className="it3-header-logo">
-          <span className="it3-logo-sq">
-            <span className="it3-logo-sq-i" />
-          </span>
-          SPATIUM
-        </div>
+      <Header prefix="it3" className="it3-header">
         <div className="it3-header-title">이미지로 3D 가구 만들기</div>
-      </header>
+        {session ? (
+          <div className="it3-nav-account">
+            {/* 닉네임 왼쪽 : 마이페이지로 바로 이동하는 외곽선 버튼 */}
+            <button
+              type="button"
+              className="it3-mypage-btn"
+              onClick={handleGoMypage}
+            >
+              내 공간
+            </button>
+            {/* 닉네임 클릭 : 우측 "내 정보" 패널 열기 */}
+            <AvatarButton
+              prefix="it3"
+              imageUrl={profileImage}
+              initial={session.nickname.charAt(0).toUpperCase()}
+              name={session.nickname}
+              onClick={toggleAccountPanel}
+              showCaret={false}
+            />
+          </div>
+        ) : (
+          <Link to="/member/mypage" className="it3-av-btn">
+            <div className="it3-av-circ">S</div>
+            <span className="it3-av-name">마이페이지</span>
+          </Link>
+        )}
+      </Header>
 
       <ol className="it3-steps">
         {STEP_LABELS.map((label, i) => {
@@ -253,6 +365,28 @@ function ImgTo3dPage() {
           </button>
         )}
       </footer>
+
+      <Footer />
+
+      {/* 닉네임 클릭 시 열리는 "내 정보" 우측 패널 */}
+      <AccountPanel
+        open={Boolean(session && panelOpen)}
+        prefix="it3"
+        profile={{
+          name: session?.nickname,
+          initial: session?.nickname?.charAt(0).toUpperCase(),
+          imageUrl: profileImage,
+          subtext: session?.email ? `${session.email}` : "",
+        }}
+        statItems={[
+          { label: "프로젝트", value: accountStats.projectCount },
+          { label: "룸 개수", value: accountStats.roomCount },
+        ]}
+        onClose={() => setPanelOpen(false)}
+        onProfileClick={handleGoAccount}
+        onLogout={handleLogout}
+        onAccountClick={handleGoAccount}
+      />
     </div>
   );
 }

@@ -24,7 +24,7 @@
 .lg-nav {
   display: flex;
   align-items: center;
-  height: 56px;
+  height: 63px;
   padding: 0 32px;
   background: var(--sur);
   border-bottom: 1px solid var(--bd);
