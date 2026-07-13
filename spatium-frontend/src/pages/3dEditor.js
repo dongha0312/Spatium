@@ -9,7 +9,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import "../styles/3deditor.css";
 import AccountPanel from "../components/AccountPanel";
 import AvatarButton from "../components/AvatarButton";
-import Logo from "../components/Logo";
+import Header from "../components/Header";
 import RoomSceneEditorPage from "./roomSceneEditor/RoomSceneEditorPage";
 import { getAccessToken, getLoginSession } from "../utils/authSession";
 import { getMyInfo } from "../springApi/MemberSpringBootApi";
@@ -539,8 +539,7 @@ function ThreeDEditor() {
 
   return (
     <div className="ed-root">
-      <div className="ed-nav">
-        <Logo prefix="ed" />
+      <Header prefix="ed">
         <div className="ed-nav-center">{roomLabel}</div>
         <div className="ed-nav-status">
           {isSaving && <span className="ed-save-state">저장중...</span>}
@@ -589,7 +588,7 @@ function ThreeDEditor() {
             <span className="ed-av-name">마이페이지</span>
           </Link>
         )}
-      </div>
+      </Header>
 
       <div className="ed-wrap">
         <div className="ed-toolbar">

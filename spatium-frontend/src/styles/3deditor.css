@@ -26,7 +26,7 @@
 .ed-nav {
   display: flex;
   align-items: center;
-  height: 52px;
+  height: 63px;
   padding: 0 24px;
   background: var(--sur);
   border-bottom: 1px solid var(--bd);

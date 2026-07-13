@@ -22,7 +22,7 @@ import {
 import AccountPanel from "../../components/AccountPanel";
 import AvatarButton from "../../components/AvatarButton";
 import Footer from "../../components/Footer";
-import Logo from "../../components/Logo";
+import Header from "../../components/Header";
 import MakeRoom from "../../components/MakeRoom";
 import useLogout from "../../hooks/useLogout";
 
@@ -506,8 +506,7 @@ function MyPage() {
 
   return (
     <div className="mp-root">
-      <div className="mp-nav">
-        <Logo prefix="mp" />
+      <Header prefix="mp">
         <div className="mp-nav-right">
           <AvatarButton
             prefix="mp"
@@ -518,7 +517,7 @@ function MyPage() {
             showCaret={false}
           />
         </div>
-      </div>
+      </Header>
 
       <div className="mp-body">
         <div className="mp-sidebar">

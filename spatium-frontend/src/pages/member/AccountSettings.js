@@ -4,7 +4,7 @@ import "../../styles/accountsettings.css";
 import AccountPanel from "../../components/AccountPanel";
 import AvatarButton from "../../components/AvatarButton";
 import Footer from "../../components/Footer";
-import Logo from "../../components/Logo";
+import Header from "../../components/Header";
 import {
   clearLoginSession,
   getLoginSession,
@@ -251,15 +251,14 @@ function AccountSettings() {
     return (
       <div className="as-root">
         {/* 상단 네비게이션 */}
-        <div className="as-nav">
-          <Logo prefix="as" />
+        <Header prefix="as">
           <div className="as-nav-right">
             <div className="as-av-btn">
               <div className="as-av-circ">{avatarNode}</div>
               <span className="as-av-name">{displayName}</span>
             </div>
           </div>
-        </div>
+        </Header>
 
         <div className="as-body">
           <div
@@ -312,8 +311,7 @@ function AccountSettings() {
   return (
     <div className="as-root">
       {/* 상단 네비게이션 */}
-      <div className="as-nav">
-        <Logo prefix="as" />
+      <Header prefix="as">
         <div className="as-nav-right">
           <div className="as-nav-account">
             {/* 닉네임 왼쪽 : 마이페이지로 바로 이동하는 외곽선 버튼 */}
@@ -335,7 +333,7 @@ function AccountSettings() {
             />
           </div>
         </div>
-      </div>
+      </Header>
 
       {/* 본문 */}
       <div className="as-body">
