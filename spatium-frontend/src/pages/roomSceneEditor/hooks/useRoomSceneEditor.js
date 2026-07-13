@@ -60,7 +60,11 @@ import {
   computeDecorView,
   restoreControlLimits,
 } from "../scene/decorCamera";
-import { startCameraTransition } from "../scene/cameraTransitions";
+import {
+  captureCameraView,
+  startCameraTransition,
+  updateCameraTransition,
+} from "../scene/cameraTransitions";
 import {
   createWallColliderVisuals,
   createWallColliders,
@@ -103,8 +107,6 @@ import { useSceneConfigStatus } from "./useSceneConfigStatus";
 import { useSelectionState } from "./useSelectionState";
 import {
   applySkyviewMode,
-  captureCameraView,
-  updateCameraTransition,
   useSkyviewMode,
 } from "./useSkyviewMode";
 
