@@ -98,7 +98,8 @@ class Settings:
     glb_rotation_x_degrees: float = float(
         os.getenv("GLB_ROTATION_X_DEGREES", "-90")
     )
-    max_upload_bytes: int = int(os.getenv("MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+    # 파일 업로드 최대 크기 지정하는 것. -> .env에서 덮어씌워짐
+    max_upload_bytes: int = int(os.getenv("MAX_UPLOAD_BYTES", str(30 * 1024 * 1024)))
 
 
 settings = Settings()

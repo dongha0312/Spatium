@@ -665,7 +665,7 @@ function MyPage() {
           ) : (
             <div>
               <div className="mp-main-head" style={{ marginBottom: 22 }}>
-                <div className="mp-main-title">최근 룸</div>
+                <div className="mp-main-title">내 프로젝트</div>
                 <div className="mp-main-head-row">
                   <div className="mp-main-sub">
                     {loading

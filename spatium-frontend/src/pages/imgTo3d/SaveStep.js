@@ -114,7 +114,7 @@ function SaveStep({ objectName, normalizedName, correctedModel }) {
           </select>
         </div>
 
-        <div className="it3-file-card">
+        {/* <div className="it3-file-card">
           <div className="it3-result-label">보정된 파일</div>
           <div className="it3-file-name">{correctedModel?.file?.name || "GLB 없음"}</div>
           <div className="it3-file-meta">
@@ -126,7 +126,7 @@ function SaveStep({ objectName, normalizedName, correctedModel }) {
               {correctedModel.dimensions.z.toFixed(2)}m
             </div>
           )}
-        </div>
+        </div> */}
 
         {error && (
           <div className="it3-result-card">
