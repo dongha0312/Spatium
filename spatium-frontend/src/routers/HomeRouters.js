@@ -11,6 +11,7 @@ import { Route, Routes } from "react-router-dom";
 import HomePage from "../pages/HomePage";
 import CookiePolicy from "../pages/CookiePolicy";
 import PrivacyConsent from "../pages/PrivacyConsent";
+import ContactUsPage from "../pages/ContactUsPage";
 
 // HomeRouters.js 컴포넌트 정의하기
 function HomeRouters() {
@@ -30,6 +31,7 @@ function HomeRouters() {
         path="privacy-consent"
         element={<PrivacyConsent></PrivacyConsent>}
       ></Route>
+      <Route path="contact-us" element={<ContactUsPage />}></Route>
     </Routes>
   );
 }

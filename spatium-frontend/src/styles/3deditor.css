@@ -123,8 +123,13 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-left: 12px;
+  margin-left: auto;
   flex-shrink: 0;
+}
+
+/* 로그인하지 않은 경우에도 계정 이동 버튼을 기존처럼 헤더 우측에 고정 */
+.ed-nav > .ed-av-btn {
+  margin-left: auto;
 }
 
 .ed-nav-account .ed-av-btn {
@@ -635,22 +640,27 @@
 
 /* 툴바 */
 .ed-toolbar {
-  background: #27231F;
-  border-bottom: 1px solid rgba(255, 255, 255, .06);
-  height: 38px;
+  height: 55px;
   display: flex;
   align-items: center;
-  padding: 0 12px;
-  gap: 4px;
+  padding: 0 24px;
+  gap: 12px;
+  position: relative;
+  z-index: 2;
+  border-bottom: 1px solid rgba(196, 149, 106, .24);
+  background:
+    radial-gradient(circle at 50% -120%, rgba(196, 149, 106, .3), transparent 64%),
+    linear-gradient(180deg, #332820 0%, #241b16 100%);
+  box-shadow: 0 5px 20px rgba(16, 10, 6, .2);
   flex-shrink: 0;
 }
 
 .ed-toolbar-btn {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, .1);
-  border-radius: 6px;
-  padding: 4px 12px;
-  font-size: 11px;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: 13px;
   color: rgba(255, 255, 255, .3);
   cursor: pointer;
   white-space: nowrap;
@@ -1160,13 +1170,18 @@
 
 /* 하단 액션바 */
 .ed-footer {
-  background: #27231F;
-  border-top: 1px solid rgba(255, 255, 255, .06);
-  padding: 7px 14px;
+  height: 50px;
+  min-height: 0;
+  padding: 0 18px;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 5px;
+  gap: 10px;
+  border-top: 1px solid rgba(196, 149, 106, .2);
+  background:
+    linear-gradient(90deg, rgba(196, 149, 106, .05), transparent 35%),
+    linear-gradient(180deg, #2b211b 0%, #211914 100%);
+  box-shadow: 0 -5px 18px rgba(13, 8, 5, .18);
   flex-shrink: 0;
 }
 
@@ -1208,6 +1223,56 @@
   opacity: .9;
 }
 
+.ed-footer .ed-footer-btn {
+  min-width: 112px;
+  height: 34px;
+  padding: 0 18px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 750;
+  transition:
+    border-color .18s ease,
+    background .18s ease,
+    box-shadow .18s ease,
+    color .18s ease,
+    transform .18s ease;
+}
+
+.ed-footer .ed-footer-cancel {
+  min-width: 148px;
+  border: 1px solid rgba(224, 202, 181, .22);
+  background: rgba(255, 255, 255, .055);
+  color: #d9cabd;
+}
+
+.ed-footer .ed-footer-cancel:hover:not(:disabled) {
+  border-color: rgba(224, 202, 181, .42);
+  background: rgba(255, 255, 255, .095);
+  color: #fff8f0;
+}
+
+.ed-footer .ed-footer-save {
+  border: 1px solid rgba(232, 190, 146, .38);
+  background: linear-gradient(135deg, #b98258 0%, #79503b 100%);
+  color: #fff;
+  box-shadow:
+    0 6px 16px rgba(75, 42, 26, .35),
+    inset 0 1px 0 rgba(255, 255, 255, .18);
+}
+
+.ed-footer .ed-footer-save:hover:not(:disabled) {
+  opacity: 1;
+  background: linear-gradient(135deg, #c89165 0%, #865a42 100%);
+  box-shadow:
+    0 8px 20px rgba(75, 42, 26, .42),
+    inset 0 1px 0 rgba(255, 255, 255, .2);
+  transform: translateY(-1px);
+}
+
+.ed-footer .ed-footer-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
 @media (max-width: 700px) {
   .ed-nav {
     justify-content: space-between;
@@ -1236,6 +1301,33 @@
   .ed-save-state {
     max-width: 120px;
   }
+
+  .ed-toolbar {
+    height: 58px;
+    padding: 0 14px;
+    gap: 8px;
+  }
+
+  .ed-toolbar-project {
+    max-width: 34vw;
+    font-size: 14px;
+  }
+
+  .ed-toolbar-status {
+    min-width: 0;
+  }
+
+  .ed-canvas-help {
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
+  }
+
+  .ed-toolbar .ed-save-state {
+    padding: 6px 9px;
+    font-size: 11px;
+  }
+
   .ed-help-btn {
     margin-left: 8px;
   }
@@ -1276,4 +1368,216 @@
     padding: 15px 16px 18px;
   }
   
+}
+
+.ed-toolbar-project {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 46%;
+  height: 40px;
+  padding: 0 20px;
+  border: 1px solid rgba(211, 168, 126, .42);
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, .11),
+    rgba(255, 255, 255, .045)
+  );
+  color: #f8efe5;
+  font-size: 15px;
+  font-weight: 750;
+  letter-spacing: .1px;
+  box-shadow:
+    0 7px 20px rgba(12, 7, 4, .24),
+    inset 0 1px 0 rgba(255, 255, 255, .1);
+  transform: translateX(-50%);
+}
+
+.ed-toolbar-project-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d8a46f;
+  box-shadow: 0 0 0 4px rgba(216, 164, 111, .13);
+  flex-shrink: 0;
+}
+
+.ed-toolbar-project-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ed-canvas-help {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 6;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid rgba(28, 18, 9, .16);
+  border-radius: 50%;
+  background: #fff;
+  color: #24170e;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+  flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(28, 18, 9, .2);
+}
+
+.ed-canvas-help:hover {
+  border-color: var(--ga);
+  background: var(--bg);
+}
+
+.ed-canvas-status {
+  position: absolute;
+  top: 18px;
+  right: 68px;
+  z-index: 6;
+  display: flex;
+  justify-content: flex-end;
+  max-width: min(360px, calc(100% - 92px));
+}
+
+.ed-canvas-status .ed-save-state {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 0 14px;
+  border: 1px solid rgba(82, 56, 38, .22);
+  border-radius: 12px;
+  background: rgba(255, 253, 249, .96);
+  color: #4e3828;
+  font-size: 14px;
+  font-weight: 800;
+  box-shadow: 0 5px 16px rgba(28, 18, 9, .18);
+  backdrop-filter: blur(8px);
+}
+
+.ed-canvas-status .ed-save-state::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d19a58;
+  box-shadow: 0 0 0 4px rgba(209, 154, 88, .14);
+  content: "";
+  flex-shrink: 0;
+}
+
+.ed-canvas-status .ed-save-saving::before {
+  animation: ed-save-pulse 1.2s ease-in-out infinite;
+}
+
+.ed-canvas-status .ed-save-ok {
+  border-color: rgba(22, 101, 52, .2);
+  color: #166534;
+}
+
+.ed-canvas-status .ed-save-ok::before {
+  background: #22a35a;
+  box-shadow: 0 0 0 4px rgba(34, 163, 90, .13);
+}
+
+.ed-canvas-status .ed-save-error {
+  border-color: rgba(153, 27, 27, .2);
+  color: #991b1b;
+}
+
+.ed-canvas-status .ed-save-error::before {
+  background: #dc4545;
+  box-shadow: 0 0 0 4px rgba(220, 69, 69, .12);
+}
+
+.ed-canvas-status .ed-save-pending {
+  border-color: rgba(161, 98, 7, .22);
+  color: #8a580d;
+}
+
+@keyframes ed-save-pulse {
+  0%,
+  100% {
+    opacity: .45;
+    transform: scale(.85);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 700px) {
+  .ed-toolbar {
+    height: 56px;
+    padding: 0 14px;
+  }
+
+  .ed-toolbar-project {
+    left: 14px;
+    max-width: 52%;
+    height: 36px;
+    gap: 8px;
+    padding: 0 14px;
+    font-size: 13px;
+    transform: none;
+  }
+
+  .ed-toolbar-project-dot {
+    width: 7px;
+    height: 7px;
+  }
+
+  .ed-canvas-help {
+    top: 14px;
+    right: 14px;
+    width: 34px;
+    height: 34px;
+    font-size: 18px;
+  }
+
+  .ed-canvas-status {
+    top: 14px;
+    right: 58px;
+    max-width: calc(100% - 76px);
+  }
+
+  .ed-canvas-status .ed-save-state {
+    min-height: 34px;
+    max-width: 100%;
+    padding: 0 11px;
+    font-size: 11px;
+  }
+
+  .ed-footer {
+    height: 50px;
+    min-height: 0;
+    padding: 0 12px;
+  }
+
+  .ed-footer .ed-footer-btn {
+    min-width: 96px;
+    height: 34px;
+    padding: 0 14px;
+  }
+
+  .ed-footer .ed-footer-cancel {
+    min-width: 136px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ed-canvas-status .ed-save-saving::before {
+    animation: none;
+  }
 }

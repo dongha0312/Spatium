@@ -556,28 +556,6 @@ function ThreeDEditor() {
   return (
     <div className="ed-root">
       <Header prefix="ed">
-        <div className="ed-nav-center">{roomLabel}</div>
-        <div className="ed-nav-status">
-          {isSaving && <span className="ed-save-state">저장중...</span>}
-          {!isSaving && saveMessage && (
-            <span className="ed-save-state ed-save-ok">{saveMessage}</span>
-          )}
-          {!isSaving && saveError && (
-            <span className="ed-save-state ed-save-error">{saveError}</span>
-          )}
-          {!isSaving && hasUnsavedChanges && !saveMessage && !saveError && (
-            <span className="ed-save-state">저장되지 않은 변경사항</span>
-          )}
-        </div>
-        <button
-          type="button"
-          className="ed-help-btn"
-          onClick={openEditorManual}
-          aria-label="Open 3D editor guide"
-          title="3D editor guide"
-        >
-          ?
-        </button>
         {session ? (
           <div className="ed-nav-account">
             {/* 닉네임 왼쪽 : 마이페이지로 바로 이동하는 외곽선 버튼 */}
@@ -608,9 +586,10 @@ function ThreeDEditor() {
 
       <div className="ed-wrap">
         <div className="ed-toolbar">
-          <button className="ed-toolbar-btn ed-proj" type="button">
-            {projectLabel}
-          </button>
+          <div className="ed-toolbar-project" title={projectLabel}>
+            <span className="ed-toolbar-project-dot" aria-hidden="true" />
+            <span className="ed-toolbar-project-name">{projectLabel}</span>
+          </div>
         </div>
 
         <div className="ed-main">
@@ -777,6 +756,33 @@ function ThreeDEditor() {
                 />
               )}
             </div>
+
+            <div className="ed-canvas-status" aria-live="polite">
+              {isSaving && (
+                <span className="ed-save-state ed-save-saving">저장중...</span>
+              )}
+              {!isSaving && saveMessage && (
+                <span className="ed-save-state ed-save-ok">{saveMessage}</span>
+              )}
+              {!isSaving && saveError && (
+                <span className="ed-save-state ed-save-error">{saveError}</span>
+              )}
+              {!isSaving && hasUnsavedChanges && !saveMessage && !saveError && (
+                <span className="ed-save-state ed-save-pending">
+                  저장되지 않은 변경사항
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              className="ed-canvas-help"
+              onClick={openEditorManual}
+              aria-label="Open 3D editor guide"
+              title="3D editor guide"
+            >
+              ?
+            </button>
 
             {isSkyview && (
               <div className="ed-canvas-badge ed-canvas-badge-sky">Skyview</div>
