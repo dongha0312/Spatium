@@ -21,27 +21,6 @@
   box-sizing: border-box;
 }
 
-.cu-nav {
-  display: flex;
-  align-items: center;
-  min-height: 63px;
-  padding: 0 32px;
-  border-bottom: 1px solid var(--bd);
-  background: var(--sur);
-  flex-shrink: 0;
-}
-
-.cu-logo {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--t);
-  font-size: 13px;
-  font-weight: 900;
-  letter-spacing: 6px;
-  text-decoration: none;
-}
-
 .cu-main {
   flex: 1;
   display: grid;
@@ -127,11 +106,6 @@
 }
 
 @media (max-width: 650px) {
-  .cu-nav {
-    flex-wrap: wrap;
-    padding: 14px 20px;
-  }
-
   .cu-main {
     padding: 32px 18px;
   }

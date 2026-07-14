@@ -1,6 +1,367 @@
-.app-header {
+.app-header.app-header {
   position: relative;
   z-index: 30;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 63px;
+  padding: 0 32px;
+  border-bottom: 1px solid var(--bd, #ddd3c6);
+  background: var(--sur, #faf7f3);
+  font-family: -apple-system, "Pretendard", sans-serif;
+  flex-shrink: 0;
+}
+
+.app-header-logo.app-header-logo {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--t, #1c1209);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 6px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-header-logo-image {
+  display: block;
+  width: auto;
+  height: 20px;
+}
+
+.app-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.app-header-right [class*="-nav-right"],
+.app-header-right [class*="-nav-account"] {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: 0;
+}
+
+.app-header-right button,
+.app-header-right a {
+  font-family: inherit;
+  line-height: 1.2;
+}
+
+.app-header-right [class*="-mypage-btn"],
+.app-header-right [class*="-btn-out"],
+.app-header-right [class*="-btn-prim"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-header-right [class*="-av-btn"] {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 8px;
+  margin-left: 0;
+  padding: 7px 14px 7px 8px;
+  border: 1px solid var(--bd, #ddd3c6);
+  border-radius: 24px;
+  background: var(--sur, #faf7f3);
+  color: var(--t, #1c1209);
+  font-size: 15px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-header-right [class*="-av-circ"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    var(--ga, #c4956a),
+    var(--g, #5c3d2e)
+  );
+  color: #fff;
+  flex-shrink: 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.app-header-right [class*="-av-img"] {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.app-header-right [class*="-av-name"] {
+  color: var(--t, #1c1209);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.app-header-account-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.app-header-account-space-button,
+.app-header-account-login-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.app-header-account-space-button {
+  border: 1px solid var(--bd, #ddd3c6);
+  background: var(--sur, #faf7f3);
+  color: var(--g, #5c3d2e);
+}
+
+.app-header-account-space-button:hover {
+  border-color: var(--ga, #c4956a);
+  background: var(--bg, #f2ede6);
+}
+
+.app-header-account-login-button {
+  border: 1px solid var(--g, #5c3d2e);
+  background: var(--g, #5c3d2e);
+  color: #fff;
+  font-weight: 700;
+}
+
+.app-header-account-login-button:hover {
+  opacity: 0.9;
+}
+
+.app-header-account-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(28, 18, 9, 0.28);
+}
+
+.app-header-account-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 61;
+  display: flex;
+  width: 300px;
+  max-width: 100%;
+  flex-direction: column;
+  border-left: 1px solid var(--bd, #ddd3c6);
+  border-radius: 0 0 0 14px;
+  background: var(--sur, #faf7f3);
+  box-shadow: -4px 0 20px rgba(60, 30, 10, 0.08);
+  font-family: -apple-system, "Pretendard", sans-serif;
+  animation: app-header-account-panel-in 0.26s
+    cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes app-header-account-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.app-header-account-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--bd, #ddd3c6);
+}
+
+.app-header-account-panel-title {
+  color: var(--t, #1c1209);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.app-header-account-panel-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--bd, #ddd3c6);
+  border-radius: 8px;
+  background: var(--bg, #f2ede6);
+  color: var(--t2, #5a4535);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.app-header-account-panel-body {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.app-header-account-panel-label {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--t3, #a08878);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.app-header-account-panel-profile {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid var(--bd, #ddd3c6);
+  border-radius: 12px;
+  background: var(--sur, #faf7f3);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app-header-account-panel-profile:hover {
+  border-color: var(--ga, #c4956a);
+  background: var(--bg, #f2ede6);
+}
+
+.app-header-account-panel-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(
+    135deg,
+    var(--ga, #c4956a),
+    var(--g, #5c3d2e)
+  );
+  color: #fff;
+  flex-shrink: 0;
+  overflow: hidden;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.app-header-account-panel-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.app-header-account-panel-pname {
+  color: var(--t, #1c1209);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.app-header-account-panel-pnick {
+  margin-top: 1px;
+  color: var(--t3, #a08878);
+  font-size: 12px;
+}
+
+.app-header-account-panel-arrow {
+  margin-left: auto;
+  color: var(--t3, #a08878);
+  font-size: 16px;
+}
+
+.app-header-account-panel-stats {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.app-header-account-panel-stat {
+  flex: 1;
+  padding: 11px;
+  border: 1px solid var(--bd, #ddd3c6);
+  border-radius: 10px;
+  background: var(--bg, #f2ede6);
+  text-align: center;
+}
+
+.app-header-account-panel-stat-num {
+  display: block;
+  color: var(--t, #1c1209);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.app-header-account-panel-stat-label {
+  display: block;
+  margin-top: 2px;
+  color: var(--t3, #a08878);
+  font-size: 10px;
+}
+
+.app-header-account-panel-foot {
+  display: flex;
+  gap: 8px;
+  padding: 13px 16px;
+  border-top: 1px solid var(--bd, #ddd3c6);
+}
+
+.app-header-account-panel-foot-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+}
+
+.app-header-account-panel-sub {
+  border: 1px solid var(--bd, #ddd3c6);
+  background: transparent;
+  color: var(--t2, #5a4535);
+}
+
+.app-header-account-panel-sub:hover {
+  background: var(--bg, #f2ede6);
 }
 
 .app-header-menu {
@@ -116,6 +477,18 @@
 }
 
 @media (max-width: 650px) {
+  .app-header.app-header {
+    height: auto;
+    min-height: 63px;
+    flex-wrap: wrap;
+    gap: 10px 16px;
+    padding: 14px 20px;
+  }
+
+  .app-header-logo.app-header-logo {
+    letter-spacing: 4px;
+  }
+
   .app-header-menu {
     order: 3;
     width: 100%;

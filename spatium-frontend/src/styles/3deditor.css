@@ -22,46 +22,6 @@
   box-sizing: border-box;
 }
 
-/* 상단 네비게이션 */
-.ed-nav {
-  display: flex;
-  align-items: center;
-  height: 63px;
-  padding: 0 24px;
-  background: var(--sur);
-  border-bottom: 1px solid var(--bd);
-  position: relative;
-  flex-shrink: 0;
-}
-
-.ed-logo {
-  font-size: 13px;
-  font-weight: 900;
-  letter-spacing: 6px;
-  color: var(--t);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  text-decoration: none;
-}
-
-.ed-logo-sq {
-  width: 17px;
-  height: 17px;
-  border-radius: 4px;
-  background: linear-gradient(135deg, var(--ga), var(--g));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ed-logo-sq-i {
-  width: 7px;
-  height: 7px;
-  border: 2px solid #fff;
-  border-radius: 1px;
-}
-
 .ed-nav-center {
   font-size: 12px;
   color: var(--t2);
@@ -1274,15 +1234,6 @@
 }
 
 @media (max-width: 700px) {
-  .ed-nav {
-    justify-content: space-between;
-    padding: 0 14px;
-  }
-
-  .ed-logo {
-    letter-spacing: 4px;
-  }
-
   .ed-nav-center {
     position: static;
     max-width: 40%;

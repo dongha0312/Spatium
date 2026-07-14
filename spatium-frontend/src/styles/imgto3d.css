@@ -22,43 +22,11 @@
   box-sizing: border-box;
 }
 
-/* 상단 헤더 */
-.it3-header {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  height: 63px;
-  padding: 0 32px;
-  background: var(--sur);
-  border-bottom: 1px solid var(--bd);
-  flex-shrink: 0;
-}
-
-.it3-logo {
-  font-size: 13px;
-  font-weight: 900;
-  letter-spacing: 6px;
-  color: var(--t);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  text-decoration: none;
-}
-
-.it3-header-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--t2);
-  padding-left: 16px;
-  border-left: 1px solid var(--bd);
-}
-
 /* 상단바 : 마이페이지 버튼(외곽선) + 닉네임 버튼 묶음 (우측 정렬) */
 .it3-nav-account {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-left: auto;
   flex-shrink: 0;
 }
 
@@ -86,7 +54,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: 12px;
   padding: 7px 14px 7px 8px;
   border: 1px solid var(--bd);
   border-radius: 24px;

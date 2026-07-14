@@ -20,59 +20,6 @@
   box-sizing: border-box;
 }
 
-/* 상단 네비게이션 */
-.mp-nav {
-  display: flex;
-  align-items: center;
-  height: 63px;
-  padding: 0 32px;
-  background: var(--sur);
-  border-bottom: 1px solid var(--bd);
-  flex-shrink: 0;
-}
-
-.mp-logo {
-  font-size: 13px;
-  font-weight: 900;
-  letter-spacing: 6px;
-  color: var(--t);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  text-decoration: none;
-}
-
-.mp-logo-sq {
-  width: 17px;
-  height: 17px;
-  border-radius: 4px;
-  background: linear-gradient(135deg, var(--ga), var(--g));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.mp-logo-sq-i {
-  width: 7px;
-  height: 7px;
-  border: 2px solid #fff;
-  border-radius: 1px;
-}
-
-.mp-nav-link {
-  font-size: 13px;
-  color: var(--t2);
-  font-weight: 500;
-  margin-left: 28px;
-}
-
-.mp-nav-right {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .mp-new-btn {
   display: flex;
   align-items: center;
@@ -846,10 +793,6 @@
 }
 
 @media (max-width: 1100px) {
-  .mp-nav {
-    padding: 0 20px;
-  }
-
   .mp-main {
     padding: 20px 16px;
   }
