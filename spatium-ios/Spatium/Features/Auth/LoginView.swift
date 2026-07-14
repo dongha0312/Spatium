@@ -308,7 +308,7 @@ struct LoginView: View {
     // MARK: - Apple nonce helpers
 
     private static func randomNonce(length: Int = 32) -> String {
-        let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._")
         return String((0..<length).map { _ in charset.randomElement()! })
     }
 

@@ -17,9 +17,9 @@ extension Data {
         append("--\(boundary)\r\n")
 
         if let fileName {
-            append("Content-Disposition: form-data; name=\"\(name)\"; filename=\"\(fileName)\"\r\n")
+            append("Content-Disposition: form-data; name=\"\(sanitizedMultipartToken(name))\"; filename=\"\(sanitizedMultipartToken(fileName))\"\r\n")
         } else {
-            append("Content-Disposition: form-data; name=\"\(name)\"\r\n")
+            append("Content-Disposition: form-data; name=\"\(sanitizedMultipartToken(name))\"\r\n")
         }
 
         append("Content-Type: \(contentType)\r\n\r\n")

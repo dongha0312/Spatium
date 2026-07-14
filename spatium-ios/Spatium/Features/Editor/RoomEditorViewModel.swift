@@ -7,7 +7,6 @@ final class RoomEditorViewModel: ObservableObject {
     @Published var layout: RoomLayout
     @Published var viewMode: RoomViewMode = .threeD
     @Published var selectedItemID: Int?
-    @Published var isLoading = false
     @Published var isSaving = false
     @Published var statusMessage: String?
     @Published var isOffline = false
@@ -60,7 +59,6 @@ final class RoomEditorViewModel: ObservableObject {
     /// 저장 과정에서 새 서버 룸이 생성됐을 때(스캔 첫 업로드) 바깥 상태에 알리는 콜백.
     /// 이를 전달하지 않으면 스캔 화면의 "서버로 업로드"가 같은 스캔으로 중복 룸을 만든다.
     var onServerRoomCreated: ((RoomRecord) -> Void)?
-    private let editorService = RoomEditorService()
     private var nextLocalItemID = -1
     /// 새 가구가 앉을 바닥 높이(월드 Y). 박스 방은 0, 스캔 방은 감지 가구 바닥에서 유도.
     private var floorY: Double = 0
@@ -471,21 +469,13 @@ final class RoomEditorViewModel: ObservableObject {
             inspectRecoverableDraft()
             return
         }
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            layout = try await editorService.fetchLayout(roomID: roomID)
-            if let mode = layout.viewMode { viewMode = mode }
-            remoteLayoutLoaded = true
-            isOffline = false
-            statusMessage = nil
-            savedLayoutFingerprint = Self.layoutFingerprint(layout)
-            rebuildLocalIdentifiers()
-            sceneRevision += 1
-        } catch {
-            isOffline = true
-            statusMessage = "서버에 연결할 수 없어 오프라인으로 편집합니다."
-        }
+        // 백엔드에는 별도 레이아웃 조회 API가 없다. 서버 룸의 실제 배치는 scene(metadata)
+        // 응답으로 여는 씬 에디터가 담당하고, 이 경로(폴백 박스 에디터)는 방 데이터를 받지
+        // 못한 상태다. 네트워크 문제처럼 보이지 않게 상태를 그대로 알려주고,
+        // remoteLayoutLoaded=false 가드가 빈 레이아웃으로 서버를 덮어쓰는 저장을 막는다.
+        isOffline = true
+        statusMessage = "방 데이터를 불러오지 못해 이 기기에서만 편집합니다."
+        sceneRevision += 1
         inspectRecoverableDraft()
     }
 
@@ -495,7 +485,8 @@ final class RoomEditorViewModel: ObservableObject {
             itemId: takeLocalItemID(),
             furnitureId: furniture.furnitureId,
             furnitureName: furniture.name,
-            position: .zero,
+            // 스캔 방은 바닥이 y=0이 아닐 수 있으므로 실제 바닥 높이에 놓는다.
+            position: .init(x: 0, y: floorY, z: 0),
             rotation: .zero,
             scale: .one,
             width: furniture.width,
@@ -507,15 +498,6 @@ final class RoomEditorViewModel: ObservableObject {
         selectedItemID = placed.itemId
         isMovingSelectedFurniture = true
         sceneRevision += 1
-
-        guard !isOffline else { return }
-        Task {
-            if let serverItem = try? await editorService.placeFurniture(
-                roomID: roomID, furnitureID: furniture.furnitureId, transform: .identity
-            ) {
-                replaceLocalItemID(placed.itemId, with: serverItem.itemId)
-            }
-        }
     }
 
     func commitTransform(itemID: Int, transform: FurnitureTransform, recordHistory: Bool = true) {
@@ -531,11 +513,6 @@ final class RoomEditorViewModel: ObservableObject {
         layout.furnitures[index].rotation = transform.rotation
         layout.furnitures[index].scale = transform.scale
         markLayoutChanged()
-
-        guard !isOffline, itemID > 0 else { return }
-        Task {
-            try? await editorService.updateTransform(itemID: itemID, transform: transform)
-        }
     }
 
     func rotateSelected(byDegrees degrees: Double) {
@@ -589,15 +566,6 @@ final class RoomEditorViewModel: ObservableObject {
         recordHistoryStep()
         layout.furnitures[index].rotation.y = snapped * .pi / 180
         markLayoutChanged()
-
-        guard !isOffline, item.itemId > 0 else { return }
-        Task {
-            try? await editorService.updateTransform(itemID: item.itemId, transform: FurnitureTransform(
-                position: item.position,
-                rotation: layout.furnitures[index].rotation,
-                scale: item.scale
-            ))
-        }
     }
 
     /// 현재 선택 항목의 Y 회전(도, 정수 반올림).
@@ -684,15 +652,6 @@ final class RoomEditorViewModel: ObservableObject {
         recordHistoryStep()
         layout.furnitures[index].position.y = floorY + clamped / 100
         markLayoutChanged()
-
-        guard !isOffline, item.itemId > 0 else { return }
-        Task {
-            try? await editorService.updateTransform(itemID: item.itemId, transform: FurnitureTransform(
-                position: layout.furnitures[index].position,
-                rotation: item.rotation,
-                scale: item.scale
-            ))
-        }
     }
 
     // MARK: - 가구 크기 조절 (웹 "크기 설정" 모달 대응 — 배치 후 선택 카드에서 조절)
@@ -893,11 +852,6 @@ final class RoomEditorViewModel: ObservableObject {
         layout.space?.wallColor = hex
         markLayoutChanged()
         sceneRevision += 1
-
-        guard !isOffline, let spaceID = layout.space?.spaceId else { return }
-        Task {
-            try? await editorService.updateSpace(spaceID: spaceID, name: nil, area: nil, ceilingHeight: nil, wallColor: hex)
-        }
     }
 
     var wallColorHex: String { layout.space?.wallColor ?? "#F2EDE5" }
@@ -922,11 +876,6 @@ final class RoomEditorViewModel: ObservableObject {
             selectedItemID = nil
             isMovingSelectedFurniture = false
             isMeasuring = false
-        }
-        // 사람 뷰는 앱 전용 모드라 서버(3D/SKYVIEW만 지원)에 동기화하지 않는다.
-        guard !isOffline, mode != .person else { return }
-        Task {
-            try? await editorService.updateViewMode(roomID: roomID, mode: mode)
         }
     }
 
@@ -954,11 +903,6 @@ final class RoomEditorViewModel: ObservableObject {
         // 벽에 붙어 있던 가구가 더 큰 가구로 바뀌면 새 발자국이 벽을 뚫는다. 씬에 되밀기를 요청.
         pendingWallResolveItemID = item.itemId
         sceneRevision += 1
-
-        guard !isOffline, item.itemId > 0 else { return }
-        Task {
-            try? await editorService.replaceFurniture(itemID: item.itemId, newFurnitureID: furniture.furnitureId)
-        }
     }
 
     func deleteSelected() {
@@ -966,15 +910,9 @@ final class RoomEditorViewModel: ObservableObject {
         recordHistoryStep()
         layout.furnitures.removeAll { $0.itemId == selectedItemID }
         markLayoutChanged()
-        let deletedID = selectedItemID
         self.selectedItemID = nil
         isMovingSelectedFurniture = false
         sceneRevision += 1
-
-        guard !isOffline, deletedID > 0 else { return }
-        Task {
-            try? await editorService.deleteFurniture(itemID: deletedID)
-        }
     }
 
     /// 선택된 문/창문을 벽으로 메웁니다(개구부 채우기). 프런트엔드 `deleteSelectedReference(true)` 대응.
@@ -1002,18 +940,10 @@ final class RoomEditorViewModel: ObservableObject {
         selectedItemID = nil
         isMovingSelectedFurniture = false
         sceneRevision += 1
-
-        // 원래 문/창문이 서버 아이템이면 서버에서도 제거한다(벽 패널은 저장 metadata로 함께 나간다).
-        guard !isOffline, item.itemId > 0 else { return }
-        Task { try? await editorService.deleteFurniture(itemID: item.itemId) }
     }
 
     func toggleViewMode() {
         viewMode = viewMode == .threeD ? .skyView : .threeD
-        guard !isOffline else { return }
-        Task {
-            try? await editorService.updateViewMode(roomID: roomID, mode: viewMode)
-        }
     }
 
     /// 서버 metadata JSON 인코딩용. 로더는 `editedObjects`를 우선 읽으므로 나머지는 비워 둔다.
@@ -1037,6 +967,12 @@ final class RoomEditorViewModel: ObservableObject {
         return !roomID.hasPrefix("local")
     }
 
+    /// 게스트(비로그인)가 만든 로컬 프로젝트의 룸인지. 서버 프로젝트가 없으므로
+    /// 편집 내용을 서버에 저장할 수 없다 — 저장 버튼을 막고 로그인 안내를 보여준다.
+    var isGuestLocalProject: Bool {
+        projectID?.hasPrefix("local-") == true
+    }
+
     func save() async {
         isSaving = true
         defer { isSaving = false }
@@ -1044,6 +980,14 @@ final class RoomEditorViewModel: ObservableObject {
         guard let projectID else {
             // 프로젝트 없이 연 룸(테스트 스캔 등)은 업로드할 곳이 없다.
             statusMessage = "프로젝트가 없어 서버에 저장할 수 없어요."
+            return
+        }
+
+        // 게스트 로컬 프로젝트: 서버에 프로젝트가 없어 업로드가 반드시 실패한다.
+        // 기술적 에러("서버에 연결할 수 없습니다") 대신 할 수 있는 일을 안내한다.
+        // (저장 버튼도 비활성화되지만, 다른 경로로 호출돼도 안전하게 막는다)
+        if projectID.hasPrefix("local-") {
+            statusMessage = "게스트 프로젝트는 서버에 저장할 수 없어요. 로그인 후 이용해 주세요."
             return
         }
 
@@ -1139,12 +1083,5 @@ final class RoomEditorViewModel: ObservableObject {
     private func takeLocalItemID() -> Int {
         defer { nextLocalItemID -= 1 }
         return nextLocalItemID
-    }
-
-    private func replaceLocalItemID(_ localID: Int, with serverID: Int) {
-        guard let index = layout.furnitures.firstIndex(where: { $0.itemId == localID }) else { return }
-        layout.furnitures[index].itemId = serverID
-        if selectedItemID == localID { selectedItemID = serverID }
-        sceneRevision += 1
     }
 }

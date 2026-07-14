@@ -333,10 +333,11 @@ struct RoomEditorView: View {
 
     // MARK: - 툴바
 
-    /// 서버 연결 상태 색: 온라인 초록 / 오프라인 빨강. (어두운 툴바 위에서 잘 보이는 톤)
+    /// 저장 상태 색: 서버 저장 가능 초록 / 로컬 전용 주황. 네트워크 상태가 아니라
+    /// "이 방의 편집이 서버에 저장되는지"를 나타낸다. (어두운 툴바 위에서 잘 보이는 톤)
     private var connectionColor: Color {
         viewModel.isOffline
-            ? Color(red: 0.95, green: 0.42, blue: 0.36)
+            ? Color(red: 0.96, green: 0.68, blue: 0.32)
             : Color(red: 0.40, green: 0.80, blue: 0.46)
     }
 
@@ -431,13 +432,14 @@ struct RoomEditorView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
-    /// 서버 연결 상태 배지 (온라인 초록 / 오프라인 빨강)
+    /// 저장 상태 배지. "오프라인"은 네트워크가 멀쩡해도 뜰 수 있어(방 데이터 미로드,
+    /// 게스트/로컬 룸) 오해를 부르므로 "로컬 편집"으로 표기한다.
     private var connectionBadge: some View {
         HStack(spacing: 5) {
             Circle()
                 .fill(connectionColor)
                 .frame(width: 6, height: 6)
-            Text(viewModel.isOffline ? "오프라인" : "온라인")
+            Text(viewModel.isOffline ? "로컬 편집" : "온라인")
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(connectionColor)
         }
@@ -1276,6 +1278,11 @@ struct RoomEditorView: View {
 
     // MARK: - 하단 액션바
 
+    /// 서버 저장이 불가능한 상태인지(오프라인 또는 게스트 로컬 프로젝트).
+    private var isSaveUnavailable: Bool {
+        viewModel.isOffline || viewModel.isGuestLocalProject
+    }
+
     private var footer: some View {
         HStack(spacing: 8) {
             if viewModel.hasUnsavedChanges {
@@ -1286,9 +1293,15 @@ struct RoomEditorView: View {
                 .font(.caption2)
                 .foregroundStyle(.white.opacity(0.58))
                 .lineLimit(2)
+            } else if viewModel.isGuestLocalProject {
+                // 게스트 프로젝트는 서버에 없어 업로드가 불가능하다. 기술 에러 대신 안내를 보여준다.
+                Text("게스트 프로젝트 — 로그인하면 서버에 저장할 수 있어요")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.55))
+                    .lineLimit(2)
             } else if viewModel.isOffline {
-                // 오프라인이면 서버 저장은 할 수 없지만, 편집 후에는 위의 로컬 임시 저장 상태를 보여준다.
-                Text("오프라인 — 편집 내용이 서버에 저장되지 않아요")
+                // 로컬 편집 방은 서버 저장은 할 수 없지만, 편집 후에는 위의 로컬 임시 저장 상태를 보여준다.
+                Text("편집 내용이 서버에 저장되지 않아요 — 이 기기에만 보관돼요")
                     .font(.caption2)
                     .foregroundStyle(.white.opacity(0.55))
                     .lineLimit(2)
@@ -1318,14 +1331,14 @@ struct RoomEditorView: View {
                         Text("저장하기").font(.caption.weight(.black))
                     }
                 }
-                .foregroundStyle(.white.opacity(viewModel.isOffline ? 0.5 : 1))
+                .foregroundStyle(.white.opacity(isSaveUnavailable ? 0.5 : 1))
                 .padding(.horizontal, 18)
                 .padding(.vertical, 8)
-                .background(SpatiumTheme.accent.opacity(viewModel.isOffline ? 0.45 : 1))
+                .background(SpatiumTheme.accent.opacity(isSaveUnavailable ? 0.45 : 1))
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
             .buttonStyle(.pressable)
-            .disabled(viewModel.isSaving || viewModel.isOffline)
+            .disabled(viewModel.isSaving || isSaveUnavailable)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)

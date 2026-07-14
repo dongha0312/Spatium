@@ -74,7 +74,14 @@ struct FurnitureService {
         }
         var request = URLRequest(url: url)
         request.timeoutInterval = 120
-        if let token = AuthTokenStore.shared.accessToken {
+        // 서버가 준 modelUrl이 외부 호스트를 가리켜도 토큰이 새어 나가지 않도록,
+        // 우리 서버(API/파일 서버) 호스트일 때만 인증 헤더를 붙인다.
+        let trustedHosts = [
+            SpatiumAPIEnvironment.shared.baseURL?.host,
+            SpatiumAPIEnvironment.shared.furnitureAssetBaseURL?.host
+        ].compactMap { $0 }
+        if let host = url.host, trustedHosts.contains(host),
+           let token = AuthTokenStore.shared.accessToken {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
         do {

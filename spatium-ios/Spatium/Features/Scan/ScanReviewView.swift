@@ -40,12 +40,16 @@ struct ScanReviewView: View {
     var onRoomUploaded: ((RoomRecord) -> Void)? = nil
 
     @State private var showScanEditor = false
+    /// 에디터에 넘길 방 메시. 여는 순간 한 번만 내보낸다 — fullScreenCover 콘텐츠에서
+    /// 직접 export하면 부모 상태가 바뀔 때마다 메인 스레드에서 파일을 다시 쓴다.
+    @State private var editorUSDZURL: URL?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ScanStatusHeader(project: project, onStartScan: onStartScan)
             RoomTypeCard(project: $project)
             ScanEditEntryCard(itemCount: project.items.count) {
+                editorUSDZURL = try? project.exportUSDZForEditing()
                 showScanEditor = true
             }
             DetectedItemsCard(items: $project.items)
@@ -64,7 +68,7 @@ struct ScanReviewView: View {
             RoomEditorView(
                 scanItems: project.items,
                 roomName: project.resolvedRoomType,
-                usdzURL: try? project.exportUSDZForEditing(),
+                usdzURL: editorUSDZURL,
                 area: project.estimatedFootprint.width * project.estimatedFootprint.depth,
                 ceilingHeight: project.estimatedCeilingHeight,
                 projectID: projectID,
