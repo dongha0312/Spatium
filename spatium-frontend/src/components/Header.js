@@ -32,7 +32,6 @@ const DEFAULT_NAVIGATION = [
         label: "이미지로 3D 가구 만들기",
         to: "/manuals/furniture-creation",
       },
-      { label: "자주 발생하는 문제", to: "" },
     ],
   },
   { label: "Contact Us", to: "/contact-us" },

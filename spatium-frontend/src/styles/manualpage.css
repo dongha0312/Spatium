@@ -96,7 +96,6 @@
 .manual-frame {
   display: block;
   width: 100%;
-  min-height: 900px;
   border: 0;
   background: var(--sur);
 }
