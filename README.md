@@ -78,21 +78,9 @@ Spatium은 **공간 스캔 → 웹 편집 → Image-to-3D → 저장과 복원**
 
 ## 시스템 구성 <a id="architecture"></a>
 
-```mermaid
-flowchart LR
-    IOS["iOS 앱<br/>RoomPlan · LiDAR"]
-    WEB["웹 클라이언트<br/>React · Three.js"]
-    API["API 서버<br/>Spring Boot"]
-    AI["AI 서버<br/>FastAPI · PyTorch"]
-    DB[("Oracle DB")]
-    FILES[("스캔·3D 파일 저장소")]
-
-    IOS -->|"스캔 파일·메타데이터"| API
-    WEB <-->|"JWT · REST API"| API
-    WEB <-->|"이미지·GLB"| AI
-    API --> DB
-    API --> FILES
-```
+<p align="center">
+  <img src="docs/images/system-architecture.svg" alt="Spatium 시스템 구성" width="100%" />
+</p>
 
 | 애플리케이션 | 역할 | 기본 포트 |
 | --- | --- | ---: |
