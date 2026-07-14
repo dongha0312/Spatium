@@ -20,6 +20,7 @@ const CATEGORIES = [
   { code: "television", label: "TV" },
   { code: "toilet", label: "변기" },
   { code: "washerDryer", label: "세탁기·건조기" },
+  { code: "storage/editable", label: "수납/편집 가능" },
 
   // 일단 가구 아닌 것들은 가려 놓음.
   // { code: "floor", label: "바닥" },
