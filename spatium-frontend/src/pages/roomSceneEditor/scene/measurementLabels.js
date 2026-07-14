@@ -23,7 +23,7 @@ export function formatCentimeters(value) {
 }
 
 export function formatSquareMeters(value) {
-  return Number.isFinite(value) ? `${value.toFixed(2)} m2` : "-";
+  return Number.isFinite(value) ? `${value.toFixed(2)} m²` : "-";
 }
 
 export function formatPyung(value) {

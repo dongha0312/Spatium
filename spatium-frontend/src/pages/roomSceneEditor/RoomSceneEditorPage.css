@@ -290,7 +290,7 @@
 .room-scene-editor-room-area {
   position: absolute;
   right: 16px;
-  top: 16px;
+  top: 68px;
   z-index: 8;
   padding: 9px 11px;
   border: 1px solid rgba(0, 0, 0, 0.12);
@@ -378,7 +378,6 @@
 /* 서랍장 꾸미기 시작 버튼 */
 .room-scene-editor-selection-tool--decor {
   background: rgba(30, 64, 138, 0.12);
-  color: #1e408a;
 }
 
 .room-scene-editor-selection-tool--decor:hover {
