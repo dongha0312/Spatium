@@ -342,8 +342,7 @@ function ImgTo3dPage() {
 
   return (
     <div className="it3-root">
-      <Header prefix="it3" className="it3-header">
-        <div className="it3-header-title">이미지로 3D 가구 만들기</div>
+      <Header prefix="it3">
         {session ? (
           <div className="it3-nav-account">
             {/* 닉네임 왼쪽 : 마이페이지로 바로 이동하는 외곽선 버튼 */}

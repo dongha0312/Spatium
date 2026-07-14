@@ -20,56 +20,6 @@
   box-sizing: border-box;
 }
 
-/* 상단 네비게이션 */
-.cp-nav {
-  display: flex;
-  align-items: center;
-  height: 63px;
-  padding: 0 32px;
-  background: var(--sur);
-  border-bottom: 1px solid var(--bd);
-  flex-shrink: 0;
-}
-
-.cp-logo {
-  font-size: 13px;
-  font-weight: 900;
-  letter-spacing: 6px;
-  color: var(--t);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  text-decoration: none;
-}
-
-.cp-logo-sq {
-  width: 17px;
-  height: 17px;
-  border-radius: 4px;
-  background: linear-gradient(135deg, var(--ga), var(--g));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.cp-logo-sq-i {
-  width: 7px;
-  height: 7px;
-  border: 2px solid #fff;
-  border-radius: 1px;
-}
-
-.cp-nav-link {
-  font-size: 13px;
-  color: var(--t2);
-  font-weight: 500;
-  margin-left: 28px;
-}
-
-.cp-nav-right {
-  margin-left: auto;
-}
-
 .cp-btn-out {
   padding: 7px 18px;
   border-radius: 8px;
@@ -192,15 +142,6 @@
   font-size: 13px;
   color: var(--g);
   line-height: 1.7;
-}
-
-.cp-footer {
-  margin-top: 36px;
-  padding-top: 20px;
-  border-top: 1px solid var(--bd);
-  font-size: 11px;
-  color: var(--t3);
-  line-height: 1.9;
 }
 
 @media (max-width: 640px) {

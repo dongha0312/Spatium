@@ -158,7 +158,7 @@ function HomePage() {
             <h1 className="hp-hero-h1">
               "내 방 그대로" 옮긴 3D 공간에서
               <br />
-              <span className="hp-grad">가구를 배치해보세요</span>
+              <span className="hp-grad">나만의 방을 꾸며보세요</span>
             </h1>
             <p className="hp-hero-desc">
               아이폰 LiDAR로 스캔한 내 방을 3D로 불러와 가구를 원하는 위치에
