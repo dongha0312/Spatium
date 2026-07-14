@@ -150,6 +150,16 @@ enum TestRoomData {
                 )
             ]
         ),
+        // 가구가 하나도 감지되지 않은 스캔(벽만 있는 방) 재현용 — 빈 방 크래시 검증.
+        Scan(
+            id: "empty-room",
+            title: "3D 에디터 (가구 0개 스캔)",
+            roomName: "빈 방 테스트",
+            jsonResource: "walls_only_test",
+            usdzResource: "room_scan_other_1",
+            area: 16,
+            ceilingHeight: 2.4
+        ),
         Scan(
             id: "other-room-3",
             title: "3D 에디터 (다른 방 스캔 3)",

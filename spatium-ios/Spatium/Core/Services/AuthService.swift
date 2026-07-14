@@ -127,18 +127,25 @@ struct AuthService {
         return tokens
     }
 
-    /// 로그아웃: DELETE /api/auth/sessions/current (204 No Content)
-    func logout() async throws {
-        defer {
-            tokenStore.clear()
-        }
-        do {
-            let _: SpatiumAPIEnvelope<EmptyAPIData> = try await client.send(
-                method: "DELETE", path: "/api/auth/sessions/current", requiresAuth: true
-            )
-        } catch {
-            // Ignore server-side logout errors in client to ensure local logout completes
-            print("Server logout error: \(error.localizedDescription)")
+    /// 로그아웃: 로컬 세션은 **즉시** 종료하고, 서버 세션 무효화
+    /// (DELETE /api/auth/sessions/current)는 배경에서 시도한다.
+    /// 서버 응답을 기다렸다 지우면 서버가 죽어 있을 때 버튼이 타임아웃(최대 10초)
+    /// 동안 무반응이고, 그 사이 앱을 끄면 로그아웃 자체가 유실된다.
+    @MainActor
+    func logout() {
+        let accessToken = tokenStore.accessToken
+        tokenStore.clear()
+
+        // 토큰을 미리 캡처해 두었으므로 로컬 세션이 지워진 뒤에도 서버 세션을 무효화할 수 있다.
+        guard let accessToken, !accessToken.hasPrefix("mock_"),
+              let url = SpatiumAPIEnvironment.shared.baseURL?
+                  .appendingPathComponent("api/auth/sessions/current") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        Task.detached {
+            _ = try? await URLSession.shared.data(for: request)
         }
     }
 }

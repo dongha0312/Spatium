@@ -2,10 +2,13 @@ import Foundation
 import GLTFKit2
 import SceneKit
 import simd
+import UIKit
 
 protocol FurnitureModelLoader {
     func makeNode(for furniture: PlacedFurniture) -> SCNNode
     func makeNode(for item: EditableScanItem) -> SCNNode
+    /// 책장 꾸미기용 피규어 노드. identifier가 서브트리 전체 이름으로 들어가 탭 판정에 쓰인다.
+    func makeDecorNode(identifier: String, decoration: PlacedDecoration) -> SCNNode
 }
 
 struct TestDataFurnitureModelLoader: FurnitureModelLoader {
@@ -69,6 +72,21 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
         return node
     }
 
+    /// 기준 치수로 맞춤(fit)된 피규어 모델만 만든다. 배치 transform(위치/회전/균일 크기)은
+    /// 씬 쪽 래퍼 노드가 담당한다 — 크기 슬라이더가 맞춤 스케일을 건드리지 않게 분리.
+    func makeDecorNode(identifier: String, decoration: PlacedDecoration) -> SCNNode {
+        makeRenderableNode(
+            identifier: identifier,
+            name: decoration.name,
+            category: "figure",
+            width: decoration.width,
+            height: decoration.height,
+            depth: decoration.depth,
+            paletteIndex: decoration.decorId,
+            preferredModel: decoration.modelName
+        )
+    }
+
     private func makeRenderableNode(
         identifier: String,
         name: String,
@@ -113,7 +131,19 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
     /// GLTFKit2 파싱과 인스턴스마다의 hierarchy bounds 순회를 한 번으로 제한합니다.
     private static var nodeCache: [String: ModelTemplate] = [:]
 
+    /// 큰 GLB(침대 등)는 파싱 후 수백 MB를 차지할 수 있고 캐시는 세션 내내 쌓인다.
+    /// 스캔+에디터가 겹치는 메모리 피크에서 jetsam으로 죽지 않도록, 시스템 메모리 경고가
+    /// 오면 템플릿 캐시를 비운다. (다음 렌더 때 필요한 모델만 다시 파싱된다)
+    private static let memoryWarningObserver: NSObjectProtocol = NotificationCenter.default.addObserver(
+        forName: UIApplication.didReceiveMemoryWarningNotification,
+        object: nil,
+        queue: .main
+    ) { _ in
+        nodeCache.removeAll()
+    }
+
     private func loadModelTemplate(from url: URL) -> ModelTemplate? {
+        _ = Self.memoryWarningObserver // 첫 로드 때 옵저버 등록을 보장한다(lazy static).
         let key = url.path
         if let template = Self.nodeCache[key] { return template }
 

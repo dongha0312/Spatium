@@ -69,6 +69,9 @@ enum FurnitureCatalog {
         .init(id: "modern_chair", name: "모던 의자", group: "의자", category: "chair", width: 0.55, height: 0.85, depth: 0.55, modelFileName: "modern_chair"),
         .init(id: "wooden_chair", name: "원목 의자", group: "의자", category: "chair", width: 0.55, height: 0.85, depth: 0.55, modelFileName: "wooden_chair"),
         .init(id: "default_storage", name: "기본 수납", group: "수납", category: "storage", width: 1.0, height: 1.2, depth: 0.45, modelFileName: "storage"),
+        // 꾸미기(피규어 올려놓기) 전용 모델 — 선반 안쪽 표면이 뚫려 있어 위에 소품을 올릴 수 있다.
+        // 프런트엔드의 editable_furniture 폴더 규칙 대응: modelFileName의 "editable_" 접두사로 판정한다.
+        .init(id: "def_editable_bookcase", name: "꾸미기 책장", group: "수납", category: "storage", width: 0.8, height: 1.8, depth: 0.3, modelFileName: "editable_bookcase"),
         .init(id: "closet", name: "옷장", group: "수납", category: "storage", width: 1.2, height: 2.0, depth: 0.55, modelFileName: "closet"),
         .init(id: "bedside_drawer", name: "협탁 서랍", group: "수납", category: "storage", width: 0.5, height: 0.6, depth: 0.45, modelFileName: "bedside_drawer"),
         .init(id: "makeup_table", name: "화장대", group: "수납", category: "storage", width: 1.0, height: 0.8, depth: 0.45, modelFileName: "makeup_table"),

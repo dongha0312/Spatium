@@ -81,6 +81,72 @@ struct SpatiumTests {
         #expect(FurnitureCatalog.matches(userOther, groupFilter: FurnitureCatalog.otherGroup))
     }
 
+    @Test func editorHistoryCoalescesSliderGestureAndSupportsRedo() throws {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let viewModel = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "히스토리 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory
+        )
+        let chair = try #require(FurnitureCatalog.items.first)
+
+        viewModel.place(catalogItem: chair)
+        viewModel.beginHistoryTransaction()
+        viewModel.setSelectedRotation(degrees: 20)
+        viewModel.setSelectedRotation(degrees: 40)
+        viewModel.endHistoryTransaction()
+
+        #expect(viewModel.selectedRotationDegrees == 40)
+        viewModel.undo()
+        #expect(viewModel.layout.furnitures.count == 1)
+        #expect(viewModel.selectedRotationDegrees == 0)
+
+        viewModel.redo()
+        #expect(viewModel.selectedRotationDegrees == 40)
+        viewModel.discardCurrentDraft()
+    }
+
+    @Test func editorDraftPersistsAndRestoresLatestLayout() async throws {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let original = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "임시 저장 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory
+        )
+        let chair = try #require(FurnitureCatalog.items.first)
+        original.place(catalogItem: chair)
+        original.persistDraftImmediately()
+        #expect(original.draftSavedAt != nil)
+
+        let reopened = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "임시 저장 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory
+        )
+        await reopened.loadLayout()
+
+        #expect(reopened.hasRecoverableDraft)
+        reopened.restoreRecoverableDraft()
+        #expect(reopened.layout.furnitures.count == 1)
+        #expect(reopened.hasUnsavedChanges)
+        reopened.discardCurrentDraft()
+    }
+
     @Test func otherRoomTwoIncludesBundledUserGeneratedFurniture() throws {
         let scan = try #require(TestRoomData.scans.first { $0.id == "other-room-2" })
         let loaded = try #require(scan.load())

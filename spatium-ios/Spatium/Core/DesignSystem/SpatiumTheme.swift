@@ -26,6 +26,8 @@ enum SpatiumTheme {
     static let editorPanel = adaptive(light: "#1F1C18", dark: "#161C1D")
     static let editorToolbar = adaptive(light: "#27231E", dark: "#1C2324")
     static let editorCanvas = adaptive(light: "#C4A882", dark: "#2A3436")
+    /// SceneKit 배경과 같은 색으로, 룸 뷰를 이동할 때 생기는 빈 영역도 자연스럽게 이어준다.
+    static let editorSceneBackground = adaptive(light: "#F2EEE6", dark: "#2A3436")
     static let coral = adaptive(light: "#B32E21", dark: "#FF9C8F")
     static let success = adaptive(light: "#3D7347", dark: "#8FC795")
     static let creamSurface = adaptive(light: "#FFFFFF", dark: "#F3EDE3")

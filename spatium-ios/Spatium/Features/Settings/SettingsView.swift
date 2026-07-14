@@ -126,7 +126,8 @@ private struct AccountSection: View {
     }
 
     private func logout() {
-        Task { try? await AuthService().logout() }
+        // 로컬 로그아웃은 즉시 완료된다(서버 세션 무효화는 배경에서 진행).
+        AuthService().logout()
     }
 
     private func deleteAccount() {

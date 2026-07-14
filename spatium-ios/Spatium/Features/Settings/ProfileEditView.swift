@@ -320,18 +320,8 @@ struct ProfileEditView: View {
     }
 
     private func logout() {
-        isLoading = true
-        errorMessage = nil
-        
-        Task {
-            do {
-                try await AuthService().logout()
-                isLoading = false
-                dismiss()
-            } catch {
-                isLoading = false
-                errorMessage = "로그아웃 실패: \(error.localizedDescription)"
-            }
-        }
+        // 로컬 로그아웃은 즉시 완료된다(서버 세션 무효화는 배경에서 진행).
+        AuthService().logout()
+        dismiss()
     }
 }
