@@ -148,16 +148,19 @@ private struct AccountSection: View {
     }
 }
 
-/// 스캔/씬 캐시 사용량 표시와 비우기. (다운로드한 방 파일은 다시 받으면 되므로 안전)
+/// 스캔/씬/생성 모델 캐시 사용량 표시와 비우기.
+/// (다운로드한 방 파일은 다시 받으면 되고, 저장 완료된 내 가구 GLB는
+///  Application Support에 있어 영향을 받지 않는다)
 private struct StorageSection: View {
     @State private var cacheBytes: Int64 = 0
     @State private var isClearing = false
 
-    private static let cacheDirectoryNames = ["RoomScans", "RoomScenes"]
+    /// "Spatium"은 가구 만들기의 GeneratedModels/CorrectedModels 중간 산출물 폴더.
+    private static let cacheDirectoryNames = ["RoomScans", "RoomScenes", "Spatium"]
 
     var body: some View {
         SettingsGroup(title: "저장 공간") {
-            SettingsInfoRow(systemImage: "internaldrive", title: "스캔 캐시", value: Self.format(cacheBytes))
+            SettingsInfoRow(systemImage: "internaldrive", title: "스캔·모델 캐시", value: Self.format(cacheBytes))
             SettingsDivider()
             Button(action: clearCache) {
                 HStack(spacing: 12) {

@@ -761,7 +761,7 @@ struct BackendContractTests {
 
     @Test func imgTo3DOptionsMatchLatestFrontendAndFastAPI() {
         #expect(ImgTo3DCategory.allCases.map(\.code) == [
-            "bathtub", "bed", "chair", "dishwasher", "fireplace", "oven",
+            "figure", "bathtub", "bed", "chair", "dishwasher", "fireplace", "oven",
             "refrigerator", "sink", "sofa", "stairs", "storage", "stove",
             "table", "television", "toilet", "washerDryer", "other"
         ])

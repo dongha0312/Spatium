@@ -139,7 +139,11 @@ struct RoomScanAssetService {
 
         var request = URLRequest(url: sourceURL)
         request.timeoutInterval = 20
-        if let token = await MainActor.run(body: { AuthTokenStore.shared.accessToken }) {
+        // 서버 메타데이터의 절대 URL이 외부 호스트를 가리켜도 토큰이 새어 나가지 않도록,
+        // 우리 API 서버와 같은 호스트일 때만 인증 헤더를 붙인다.
+        let apiHost = await MainActor.run { SpatiumAPIEnvironment.shared.baseURL?.host }
+        if let apiHost, sourceURL.host == apiHost,
+           let token = await MainActor.run(body: { AuthTokenStore.shared.accessToken }) {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
 

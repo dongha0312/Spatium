@@ -410,13 +410,15 @@ struct MainTabView: View {
     }
 
     /// 스캔 직후 즉시 UI에 보여줄 로컬 룸을 만듭니다. 서버 룸은 업로드 시점에 파일과 함께 생성됩니다.
+    /// "다시 스캔"이면 이전 스캔의 로컬 placeholder를 교체해 목록에 중복으로 쌓이지 않게 합니다.
     private func registerRoom(for project: ScanProject) {
         guard let activeProjectID else { return }
         let footprint = project.estimatedFootprint
         let record = projectStore.registerLocalRoom(
             projectID: activeProjectID,
             roomName: project.resolvedRoomType,
-            area: footprint.width * footprint.depth
+            area: footprint.width * footprint.depth,
+            replacingLocalRoomID: activeRoomID
         )
         activeRoomID = record.id
     }

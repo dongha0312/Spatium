@@ -7,6 +7,14 @@ struct MultipartFormPart {
     var contentType: String?
 }
 
+/// 사용자가 고른 파일명에 든 따옴표/줄바꿈이 multipart 헤더를 깨뜨리지 않게 정리한다.
+func sanitizedMultipartToken(_ value: String) -> String {
+    value
+        .replacingOccurrences(of: "\r", with: "")
+        .replacingOccurrences(of: "\n", with: "")
+        .replacingOccurrences(of: "\"", with: "'")
+}
+
 struct MultipartFormData {
     let boundary: String
     let body: Data
@@ -16,9 +24,9 @@ struct MultipartFormData {
         var body = Data()
         for part in parts {
             body.append("--\(boundary)\r\n")
-            var disposition = "Content-Disposition: form-data; name=\"\(part.name)\""
+            var disposition = "Content-Disposition: form-data; name=\"\(sanitizedMultipartToken(part.name))\""
             if let fileName = part.fileName {
-                disposition += "; filename=\"\(fileName)\""
+                disposition += "; filename=\"\(sanitizedMultipartToken(fileName))\""
             }
             body.append("\(disposition)\r\n")
             if let contentType = part.contentType {

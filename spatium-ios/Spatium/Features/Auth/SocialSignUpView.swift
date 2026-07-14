@@ -23,8 +23,10 @@ struct SocialSignUpView: View {
     }
 
     /// 이메일은 서버가 idToken에서 직접 얻으므로 입력받지 않습니다.
+    /// 닉네임 규칙(2~12자)은 일반 회원가입과 동일하게 맞춘다.
     private var canSubmit: Bool {
-        !nickname.isEmpty && termsAgreed && privacyAgreed
+        let trimmedNickname = nickname.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (2...12).contains(trimmedNickname.count) && termsAgreed && privacyAgreed
     }
 
     var body: some View {
@@ -127,7 +129,7 @@ struct SocialSignUpView: View {
                 let request = SocialSignUpRequest(
                     provider: pending.provider,
                     idToken: pending.idToken,
-                    nickname: nickname,
+                    nickname: nickname.trimmingCharacters(in: .whitespacesAndNewlines),
                     birthDate: DateFormatter.apiDateOnly.string(from: birthDate),
                     gender: gender,
                     termsAgreed: termsAgreed,

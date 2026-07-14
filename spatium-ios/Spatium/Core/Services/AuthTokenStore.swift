@@ -71,6 +71,9 @@ final class AuthTokenStore: ObservableObject {
 
         var attributes = query
         attributes[kSecValueData as String] = data
+        // 첫 잠금 해제 후 접근 가능 + 이 기기 전용: 백업/기기 이전으로 세션 토큰이
+        // 다른 기기로 복사되지 않게 한다. (재설치 시 유지되는 동작은 그대로)
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(attributes as CFDictionary, nil)
     }
 

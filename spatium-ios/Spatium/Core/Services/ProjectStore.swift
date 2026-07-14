@@ -64,7 +64,17 @@ final class ProjectStore: ObservableObject {
         defer { isRefreshing = false }
 
         do {
-            projects = try await service.fetchProjects()
+            // 서버 목록으로 통째로 교체하면 이미 불러온 방 목록과 업로드 전 로컬 방
+            // (스캔 직후 placeholder)이 화면에서 사라진다. 같은 프로젝트는 기존 rooms를
+            // 유지하고, 방 목록은 상세 진입 시 loadRooms가 최신으로 갱신한다.
+            let existingByID = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
+            projects = try await service.fetchProjects().map { remote in
+                guard let existing = existingByID[remote.id] else { return remote }
+                var merged = remote
+                merged.rooms = existing.rooms
+                merged.roomCount = max(remote.roomCount, existing.rooms.count)
+                return merged
+            }
             lastErrorMessage = nil
             saveCache()
             await refreshRoomCounts(silently: silently)
@@ -104,8 +114,19 @@ final class ProjectStore: ObservableObject {
     }
 
     /// 스캔 직후 즉시 UI에 보여줄 **로컬** 룸을 만듭니다. (서버 룸은 업로드 시점에 생성)
+    /// replacingLocalRoomID: 같은 세션에서 "다시 스캔"한 경우, 업로드 전인 이전 스캔의
+    /// 로컬 placeholder를 넘기면 중복으로 쌓이지 않고 교체됩니다. (서버 룸은 유지)
     @discardableResult
-    func registerLocalRoom(projectID: String, roomName: String, area: Double) -> RoomRecord {
+    func registerLocalRoom(
+        projectID: String,
+        roomName: String,
+        area: Double,
+        replacingLocalRoomID: String? = nil
+    ) -> RoomRecord {
+        if let replacingLocalRoomID, replacingLocalRoomID.hasPrefix("local-"),
+           let index = projects.firstIndex(where: { $0.id == projectID }) {
+            projects[index].rooms.removeAll { $0.id == replacingLocalRoomID }
+        }
         let local = RoomRecord(
             id: Self.newLocalID(),
             roomType: roomName,
@@ -320,11 +341,6 @@ final class ProjectStore: ObservableObject {
     func project(withID id: String?) -> SpatiumProject? {
         guard let id else { return nil }
         return projects.first { $0.id == id }
-    }
-
-    func deleteProjects(at offsets: IndexSet) {
-        projects.remove(atOffsets: offsets)
-        saveCache()
     }
 
     private func refreshRoomCounts(silently: Bool) async {
