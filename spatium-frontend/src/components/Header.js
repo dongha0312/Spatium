@@ -13,6 +13,8 @@ const DEFAULT_NAVIGATION = [
   {
     label: "기능",
     items: [
+      // 추후 QR코드가 나오면 이 부분 수정하기
+      // { label: "나의 방 스캔하기", to: "" },
       { label: "방 꾸미기", to: "/member/mypage" },
       { label: "이미지로 3D 가구 만들기", to: "/member/imgto3d" },
     ],
@@ -20,9 +22,16 @@ const DEFAULT_NAVIGATION = [
   {
     label: "기능별 사용 설명서",
     items: [
-      { label: "나의 방 스캔하기", to: "" },
-      { label: "방 꾸미기", to: "" },
-      { label: "서랍장을 나만의 피규어로 꾸미기", to: "" },
+      { label: "나의 방 스캔하기", to: "/manuals/room-scan" },
+      { label: "방 꾸미기", to: "/manuals/room-decoration" },
+      {
+        label: "서랍장을 나만의 피규어로 꾸미기",
+        to: "/manuals/drawer-decoration",
+      },
+      {
+        label: "이미지로 3D 가구 만들기",
+        to: "/manuals/furniture-creation",
+      },
       { label: "자주 발생하는 문제", to: "" },
     ],
   },
