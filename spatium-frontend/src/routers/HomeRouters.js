@@ -13,6 +13,7 @@ import CookiePolicy from "../pages/CookiePolicy";
 import PrivacyConsent from "../pages/PrivacyConsent";
 import ContactUsPage from "../pages/ContactUsPage";
 import TermsOfService from "../pages/TermsOfService";
+import ManualPage from "../pages/ManualPage";
 
 // HomeRouters.js 컴포넌트 정의하기
 function HomeRouters() {
@@ -35,6 +36,14 @@ function HomeRouters() {
       <Route path="privacy" element={<PrivacyConsent />}></Route>
       <Route path="terms" element={<TermsOfService />}></Route>
       <Route path="contact-us" element={<ContactUsPage />}></Route>
+      <Route
+        path="manuals/room-decoration"
+        element={<ManualPage manual="room-decoration" />}
+      ></Route>
+      <Route
+        path="manuals/furniture-creation"
+        element={<ManualPage manual="furniture-creation" />}
+      ></Route>
     </Routes>
   );
 }
