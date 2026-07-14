@@ -42,8 +42,6 @@
     </li>
     <li><a href="#usage">사용 흐름</a></li>
     <li><a href="#project-structure">프로젝트 구조</a></li>
-    <li><a href="#documentation">문서</a></li>
-    <li><a href="#contributing">기여 방법</a></li>
     <li><a href="#license">라이선스</a></li>
   </ol>
 </details>
@@ -269,32 +267,13 @@ Spatium/
 
 <p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
-## 문서 <a id="documentation"></a>
-
-- [프로젝트 기술 개요](PROJECT_OVERVIEW.md)
-- [3D 에디터 로직](3D_MODELING_LOGIC.md)
-- [3D 에디터 발표·포트폴리오 자료](3D_EDITOR_PRESENTATION.md)
-- [Image-to-3D 서버 가이드](spatium-img-to-3d/README.md)
-
-<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
-
-## 기여 방법 <a id="contributing"></a>
-
-개선 제안과 버그 수정은 언제든 환영합니다.
-
-1. 저장소를 Fork합니다.
-2. 기능 브랜치를 만듭니다. (`git checkout -b feature/amazing-feature`)
-3. 변경 사항을 커밋합니다. (`git commit -m "feat: add amazing feature"`)
-4. 브랜치를 Push합니다. (`git push origin feature/amazing-feature`)
-5. Pull Request를 생성합니다.
-
-버그나 기능 제안은 [GitHub Issues](https://github.com/dongha0312/Spatium/issues)에 남겨 주세요.
-
-<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
-
 ## 라이선스 <a id="license"></a>
 
-현재 이 저장소에는 별도의 오픈 소스 라이선스가 명시되어 있지 않습니다. 사용·복제·배포 전에 저장소 소유자에게 문의해 주세요.
+Copyright © Spatium Team. All Rights Reserved.
+
+이 프로젝트와 저장소에 포함된 소스 코드, 문서, 이미지, 3D 모델 및 기타 모든 자료의 저작권은 Spatium 팀에 있습니다.
+
+Spatium 팀의 사전 서면 허가 없이는 누구도 이 프로젝트의 전부 또는 일부를 사용, 복제, 수정, 병합, 게시, 배포, 재라이선스, 판매하거나 상업적·비상업적 목적으로 이용할 수 없습니다. 저장소를 열람할 수 있다는 사실만으로 어떠한 사용 권한도 부여되지 않습니다.
 
 <p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
