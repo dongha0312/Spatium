@@ -738,8 +738,16 @@
 }
 
 .it3-viewer-mount {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+}
+
+.it3-viewer-mount canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
 }
 
 /* 캔버스 하단 조작 안내 칩 */

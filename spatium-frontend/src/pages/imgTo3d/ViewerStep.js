@@ -32,11 +32,11 @@ const INITIAL = {
 function createPlaceholderBox() {
   const box = new THREE.Mesh(
     new THREE.BoxGeometry(BOX_SIZE.w, BOX_SIZE.h, BOX_SIZE.d),
-    new THREE.MeshStandardMaterial({ color: 0xc4956a, roughness: 0.55 })
+    new THREE.MeshStandardMaterial({ color: 0xc4956a, roughness: 0.55 }),
   );
   const edges = new THREE.LineSegments(
     new THREE.EdgesGeometry(box.geometry),
-    new THREE.LineBasicMaterial({ color: 0x5c3d2e })
+    new THREE.LineBasicMaterial({ color: 0x5c3d2e }),
   );
   box.add(edges);
   box.userData.baseScale = 1;
@@ -48,7 +48,9 @@ function disposeObject(root) {
   root.traverse((child) => {
     if (child.geometry) child.geometry.dispose();
     if (child.material) {
-      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      const mats = Array.isArray(child.material)
+        ? child.material
+        : [child.material];
       mats.forEach((m) => {
         Object.values(m).forEach((v) => {
           if (v && v.isTexture) v.dispose();
@@ -64,7 +66,7 @@ function applyInitialTransform(model) {
   model.rotation.set(
     THREE.MathUtils.degToRad(INITIAL.rot.x),
     THREE.MathUtils.degToRad(INITIAL.rot.y),
-    THREE.MathUtils.degToRad(INITIAL.rot.z)
+    THREE.MathUtils.degToRad(INITIAL.rot.z),
   );
   model.position.set(INITIAL.pos.x, INITIAL.pos.y, INITIAL.pos.z);
 }
@@ -106,7 +108,9 @@ function collectLocalSamples(target) {
   meshes.forEach((mesh) => {
     const attr = mesh.geometry.attributes.position;
     for (let i = 0; i < attr.count; i += stride) {
-      v.fromBufferAttribute(attr, i).applyMatrix4(mesh.matrixWorld).applyMatrix4(invRoot);
+      v.fromBufferAttribute(attr, i)
+        .applyMatrix4(mesh.matrixWorld)
+        .applyMatrix4(invRoot);
       samples.push(v.clone());
     }
   });
@@ -144,7 +148,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
       45,
       mount.clientWidth / mount.clientHeight,
       0.1,
-      100
+      100,
     );
     camera.position.set(2.4, 1.8, 2.8);
 
@@ -189,7 +193,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
         depthTest: false,
         depthWrite: false,
         side: THREE.DoubleSide,
-      })
+      }),
     );
     selectionRing.rotation.x = -Math.PI / 2;
     selectionRing.renderOrder = 30;
@@ -202,7 +206,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
         transparent: true,
         depthTest: false,
         depthWrite: false,
-      })
+      }),
     );
     rotateHandle.renderOrder = 31;
 
@@ -213,13 +217,16 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
         opacity: 0.75,
         transparent: true,
         depthTest: false,
-      })
+      }),
     );
     handleLine.renderOrder = 30;
     scene.add(selectionRing, rotateHandle, handleLine);
 
     // 정밀 조정용 3축 기즈모 (기본은 숨김)
-    const transformControls = new TransformControls(camera, renderer.domElement);
+    const transformControls = new TransformControls(
+      camera,
+      renderer.domElement,
+    );
     transformControls.attach(model);
     transformControls.enabled = false;
     const gizmoHelper = transformControls.getHelper();
@@ -274,13 +281,17 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
       // 현재 회전 · 스케일이 적용된 방향 벡터 (위치 제외 — AABB 부피는 위치와 무관)
       const s = target.scale.x;
       const oriented = samples.map((p) =>
-        p.clone().multiplyScalar(s).applyQuaternion(target.quaternion)
+        p.clone().multiplyScalar(s).applyQuaternion(target.quaternion),
       );
 
       const v = new THREE.Vector3();
       const volumeFor = (q) => {
-        let minX = Infinity, minY = Infinity, minZ = Infinity;
-        let maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+        let minX = Infinity,
+          minY = Infinity,
+          minZ = Infinity;
+        let maxX = -Infinity,
+          maxY = -Infinity,
+          maxZ = -Infinity;
         for (let i = 0; i < oriented.length; i += 1) {
           v.copy(oriented[i]).applyQuaternion(q);
           if (v.x < minX) minX = v.x;
@@ -297,8 +308,8 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
           new THREE.Euler(
             THREE.MathUtils.degToRad(rxDeg),
             0,
-            THREE.MathUtils.degToRad(rzDeg)
-          )
+            THREE.MathUtils.degToRad(rzDeg),
+          ),
         );
 
       // 코스(5°) → 파인(1°) 2단계 그리드 서치
@@ -330,7 +341,9 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
         return w;
       });
       const bandTop = minWorldY + (maxWorldY - minWorldY) * FOOTPRINT_BAND;
-      let cx = 0, cz = 0, count = 0;
+      let cx = 0,
+        cz = 0,
+        count = 0;
       world.forEach((w) => {
         if (w.y <= bandTop) {
           cx += w.x;
@@ -362,7 +375,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
       rotateHandle.position.set(
         target.position.x + Math.sin(handleAngle) * radius,
         baseY,
-        target.position.z + Math.cos(handleAngle) * radius
+        target.position.z + Math.cos(handleAngle) * radius,
       );
       handleLine.geometry.setFromPoints([
         new THREE.Vector3(target.position.x, baseY, target.position.z),
@@ -381,9 +394,9 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
 
       const cameraOffset = camera.position.clone().sub(controls.target);
       if (cameraOffset.length() > controls.maxDistance) {
-        camera.position.copy(controls.target).add(
-          cameraOffset.setLength(controls.maxDistance)
-        );
+        camera.position
+          .copy(controls.target)
+          .add(cameraOffset.setLength(controls.maxDistance));
       }
       controls.update();
     }
@@ -483,13 +496,18 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     }
 
     function updateActiveInteraction(event) {
-      if (!activeInteraction || event.pointerId !== activeInteraction.pointerId) return;
+      if (!activeInteraction || event.pointerId !== activeInteraction.pointerId)
+        return;
       const { object } = activeInteraction;
       if (!object || !intersectModelFloor(event, object, floorHitPoint)) return;
 
       if (activeInteraction.type === "move") {
         floorHitPoint.add(activeInteraction.offset);
-        object.position.set(floorHitPoint.x, activeInteraction.y, floorHitPoint.z);
+        object.position.set(
+          floorHitPoint.x,
+          activeInteraction.y,
+          floorHitPoint.z,
+        );
       } else {
         const angle = angleOnFloor(activeInteraction.center, floorHitPoint);
         const delta = angle - activeInteraction.startAngle;
@@ -503,7 +521,8 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     }
 
     function endActiveInteraction(event) {
-      if (!activeInteraction || event.pointerId !== activeInteraction.pointerId) return;
+      if (!activeInteraction || event.pointerId !== activeInteraction.pointerId)
+        return;
       activeInteraction = null;
       controls.enabled = true;
       renderer.domElement.style.cursor = "default";
@@ -552,10 +571,22 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
       endActiveInteraction(event);
     }
 
-    renderer.domElement.addEventListener("pointerdown", handlePointerDown, true);
-    renderer.domElement.addEventListener("pointermove", handlePointerMove, true);
+    renderer.domElement.addEventListener(
+      "pointerdown",
+      handlePointerDown,
+      true,
+    );
+    renderer.domElement.addEventListener(
+      "pointermove",
+      handlePointerMove,
+      true,
+    );
     renderer.domElement.addEventListener("pointerup", handlePointerEnd, true);
-    renderer.domElement.addEventListener("pointercancel", handlePointerEnd, true);
+    renderer.domElement.addEventListener(
+      "pointercancel",
+      handlePointerEnd,
+      true,
+    );
 
     let raf;
     const animate = () => {
@@ -568,10 +599,17 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     animate();
 
     const onResize = () => {
-      camera.aspect = mount.clientWidth / mount.clientHeight;
+      const { clientWidth: width, clientHeight: height } = mount;
+      if (!width || !height) return;
+
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
-      renderer.setSize(mount.clientWidth, mount.clientHeight);
+      renderer.setSize(width, height);
     };
+
+    const resizeObserver = new ResizeObserver(onResize);
+    resizeObserver.observe(mount);
+    onResize();
     window.addEventListener("resize", onResize);
 
     threeRef.current = {
@@ -590,11 +628,28 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     return () => {
       modelLoadTokenRef.current += 1;
       cancelAnimationFrame(raf);
+      resizeObserver.disconnect();
       window.removeEventListener("resize", onResize);
-      renderer.domElement.removeEventListener("pointerdown", handlePointerDown, true);
-      renderer.domElement.removeEventListener("pointermove", handlePointerMove, true);
-      renderer.domElement.removeEventListener("pointerup", handlePointerEnd, true);
-      renderer.domElement.removeEventListener("pointercancel", handlePointerEnd, true);
+      renderer.domElement.removeEventListener(
+        "pointerdown",
+        handlePointerDown,
+        true,
+      );
+      renderer.domElement.removeEventListener(
+        "pointermove",
+        handlePointerMove,
+        true,
+      );
+      renderer.domElement.removeEventListener(
+        "pointerup",
+        handlePointerEnd,
+        true,
+      );
+      renderer.domElement.removeEventListener(
+        "pointercancel",
+        handlePointerEnd,
+        true,
+      );
       viewHelper.dispose();
       transformControls.dispose();
       controls.dispose();
@@ -654,7 +709,10 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
   }, []);
 
   const loadGlb = useCallback(
-    (url, { displayName, applyDemoTransform = false, revokeUrl = false } = {}) => {
+    (
+      url,
+      { displayName, applyDemoTransform = false, revokeUrl = false } = {},
+    ) => {
       if (!url || !threeRef.current) return;
 
       const loadToken = modelLoadTokenRef.current + 1;
@@ -700,7 +758,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
           setBaseSize({ w: size.x * base, h: size.y * base, d: size.z * base });
           setFileName(displayName || "generated-model.glb");
           setScale(1);
-          setFloorSnap(false);
+          setFloorSnap(true);
           threeRef.current?.updateOverlay();
           setLoadingModel(false);
         },
@@ -716,14 +774,11 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     [swapModel],
   );
 
-  const loadGeneratedModel = useCallback(
-    () => {
-      if (!modelUrl) return;
-      const name = modelUrl.split("/").pop() || "generated-model.glb";
-      loadGlb(modelUrl, { displayName: name });
-    },
-    [loadGlb, modelUrl],
-  );
+  const loadGeneratedModel = useCallback(() => {
+    if (!modelUrl) return;
+    const name = modelUrl.split("/").pop() || "generated-model.glb";
+    loadGlb(modelUrl, { displayName: name });
+  }, [loadGlb, modelUrl]);
 
   useEffect(() => {
     loadGeneratedModel();
@@ -737,8 +792,8 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     t.model.quaternion.premultiply(
       new THREE.Quaternion().setFromAxisAngle(
         new THREE.Vector3(...axisVec),
-        THREE.MathUtils.degToRad(degrees)
-      )
+        THREE.MathUtils.degToRad(degrees),
+      ),
     );
     if (floorSnapRef.current) t.snapToFloor();
     t.updateOverlay();
@@ -756,7 +811,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     if (!t?.model) return;
     if (!restoreInitialTransform(t.model)) return;
     setScale(1);
-    setFloorSnap(false);
+    setFloorSnap(true);
     t.model.scale.setScalar(t.model.userData.baseScale || 1);
     t.controls.target.set(0, BOX_SIZE.h / 2, 0);
     t.camera.position.set(2.4, 1.8, 2.8);
@@ -767,24 +822,28 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
   const handleGlbFile = (file) => {
     if (!file) return;
     const url = URL.createObjectURL(file);
-    loadGlb(url, { displayName: file.name, applyDemoTransform: true, revokeUrl: true });
+    loadGlb(url, {
+      displayName: file.name,
+      applyDemoTransform: true,
+      revokeUrl: true,
+    });
   };
 
-  // 플레이스홀더 박스로 복귀
-  const restorePlaceholder = () => {
-    modelLoadTokenRef.current += 1;
-    const box = createPlaceholderBox();
-    applyInitialTransform(box);
-    rememberInitialTransform(box);
-    swapModel(box);
-    setBaseSize({ ...BOX_SIZE });
-    setFileName(null);
-    setScale(1);
-    setFloorSnap(false);
-    setLoadingModel(false);
-    setModelError("");
-    threeRef.current?.updateOverlay();
-  };
+  // // 플레이스홀더 박스로 복귀
+  // const restorePlaceholder = () => {
+  //   modelLoadTokenRef.current += 1;
+  //   const box = createPlaceholderBox();
+  //   applyInitialTransform(box);
+  //   rememberInitialTransform(box);
+  //   swapModel(box);
+  //   setBaseSize({ ...BOX_SIZE });
+  //   setFileName(null);
+  //   setScale(1);
+  //   setFloorSnap(false);
+  //   setLoadingModel(false);
+  //   setModelError("");
+  //   threeRef.current?.updateOverlay();
+  // };
 
   const handleComplete = async () => {
     const target = threeRef.current?.model;
@@ -827,8 +886,8 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     <div className="it3-step">
       <h2 className="it3-step-title">모델을 확인하고 보정해주세요</h2>
       <p className="it3-step-desc">
-        생성 직후엔 방향과 위치가 어긋나 있을 수 있어요. 직접 드래그하거나 자동 정렬을
-        눌러주세요.
+        생성 직후엔 방향과 위치가 어긋나 있을 수 있어요. 직접 드래그하거나 자동
+        정렬을 눌러주세요.
         {objectLabel ? ` (${objectLabel})` : ""}
       </p>
 
@@ -836,14 +895,14 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
         <div className="it3-viewer-canvas">
           <div className="it3-viewer-mount" ref={mountRef} />
           <div className="it3-viewer-hint">
-            {gizmoMode
-              ? "기즈모 축을 드래그해서 3축 이동 · 회전"
-              : (
-                <>
-                  가구 드래그 <b>이동</b> · 주황 핸들 드래그 <b>회전</b> · 빈 곳 드래그{" "}
-                  <b>화면 회전</b>
-                </>
-              )}
+            {gizmoMode ? (
+              "기즈모 축을 드래그해서 3축 이동 · 회전"
+            ) : (
+              <>
+                가구 드래그 <b>이동</b> · 주황 핸들 드래그 <b>회전</b> · 빈 곳
+                드래그 <b>화면 회전</b>
+              </>
+            )}
           </div>
         </div>
 
@@ -892,7 +951,11 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
           />
 
           <div className="it3-ctrl-group-label">보정</div>
-          <button type="button" className="it3-btn-prim" onClick={handleAutoAlign}>
+          <button
+            type="button"
+            className="it3-btn-prim"
+            onClick={handleAutoAlign}
+          >
             자동 정렬
           </button>
 
@@ -926,10 +989,18 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
             {["x", "y", "z"].map((axis) => (
               <div key={axis} className="it3-rot-row">
                 <span className="it3-rot-axis">{axis.toUpperCase()}축</span>
-                <button type="button" className="it3-btn-sm" onClick={() => rotateBy(axis, -90)}>
+                <button
+                  type="button"
+                  className="it3-btn-sm"
+                  onClick={() => rotateBy(axis, -90)}
+                >
                   −90°
                 </button>
-                <button type="button" className="it3-btn-sm" onClick={() => rotateBy(axis, 90)}>
+                <button
+                  type="button"
+                  className="it3-btn-sm"
+                  onClick={() => rotateBy(axis, 90)}
+                >
                   +90°
                 </button>
               </div>
@@ -966,7 +1037,8 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
 
           <div className="it3-dim-card">
             <div className="it3-result-label">모델 크기</div>
-            {(baseSize.w * scale).toFixed(2)}m × {(baseSize.h * scale).toFixed(2)}m ×{" "}
+            {(baseSize.w * scale).toFixed(2)}m ×{" "}
+            {(baseSize.h * scale).toFixed(2)}m ×{" "}
             {(baseSize.d * scale).toFixed(2)}m
           </div>
 
