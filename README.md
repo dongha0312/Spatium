@@ -54,8 +54,6 @@ Spatium은 실제 공간을 디지털 3D 공간으로 옮겨 인테리어를 미
 
 Spatium은 **공간 스캔 → 웹 편집 → Image-to-3D → 저장과 복원**을 하나의 흐름으로 연결합니다.
 
-<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
-
 ## 주요 기능 <a id="key-features"></a>
 
 | 기능 | 설명 |
@@ -67,8 +65,6 @@ Spatium은 **공간 스캔 → 웹 편집 → Image-to-3D → 저장과 복원**
 | 편집 상태 저장 | 방과 가구의 편집 상태를 재생 가능한 메타데이터로 저장하고 다시 복원합니다. |
 | 사진 기반 3D 생성 | YOLO 또는 GroundingDINO + SAM2로 사물을 분리하고 TripoSR 또는 Stable Fast 3D로 GLB를 생성합니다. |
 | 사용자 인증 | 로컬 및 소셜 로그인, JWT 기반 세션, 프로필과 계정 관리를 제공합니다. |
-
-<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
 ## 시스템 구성 <a id="architecture"></a>
 
@@ -82,8 +78,6 @@ Spatium은 **공간 스캔 → 웹 편집 → Image-to-3D → 저장과 복원**
 | `spatium-frontend` | 웹 UI, 프로젝트 관리, 3D 공간 편집 | `3000` |
 | `spatium-backend` | 인증, 프로젝트·방·가구 REST API, 파일 및 DB 관리 | `8080` |
 | `spatium-img-to-3d` | 이미지 분할, 배경 제거, GLB 모델 생성 | `8000` |
-
-<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
 
 ## 기술 스택 <a id="built-with"></a>
 
@@ -115,7 +109,7 @@ Spatium은 **공간 스캔 → 웹 편집 → Image-to-3D → 저장과 복원**
 - GLTFKit2
 - iOS 17+
 
-<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 
 ## 시작하기 <a id="getting-started"></a>
 
@@ -202,7 +196,7 @@ uv run uvicorn app.main:app --reload --port 8000 --env-file .env
 
 실기기에서 PC의 로컬 서버에 접속할 때는 `localhost` 대신 같은 네트워크에 있는 PC의 IP 주소를 사용해야 합니다.
 
-<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 
 ## 사용 흐름 <a id="usage"></a>
 
@@ -232,7 +226,7 @@ uv run uvicorn app.main:app --reload --port 8000 --env-file .env
   </tr>
 </table>
 
-<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 
 ## 프로젝트 구조 <a id="project-structure"></a>
 
@@ -247,7 +241,7 @@ Spatium/
 └── 3D_EDITOR_PRESENTATION.md
 ```
 
-<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 
 ## 라이선스 <a id="license"></a>
 
@@ -257,7 +251,7 @@ Copyright © Spatium Team. All Rights Reserved.
 
 Spatium 팀의 사전 서면 허가 없이는 누구도 이 프로젝트의 전부 또는 일부를 사용, 복제, 수정, 병합, 게시, 배포, 재라이선스, 판매하거나 상업적·비상업적 목적으로 이용할 수 없습니다. 저장소를 열람할 수 있다는 사실만으로 어떠한 사용 권한도 부여되지 않습니다.
 
-<p align="right">(<a href="#readme-top">맨 위로</a>)</p>
+
 
 ## 프로젝트 링크
 
