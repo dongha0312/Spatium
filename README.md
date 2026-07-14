@@ -11,12 +11,6 @@
   </p>
 
   <p>
-    <a href="https://github.com/dongha0312/Spatium/issues">버그 제보</a>
-    ·
-    <a href="https://github.com/dongha0312/Spatium/issues">기능 제안</a>
-  </p>
-
-  <p>
     <img src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black" alt="React 19" />
     <img src="https://img.shields.io/badge/Three.js-0.185-000000?logo=threedotjs&logoColor=white" alt="Three.js 0.185" />
     <img src="https://img.shields.io/badge/Spring_Boot-4.0.7-6DB33F?logo=springboot&logoColor=white" alt="Spring Boot 4.0.7" />
