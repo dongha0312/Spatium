@@ -10,7 +10,7 @@ import useProjectStats from "../hooks/useProjectStats";
 import { getLoginSession } from "../utils/authSession";
 import { getMyInfo } from "../springApi/MemberSpringBootApi";
 
-const CONTACT_EMAIL = "contact@spatium.com";
+const CONTACT_EMAIL = "rsj1001@gmail.com";
 
 function ContactUsPage() {
   const [session, setSession] = useState(() => getLoginSession());
@@ -47,7 +47,7 @@ function ContactUsPage() {
   });
 
   return (
-    <div className="cu-root">
+    <div className="app-page cu-root">
       <Header prefix="cu">
         <div className="hp-nav-right">
           {session ? (
@@ -77,7 +77,7 @@ function ContactUsPage() {
       </Header>
 
       <main className="cu-main">
-        <section className="cu-card" aria-labelledby="contact-title">
+        <section className="ui-card ui-card--raised cu-card" aria-labelledby="contact-title">
           <p className="cu-eyebrow">Contact Us</p>
           <h1 className="cu-title" id="contact-title">
             문의하기
@@ -88,9 +88,7 @@ function ContactUsPage() {
 
           <div className="cu-email-box">
             <span className="cu-email-label">Email</span>
-            <a className="cu-email" href={`mailto:${CONTACT_EMAIL}`}>
-              {CONTACT_EMAIL}
-            </a>
+            <p className="cu-email">{CONTACT_EMAIL}</p>
           </div>
         </section>
       </main>

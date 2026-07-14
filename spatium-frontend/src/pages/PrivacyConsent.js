@@ -11,14 +11,14 @@ import "../styles/cookiepolicy.css";
 
 function PrivacyConsent() {
   return (
-    <div className="cp-root">
+    <div className="app-page cp-root">
       <Header prefix="cp">
         <div className="cp-nav-right">
           <Link to="/" className="cp-btn-out">홈으로</Link>
         </div>
       </Header>
       <main className="cp-body">
-        <div className="cp-content">
+        <div className="ui-card cp-content">
           <div className="cp-eyebrow">개인정보 보호</div>
           <h1 className="cp-title">SPATIUM 개인정보처리방침</h1>
           <div className="cp-updated">시행일: {LEGAL_EFFECTIVE_DATE}</div>

@@ -554,7 +554,7 @@ function ThreeDEditor() {
   };
 
   return (
-    <div className="ed-root">
+    <div className="app-workspace ed-root">
       <Header prefix="ed">
         {session ? (
           <div className="ed-nav-account">

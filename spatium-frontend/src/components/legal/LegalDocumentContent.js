@@ -1,7 +1,7 @@
 import React from "react";
 
 export const LEGAL_EFFECTIVE_DATE = "2026. 07. 14";
-export const LEGAL_CONTACT_EMAIL = "contact@spatium.com";
+export const LEGAL_CONTACT_EMAIL = "rsj1001@gmail.com";
 
 export const TERMS_SECTIONS = [
   {

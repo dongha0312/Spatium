@@ -1,23 +1,5 @@
 .lg-root {
-  --g: #5C3D2E;
-  --ga: #C4956A;
-  --t: #1C1209;
-  --t2: #5A4535;
-  --t3: #A08878;
-  --bd: #DDD3C6;
-  --bg: #F2EDE6;
-  --sur: #FAF7F3;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
   background: var(--sur);
-  font-family: -apple-system, "Pretendard", sans-serif;
-}
-
-.lg-root *,
-.lg-root *::before,
-.lg-root *::after {
-  box-sizing: border-box;
 }
 
 .lg-btn-out {
@@ -35,83 +17,17 @@
 
 /* 본문 영역 : 로그인 폼을 화면 정중앙에 배치 */
 .lg-auth-wrap {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 56px 24px;
 }
 
 .lg-auth-card {
-  width: 100%;
   max-width: 380px;
-  background: #fff;
-  border: 1px solid var(--bd);
-  border-radius: 16px;
   padding: 40px 36px;
-  box-shadow: 0 4px 24px rgba(60, 30, 10, .08);
-}
-
-.lg-auth-form {
-  width: 100%;
-}
-
-.lg-auth-form-title {
-  font-size: 26px;
-  font-weight: 900;
-  color: var(--t);
-  letter-spacing: -1px;
-  margin-bottom: 5px;
 }
 
 .lg-auth-form-sub {
-  font-size: 13px;
-  color: var(--t3);
   margin-top: 16px;
-  margin-bottom: 28px;
   text-align: center;
-}
-
-.lg-auth-form-sub a {
-  color: var(--g);
-  font-weight: 700;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.lg-fgrp {
-  margin-bottom: 16px;
-}
-
-.lg-flabel {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--t2);
-  display: block;
-  margin-bottom: 5px;
-  letter-spacing: .3px;
-}
-
-.lg-finput {
-  width: 100%;
-  padding: 11px 14px;
-  border: 1.5px solid var(--bd);
-  border-radius: 9px;
-  font-size: 14px;
-  color: var(--t);
-  background: #fff;
-  outline: none;
-  transition: all .15s;
-  font-family: inherit;
-}
-
-.lg-finput::placeholder {
-  color: var(--t3);
-}
-
-.lg-finput:focus {
-  border-color: var(--ga);
-  box-shadow: 0 0 0 3px rgba(196, 149, 106, .12);
 }
 
 .lg-finput.lg-finput-error {
@@ -145,51 +61,11 @@
   font-family: inherit;
 }
 
-.lg-check-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-
-.lg-check-row input[type=checkbox] {
-  accent-color: var(--g);
-  width: 15px;
-  height: 15px;
-  margin-top: 2px;
-  flex-shrink: 0;
-  cursor: pointer;
-}
-
 .lg-check-row label {
   font-size: 13px;
   color: var(--t2);
   line-height: 1.5;
   cursor: pointer;
-}
-
-.lg-btn-full {
-  width: 100%;
-  padding: 13px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--g), #3D2010);
-  border: none;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  margin-bottom: 16px;
-  box-shadow: 0 4px 16px rgba(92, 61, 46, .28);
-  font-family: inherit;
-}
-
-.lg-btn-full:hover {
-  opacity: .88;
-}
-
-.lg-btn-full:disabled {
-  opacity: .6;
-  cursor: not-allowed;
 }
 
 /* SNS 간편 로그인 */

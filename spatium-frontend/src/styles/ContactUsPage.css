@@ -1,24 +1,5 @@
 .cu-root {
-  --g: #5c3d2e;
-  --ga: #c4956a;
-  --t: #1c1209;
-  --t2: #5a4535;
-  --t3: #a08878;
-  --bd: #ddd3c6;
-  --bg: #f2ede6;
-  --sur: #faf7f3;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
   background: var(--bg);
-  font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI",
-    sans-serif;
-}
-
-.cu-root *,
-.cu-root *::before,
-.cu-root *::after {
-  box-sizing: border-box;
 }
 
 .cu-main {
@@ -35,10 +16,8 @@
   flex-direction: column;
   justify-content: center;
   padding: 72px 64px;
-  border: 1px solid var(--bd);
   border-radius: 20px;
   background: var(--sur);
-  box-shadow: 0 12px 36px rgba(60, 30, 10, 0.08);
   text-align: center;
 }
 

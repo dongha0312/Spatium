@@ -1,23 +1,5 @@
 .su-root {
-  --g: #5C3D2E;
-  --ga: #C4956A;
-  --t: #1C1209;
-  --t2: #5A4535;
-  --t3: #A08878;
-  --bd: #DDD3C6;
-  --bg: #F2EDE6;
-  --sur: #FAF7F3;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
   background: var(--sur);
-  font-family: -apple-system, "Pretendard", sans-serif;
-}
-
-.su-root *,
-.su-root *::before,
-.su-root *::after {
-  box-sizing: border-box;
 }
 
 .su-btn-out {
@@ -35,81 +17,12 @@
 
 /* 본문 영역 : 회원가입 폼을 화면 정중앙에 배치 */
 .su-auth-wrap {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 40px 24px;
 }
 
 .su-auth-card {
-  width: 100%;
   max-width: 400px;
-  background: #fff;
-  border: 1px solid var(--bd);
-  border-radius: 16px;
   padding: 36px;
-  box-shadow: 0 4px 24px rgba(60, 30, 10, .08);
-}
-
-.su-auth-form {
-  width: 100%;
-}
-
-.su-auth-form-title {
-  font-size: 26px;
-  font-weight: 900;
-  color: var(--t);
-  letter-spacing: -1px;
-  margin-bottom: 5px;
-}
-
-.su-auth-form-sub {
-  font-size: 13px;
-  color: var(--t3);
-  margin-bottom: 28px;
-}
-
-.su-auth-form-sub a {
-  color: var(--g);
-  font-weight: 700;
-  cursor: pointer;
-  text-decoration: none;
-}
-
-.su-fgrp {
-  margin-bottom: 16px;
-}
-
-.su-flabel {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--t2);
-  display: block;
-  margin-bottom: 5px;
-  letter-spacing: .3px;
-}
-
-.su-finput {
-  width: 100%;
-  padding: 11px 14px;
-  border: 1.5px solid var(--bd);
-  border-radius: 9px;
-  font-size: 14px;
-  color: var(--t);
-  background: #fff;
-  outline: none;
-  transition: all .15s;
-  font-family: inherit;
-}
-
-.su-finput::placeholder {
-  color: var(--t3);
-}
-
-.su-finput:focus {
-  border-color: var(--ga);
-  box-shadow: 0 0 0 3px rgba(196, 149, 106, .12);
 }
 
 .su-form-row2 {
@@ -144,22 +57,6 @@
   border-color: var(--ga);
   color: var(--g);
   background: #F3E9DE;
-}
-
-.su-check-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin-bottom: 20px;
-}
-
-.su-check-row input[type=checkbox] {
-  accent-color: var(--g);
-  width: 15px;
-  height: 15px;
-  margin-top: 2px;
-  flex-shrink: 0;
-  cursor: pointer;
 }
 
 .su-agreement-text {
@@ -298,30 +195,6 @@
   color: #fff;
   font-weight: 700;
   cursor: pointer;
-}
-
-.su-btn-full {
-  width: 100%;
-  padding: 13px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--g), #3D2010);
-  border: none;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  margin-bottom: 16px;
-  box-shadow: 0 4px 16px rgba(92, 61, 46, .28);
-  font-family: inherit;
-}
-
-.su-btn-full:hover {
-  opacity: .88;
-}
-
-.su-btn-full:disabled {
-  opacity: .6;
-  cursor: not-allowed;
 }
 
 @media (max-width: 480px) {

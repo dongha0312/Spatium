@@ -1,23 +1,5 @@
 .cp-root {
-  --g: #5C3D2E;
-  --ga: #C4956A;
-  --t: #1C1209;
-  --t2: #5A4535;
-  --t3: #A08878;
-  --bd: #DDD3C6;
-  --bg: #F2EDE6;
-  --sur: #FAF7F3;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
   background: var(--bg);
-  font-family: -apple-system, "Pretendard", sans-serif;
-}
-
-.cp-root *,
-.cp-root *::before,
-.cp-root *::after {
-  box-sizing: border-box;
 }
 
 .cp-btn-out {
@@ -44,11 +26,7 @@
 .cp-content {
   width: 100%;
   max-width: 760px;
-  background: var(--sur);
-  border: 1px solid var(--bd);
-  border-radius: 16px;
   padding: 40px 48px;
-  box-shadow: 0 4px 24px rgba(60, 30, 10, .06);
 }
 
 .cp-eyebrow {

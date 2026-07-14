@@ -341,7 +341,7 @@ function ImgTo3dPage() {
   ];
 
   return (
-    <div className="it3-root">
+    <div className="app-page it3-root">
       <Header prefix="it3">
         {session ? (
           <div className="it3-nav-account">

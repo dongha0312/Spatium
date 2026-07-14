@@ -134,7 +134,7 @@ function LoginPage({ onLoginSuccess }) {
   };
 
   return (
-    <div className="lg-root">
+    <div className="app-page lg-root">
       {/* 상단 네비게이션 */}
       <Header prefix="lg">
         <div className="lg-nav-right">
@@ -146,7 +146,7 @@ function LoginPage({ onLoginSuccess }) {
 
       {/* 로그인 폼 (화면 정중앙 배치) */}
       <div className="lg-auth-wrap">
-        <div className="lg-auth-card">
+        <div className="ui-card lg-auth-card">
           <form className="lg-auth-form" onSubmit={handleSubmit}>
             <div className="lg-auth-form-title">로그인</div>
 
