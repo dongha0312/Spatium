@@ -37,8 +37,16 @@ function HomeRouters() {
       <Route path="terms" element={<TermsOfService />}></Route>
       <Route path="contact-us" element={<ContactUsPage />}></Route>
       <Route
+        path="manuals/room-scan"
+        element={<ManualPage manual="room-scan" />}
+      ></Route>
+      <Route
         path="manuals/room-decoration"
         element={<ManualPage manual="room-decoration" />}
+      ></Route>
+      <Route
+        path="manuals/drawer-decoration"
+        element={<ManualPage manual="drawer-decoration" />}
       ></Route>
       <Route
         path="manuals/furniture-creation"

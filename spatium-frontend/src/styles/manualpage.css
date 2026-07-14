@@ -8,6 +8,7 @@
   --bg: #f2ede6;
   --sur: #faf7f3;
   min-height: 100vh;
+  overflow-anchor: none;
   display: flex;
   flex-direction: column;
   color: var(--t);
