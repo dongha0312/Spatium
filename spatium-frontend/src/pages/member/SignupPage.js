@@ -295,7 +295,9 @@ function SignupPage() {
 
             <div className="su-policy-modal-body">
               <LegalDocumentContent
-                sections={openPolicy === "terms" ? TERMS_SECTIONS : PRIVACY_SECTIONS}
+                sections={
+                  openPolicy === "terms" ? TERMS_SECTIONS : PRIVACY_SECTIONS
+                }
                 compact
               />
             </div>
