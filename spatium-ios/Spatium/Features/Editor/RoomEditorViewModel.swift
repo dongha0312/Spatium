@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import UIKit
 
 @MainActor
 final class RoomEditorViewModel: ObservableObject {
@@ -12,10 +13,25 @@ final class RoomEditorViewModel: ObservableObject {
     @Published var isOffline = false
     /// 마지막 저장(저장하기) 이후 편집이 있었는지. 방 전환/이탈 경고에 사용합니다.
     @Published private(set) var hasUnsavedChanges = false
+    @Published private(set) var canUndo = false
+    @Published private(set) var canRedo = false
+    @Published private(set) var hasRecoverableDraft = false
+    @Published private(set) var recoverableDraftSavedAt: Date?
+    @Published private(set) var draftSavedAt: Date?
     /// 하단 뷰바의 "측정" 모드 on/off (프런트엔드와 동일하게 배지/치수 표시 전환).
     @Published var isMeasuring = false
     /// 선택한 가구를 드래그로 이동하는 편집 상태. 측정 모드와 분리합니다.
     @Published var isMovingSelectedFurniture = false
+
+    // MARK: 책장 꾸미기(피규어) 상태 — 프런트엔드 decorMode 대응
+
+    /// 꾸미기 중인 책장의 itemId. nil이 아니면 에디터가 꾸미기 모드다.
+    @Published var decoratingItemID: Int?
+    /// 목록에서 골라 "선반 탭 배치"를 기다리는 피규어.
+    @Published var pendingFigure: FurnitureCatalogItem?
+    /// 꾸미기 중인 책장 위에서 선택된 피규어의 decorId.
+    @Published var selectedDecorID: Int?
+    private var nextDecorID = 1
 
     /// 회전 슬라이더가 스냅되는 각도 스톱(도).
     static let rotationStops: [Double] = [-180, -90, 0, 90, 180]
@@ -49,17 +65,55 @@ final class RoomEditorViewModel: ObservableObject {
     /// 새 가구가 앉을 바닥 높이(월드 Y). 박스 방은 0, 스캔 방은 감지 가구 바닥에서 유도.
     private var floorY: Double = 0
 
+    private struct EditorSnapshot {
+        var layout: RoomLayout
+        var selectedItemID: Int?
+        var decoratingItemID: Int?
+        var selectedDecorID: Int?
+        var isMovingSelectedFurniture: Bool
+    }
+
+    private struct EditorDraft: Codable {
+        static let currentVersion = 1
+
+        var version: Int
+        var savedAt: Date
+        var layout: RoomLayout
+    }
+
+    private static let historyLimit = 30
+    private var undoHistory: [EditorSnapshot] = []
+    private var redoHistory: [EditorSnapshot] = []
+    private var historyTransactionStart: EditorSnapshot?
+    private var savedLayoutFingerprint = Data()
+    private var pendingRecoverableDraft: EditorDraft?
+    private var draftSaveTask: Task<Void, Never>?
+    private let draftDirectoryURL: URL
+    private var draftFileName: String
+
     var selectedFurniture: PlacedFurniture? {
         guard let selectedItemID else { return nil }
         return layout.furnitures.first { $0.itemId == selectedItemID }
     }
 
-    init(room: RoomRecord, projectID: String? = nil, projectName: String? = nil) {
+    init(
+        room: RoomRecord,
+        projectID: String? = nil,
+        projectName: String? = nil,
+        draftDirectoryURL: URL? = nil
+    ) {
         self.roomID = room.id
         self.projectID = projectID
         self.projectName = projectName
         self.usdzURL = nil
         self.loadsRemoteLayout = true
+        self.draftDirectoryURL = draftDirectoryURL ?? Self.defaultDraftDirectoryURL()
+        Self.clearDraftDirectoryForUITestingIfRequested(self.draftDirectoryURL)
+        self.draftFileName = Self.makeDraftFileName(
+            projectID: projectID,
+            roomID: room.id,
+            roomName: room.roomType
+        )
         self.layout = RoomLayout(
             roomId: room.id,
             roomName: room.roomType,
@@ -73,6 +127,7 @@ final class RoomEditorViewModel: ObservableObject {
             ),
             furnitures: []
         )
+        self.savedLayoutFingerprint = Self.layoutFingerprint(self.layout)
     }
 
     /// 스캔 결과로 바로 여는 3D 에디터. 실제 스캔 메시(usdzURL) 위에
@@ -86,13 +141,21 @@ final class RoomEditorViewModel: ObservableObject {
         ceilingHeight: Double,
         roomID: String? = nil,
         projectID: String? = nil,
-        projectName: String? = nil
+        projectName: String? = nil,
+        draftDirectoryURL: URL? = nil
     ) {
         self.roomID = roomID ?? "local-scan"
         self.projectID = projectID
         self.projectName = projectName
         self.usdzURL = usdzURL
         self.loadsRemoteLayout = false
+        self.draftDirectoryURL = draftDirectoryURL ?? Self.defaultDraftDirectoryURL()
+        Self.clearDraftDirectoryForUITestingIfRequested(self.draftDirectoryURL)
+        self.draftFileName = Self.makeDraftFileName(
+            projectID: projectID,
+            roomID: roomID ?? "local-scan",
+            roomName: roomName
+        )
         // 서버 룸(projectID 있음)을 씬으로 열면 온라인 저장이 가능하므로 오프라인 표시하지 않는다.
         self.isOffline = (projectID == nil)
         self.layout = RoomLayout(
@@ -125,15 +188,21 @@ final class RoomEditorViewModel: ObservableObject {
                 width: item.width,
                 depth: item.depth,
                 height: item.height,
-                modelName: item.modelName ?? FurnitureCatalog.defaultModelName(matching: "\(category) \(item.sourceType)")
+                modelName: item.modelName ?? FurnitureCatalog.defaultModelName(matching: "\(category) \(item.sourceType)"),
+                decorations: item.decorations
             )
         }
         self.nextLocalItemID = nextID
+        // 저장된 피규어 decorId와 새로 올릴 피규어 id가 겹치지 않게 이어서 발급한다.
+        self.nextDecorID = (self.layout.furnitures
+            .compactMap { $0.decorations?.map(\.decorId).max() }
+            .max() ?? 0) + 1
         // 감지된 가구들의 바닥면(= 스캔 바닥 높이)을 새 가구 배치 기준으로 삼습니다.
         // 씬이 방 메시에서 실제 바닥을 찾으면 adoptFloorY로 이 값을 교정합니다.
         // (가구를 모두 띄워 저장한 방에서 띄운 높이가 새 바닥으로 굳는 것 방지)
         // 벽 밀착/충돌은 씬(RoomEditorSceneView)의 벽 시스템이 렌더·드래그 모두에서 일관되게 처리합니다.
         self.floorY = self.layout.furnitures.map { $0.position.y }.min() ?? 0
+        self.savedLayoutFingerprint = Self.layoutFingerprint(self.layout)
 
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-UITestMeasure") {
@@ -148,10 +217,258 @@ final class RoomEditorViewModel: ObservableObject {
         #endif
     }
 
+    // MARK: - 실행 취소 / 다시 실행
+
+    private var currentSnapshot: EditorSnapshot {
+        EditorSnapshot(
+            layout: layout,
+            selectedItemID: selectedItemID,
+            decoratingItemID: decoratingItemID,
+            selectedDecorID: selectedDecorID,
+            isMovingSelectedFurniture: isMovingSelectedFurniture
+        )
+    }
+
+    /// 슬라이더처럼 하나의 손가락 조작이 여러 값 변경을 만드는 경우 시작 상태 하나만 기록한다.
+    func beginHistoryTransaction() {
+        guard historyTransactionStart == nil else { return }
+        historyTransactionStart = currentSnapshot
+    }
+
+    func endHistoryTransaction() {
+        guard let start = historyTransactionStart else { return }
+        historyTransactionStart = nil
+        guard Self.layoutFingerprint(start.layout) != Self.layoutFingerprint(layout) else { return }
+        appendUndoSnapshot(start)
+    }
+
+    func undo() {
+        endHistoryTransaction()
+        guard let previous = undoHistory.popLast() else { return }
+        redoHistory.append(currentSnapshot)
+        if redoHistory.count > Self.historyLimit {
+            redoHistory.removeFirst(redoHistory.count - Self.historyLimit)
+        }
+        applyHistorySnapshot(previous, message: "이전 편집으로 되돌렸어요.")
+        updateHistoryAvailability()
+    }
+
+    func redo() {
+        endHistoryTransaction()
+        guard let next = redoHistory.popLast() else { return }
+        undoHistory.append(currentSnapshot)
+        if undoHistory.count > Self.historyLimit {
+            undoHistory.removeFirst(undoHistory.count - Self.historyLimit)
+        }
+        applyHistorySnapshot(next, message: "편집을 다시 적용했어요.")
+        updateHistoryAvailability()
+    }
+
+    private func recordHistoryStep() {
+        guard historyTransactionStart == nil else { return }
+        appendUndoSnapshot(currentSnapshot)
+    }
+
+    private func appendUndoSnapshot(_ snapshot: EditorSnapshot) {
+        undoHistory.append(snapshot)
+        if undoHistory.count > Self.historyLimit {
+            undoHistory.removeFirst(undoHistory.count - Self.historyLimit)
+        }
+        redoHistory.removeAll()
+        updateHistoryAvailability()
+    }
+
+    private func applyHistorySnapshot(_ snapshot: EditorSnapshot, message: String) {
+        layout = snapshot.layout
+        selectedItemID = snapshot.selectedItemID.flatMap { id in
+            layout.furnitures.contains(where: { $0.itemId == id }) ? id : nil
+        }
+        decoratingItemID = snapshot.decoratingItemID.flatMap { id in
+            layout.furnitures.contains(where: { $0.itemId == id }) ? id : nil
+        }
+        selectedDecorID = snapshot.selectedDecorID
+        isMovingSelectedFurniture = selectedItemID != nil && snapshot.isMovingSelectedFurniture
+        pendingFigure = nil
+        pendingWallResolveItemID = nil
+        rebuildLocalIdentifiers()
+        sceneRevision += 1
+        refreshUnsavedState()
+        statusMessage = message
+    }
+
+    private func updateHistoryAvailability() {
+        canUndo = !undoHistory.isEmpty
+        canRedo = !redoHistory.isEmpty
+    }
+
+    private func rebuildLocalIdentifiers() {
+        let smallestItemID = layout.furnitures.map(\.itemId).filter { $0 < 0 }.min() ?? 0
+        nextLocalItemID = min(-1, smallestItemID - 1)
+        nextDecorID = (layout.furnitures
+            .compactMap { $0.decorations?.map(\.decorId).max() }
+            .max() ?? 0) + 1
+    }
+
+    // MARK: - 로컬 임시 저장 / 복구
+
+    private var draftFileURL: URL {
+        draftDirectoryURL.appendingPathComponent(draftFileName, isDirectory: false)
+    }
+
+    private static func defaultDraftDirectoryURL() -> URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("RoomEditorDrafts", isDirectory: true)
+    }
+
+    private static func clearDraftDirectoryForUITestingIfRequested(_ directory: URL) {
+        #if DEBUG
+        guard ProcessInfo.processInfo.arguments.contains("-UITestClearEditorDrafts") else { return }
+        try? FileManager.default.removeItem(at: directory)
+        #endif
+    }
+
+    private static func makeDraftFileName(projectID: String?, roomID: String, roomName: String) -> String {
+        let key = "\(projectID ?? "standalone")|\(roomID)|\(roomName)"
+        // Swift의 hashValue는 실행마다 달라지므로, 재실행 후에도 같은 파일을 찾을 수 있는
+        // 고정 FNV-1a 해시를 사용한다.
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in key.utf8 {
+            hash ^= UInt64(byte)
+            hash &*= 1_099_511_628_211
+        }
+        return "\(String(hash, radix: 16)).json"
+    }
+
+    private static func layoutFingerprint(_ layout: RoomLayout) -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return (try? encoder.encode(layout)) ?? Data()
+    }
+
+    private func markLayoutChanged() {
+        hasUnsavedChanges = true
+        draftSavedAt = nil
+        scheduleDraftSave()
+    }
+
+    private func refreshUnsavedState() {
+        hasUnsavedChanges = Self.layoutFingerprint(layout) != savedLayoutFingerprint
+        if hasUnsavedChanges {
+            scheduleDraftSave()
+        } else {
+            removeDraftFile()
+        }
+    }
+
+    private func scheduleDraftSave() {
+        draftSaveTask?.cancel()
+        draftSaveTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(650))
+            guard !Task.isCancelled, let self, self.hasUnsavedChanges else { return }
+            self.writeDraft(layout: self.layout)
+        }
+    }
+
+    func persistDraftImmediately() {
+        endHistoryTransaction()
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        guard hasUnsavedChanges else { return }
+        writeDraft(layout: layout)
+    }
+
+    private func writeDraft(layout: RoomLayout) {
+        do {
+            try FileManager.default.createDirectory(
+                at: draftDirectoryURL,
+                withIntermediateDirectories: true
+            )
+            let draft = EditorDraft(
+                version: EditorDraft.currentVersion,
+                savedAt: Date(),
+                layout: layout
+            )
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let data = try encoder.encode(draft)
+            try data.write(to: draftFileURL, options: .atomic)
+            draftSavedAt = draft.savedAt
+        } catch {
+            // 임시 저장 실패가 편집을 막아서는 안 된다. 명시적 서버 저장 실패는 save()에서 별도로 알린다.
+            draftSavedAt = nil
+        }
+    }
+
+    private func inspectRecoverableDraft() {
+        guard let data = try? Data(contentsOf: draftFileURL) else { return }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let draft = try? decoder.decode(EditorDraft.self, from: data),
+              draft.version == EditorDraft.currentVersion else {
+            removeDraftFile()
+            return
+        }
+        guard Self.layoutFingerprint(draft.layout) != savedLayoutFingerprint else {
+            removeDraftFile()
+            return
+        }
+        pendingRecoverableDraft = draft
+        recoverableDraftSavedAt = draft.savedAt
+        hasRecoverableDraft = true
+    }
+
+    func restoreRecoverableDraft() {
+        guard let draft = pendingRecoverableDraft else { return }
+        undoHistory = [currentSnapshot]
+        redoHistory.removeAll()
+        updateHistoryAvailability()
+        pendingRecoverableDraft = nil
+        recoverableDraftSavedAt = nil
+        hasRecoverableDraft = false
+        layout = draft.layout
+        selectedItemID = nil
+        decoratingItemID = nil
+        selectedDecorID = nil
+        isMovingSelectedFurniture = false
+        rebuildLocalIdentifiers()
+        sceneRevision += 1
+        markLayoutChanged()
+        draftSavedAt = draft.savedAt
+        statusMessage = "임시 저장된 편집을 복구했어요."
+    }
+
+    func discardRecoverableDraft() {
+        pendingRecoverableDraft = nil
+        recoverableDraftSavedAt = nil
+        hasRecoverableDraft = false
+        removeDraftFile()
+    }
+
+    /// 사용자가 명시적으로 '취소'를 선택했을 때는 다음 진입에서 취소한 편집을 다시 묻지 않는다.
+    func discardCurrentDraft() {
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        historyTransactionStart = nil
+        hasUnsavedChanges = false
+        discardRecoverableDraft()
+    }
+
+    private func removeDraftFile() {
+        try? FileManager.default.removeItem(at: draftFileURL)
+        draftSavedAt = nil
+    }
+
+    private func markCurrentLayoutSaved() {
+        savedLayoutFingerprint = Self.layoutFingerprint(layout)
+        hasUnsavedChanges = false
+        removeDraftFile()
+    }
+
     func loadLayout() async {
         // 스캔에서 바로 연 편집기는 실제 스캔 메시 + 감지 가구로 이미 구성돼 있으니 서버 조회를 건너뜁니다.
         guard loadsRemoteLayout else {
             sceneRevision += 1
+            inspectRecoverableDraft()
             return
         }
         isLoading = true
@@ -162,14 +479,18 @@ final class RoomEditorViewModel: ObservableObject {
             remoteLayoutLoaded = true
             isOffline = false
             statusMessage = nil
+            savedLayoutFingerprint = Self.layoutFingerprint(layout)
+            rebuildLocalIdentifiers()
             sceneRevision += 1
         } catch {
             isOffline = true
             statusMessage = "서버에 연결할 수 없어 오프라인으로 편집합니다."
         }
+        inspectRecoverableDraft()
     }
 
     func place(furniture: FurnitureDetail) {
+        recordHistoryStep()
         let placed = PlacedFurniture(
             itemId: takeLocalItemID(),
             furnitureId: furniture.furnitureId,
@@ -182,7 +503,7 @@ final class RoomEditorViewModel: ObservableObject {
             height: furniture.height
         )
         layout.furnitures.append(placed)
-        hasUnsavedChanges = true
+        markLayoutChanged()
         selectedItemID = placed.itemId
         isMovingSelectedFurniture = true
         sceneRevision += 1
@@ -197,12 +518,19 @@ final class RoomEditorViewModel: ObservableObject {
         }
     }
 
-    func commitTransform(itemID: Int, transform: FurnitureTransform) {
+    func commitTransform(itemID: Int, transform: FurnitureTransform, recordHistory: Bool = true) {
         guard let index = layout.furnitures.firstIndex(where: { $0.itemId == itemID }) else { return }
+        let current = FurnitureTransform(
+            position: layout.furnitures[index].position,
+            rotation: layout.furnitures[index].rotation,
+            scale: layout.furnitures[index].scale
+        )
+        guard current != transform else { return }
+        if recordHistory { recordHistoryStep() }
         layout.furnitures[index].position = transform.position
         layout.furnitures[index].rotation = transform.rotation
         layout.furnitures[index].scale = transform.scale
-        hasUnsavedChanges = true
+        markLayoutChanged()
 
         guard !isOffline, itemID > 0 else { return }
         Task {
@@ -226,6 +554,7 @@ final class RoomEditorViewModel: ObservableObject {
     /// 카탈로그 상품을 방에 배치합니다. 선택한 정확한 GLB 파일명을 함께 실어 렌더합니다.
     /// 여러 개 추가 시 원점에 겹치지 않도록 작은 격자로 흩어 놓습니다.
     func place(catalogItem: FurnitureCatalogItem) {
+        recordHistoryStep()
         let n = layout.furnitures.count
         let col = Double(n % 3) - 1        // -1, 0, 1
         let row = Double(n / 3)
@@ -242,7 +571,7 @@ final class RoomEditorViewModel: ObservableObject {
             modelName: catalogItem.modelFileName
         )
         layout.furnitures.append(placed)
-        hasUnsavedChanges = true
+        markLayoutChanged()
         selectedItemID = placed.itemId
         isMovingSelectedFurniture = true
         sceneRevision += 1
@@ -256,8 +585,10 @@ final class RoomEditorViewModel: ObservableObject {
         guard let item = selectedFurniture, !Self.isWallInfill(item),
               let index = layout.furnitures.firstIndex(where: { $0.itemId == item.itemId }) else { return }
         let snapped = Self.snapRotation(degrees)
+        guard layout.furnitures[index].rotation.y != snapped * .pi / 180 else { return }
+        recordHistoryStep()
         layout.furnitures[index].rotation.y = snapped * .pi / 180
-        hasUnsavedChanges = true
+        markLayoutChanged()
 
         guard !isOffline, item.itemId > 0 else { return }
         Task {
@@ -349,8 +680,10 @@ final class RoomEditorViewModel: ObservableObject {
               let item = selectedFurniture,
               let index = layout.furnitures.firstIndex(where: { $0.itemId == item.itemId }) else { return }
         let clamped = min(max(cm, 0), selectedMaxElevationCm)
+        guard layout.furnitures[index].position.y != floorY + clamped / 100 else { return }
+        recordHistoryStep()
         layout.furnitures[index].position.y = floorY + clamped / 100
-        hasUnsavedChanges = true
+        markLayoutChanged()
 
         guard !isOffline, item.itemId > 0 else { return }
         Task {
@@ -362,10 +695,203 @@ final class RoomEditorViewModel: ObservableObject {
         }
     }
 
+    // MARK: - 가구 크기 조절 (웹 "크기 설정" 모달 대응 — 배치 후 선택 카드에서 조절)
+
+    /// 크기 조절 슬라이더 범위(cm). 웹 모달은 1~1000이지만 모바일 슬라이더에선
+    /// 실용 범위로 좁힌다. (10cm 미만은 조작 불가 수준, 4m 초과 가구는 비현실적)
+    static let furnitureSizeRangeCm = 10.0...400.0
+
+    /// 크기 조절 대상인지 — 일반 가구만. 문/창문은 벽 개구부 크기와 묶여 있고,
+    /// 벽 패널은 벽 구조라 제외한다. (높이 띄우기와 같은 규칙)
+    var selectedSupportsResize: Bool { selectedSupportsElevation }
+
+    /// 선택 가구의 크기(cm) — 가장 긴 변 기준. 피규어 크기 슬라이더와 같은 의미 체계.
+    var selectedSizeCm: Double {
+        guard let item = selectedFurniture else { return 0 }
+        let maxSide = max(item.width ?? 0.5, item.depth ?? 0.5, item.height ?? 0.5)
+        return (maxSide * 100).rounded()
+    }
+
+    /// 가장 긴 변을 cm로 지정하면 세 축을 **같은 비율로** 함께 조절한다(찌그러짐 방지).
+    /// 슬라이더 연속 조작이라 씬 리빌드 없이 노드 스케일만 갱신되도록
+    /// sceneRevision은 올리지 않는다(씬의 syncSelectedSize가 반영).
+    func setSelectedSize(cm: Double) {
+        guard selectedSupportsResize,
+              let item = selectedFurniture,
+              let index = layout.furnitures.firstIndex(where: { $0.itemId == item.itemId }) else { return }
+        let width = item.width ?? 0.5
+        let depth = item.depth ?? 0.5
+        let height = item.height ?? 0.5
+        let maxSide = max(width, depth, height)
+        guard maxSide > 0 else { return }
+        let clamped = min(max(cm, Self.furnitureSizeRangeCm.lowerBound), Self.furnitureSizeRangeCm.upperBound)
+        let ratio = clamped / 100 / maxSide
+        guard abs(ratio - 1) > 0.000_001 else { return }
+        recordHistoryStep()
+        layout.furnitures[index].width = width * ratio
+        layout.furnitures[index].depth = depth * ratio
+        layout.furnitures[index].height = height * ratio
+        markLayoutChanged()
+    }
+
+    /// 크기 슬라이더 조작이 끝났을 때: 커진 발자국이 벽을 뚫었으면 방 안쪽으로 되민다.
+    func finishSelectedSizeAdjust() {
+        guard let selectedItemID else { return }
+        pendingWallResolveItemID = selectedItemID
+    }
+
+    // MARK: - 책장 꾸미기 (피규어 올려놓기) — 프런트엔드 서랍장 꾸미기 대응
+
+    /// 꾸미기를 지원하는 가구인지. 프런트엔드는 GLB가 editable_furniture 폴더에 있는지로
+    /// 판정하는데, 앱 번들은 리소스가 평탄화되므로 파일명의 "editable_" 접두사로 대응한다.
+    static func isDecoratable(_ furniture: PlacedFurniture) -> Bool {
+        furniture.modelName?.hasPrefix("editable_") == true
+    }
+
+    var selectedIsDecoratable: Bool {
+        guard let item = selectedFurniture else { return false }
+        return Self.isDecoratable(item)
+    }
+
+    /// 피규어의 최초 배치 시 최대 변 길이(m). 프런트엔드 FIGURE_MAX_DIMENSION 대응.
+    static let figureMaxDimension = 0.35
+    /// 크기 슬라이더 범위(cm). 프런트엔드 FIGURE_MIN/MAX_SIZE_CM 대응.
+    static let figureSizeRangeCm = 5.0...50.0
+
+    var isDecorating: Bool { decoratingItemID != nil }
+
+    var decoratingFurniture: PlacedFurniture? {
+        guard let decoratingItemID else { return nil }
+        return layout.furnitures.first { $0.itemId == decoratingItemID }
+    }
+
+    /// 선택한 책장의 꾸미기 모드로 진입한다. 일반 선택/측정 상태는 정리한다.
+    func beginDecorating() {
+        guard let item = selectedFurniture, Self.isDecoratable(item) else { return }
+        decoratingItemID = item.itemId
+        selectedItemID = nil
+        isMovingSelectedFurniture = false
+        isMeasuring = false
+        pendingFigure = nil
+        selectedDecorID = nil
+    }
+
+    func endDecorating() {
+        decoratingItemID = nil
+        pendingFigure = nil
+        selectedDecorID = nil
+    }
+
+    /// 카탈로그 치수를 피규어 크기로 정규화(최대 변 0.35m). 프런트 figureDimensionsFromCatalog 대응.
+    static func figureDimensions(for item: FurnitureCatalogItem) -> (width: Double, height: Double, depth: Double) {
+        let width = max(item.width, 0.02)
+        let height = max(item.height, 0.02)
+        let depth = max(item.depth, 0.02)
+        let maxSide = max(width, height, depth)
+        guard maxSide > figureMaxDimension else { return (width, height, depth) }
+        let scale = figureMaxDimension / maxSide
+        return (width * scale, height * scale, depth * scale)
+    }
+
+    /// 씬이 찾은 선반 표면 지점(부모 로컬 좌표)에 대기 중인 피규어를 올려놓는다.
+    func placePendingFigure(atLocal position: FurnitureTransform.Vector3) {
+        guard let decoratingItemID, let pendingFigure,
+              let index = layout.furnitures.firstIndex(where: { $0.itemId == decoratingItemID }) else { return }
+        recordHistoryStep()
+        let dims = Self.figureDimensions(for: pendingFigure)
+        let decoration = PlacedDecoration(
+            decorId: nextDecorID,
+            name: pendingFigure.name,
+            modelName: pendingFigure.modelFileName,
+            width: dims.width,
+            height: dims.height,
+            depth: dims.depth,
+            position: position,
+            rotationY: 0,
+            scale: 1
+        )
+        nextDecorID += 1
+        layout.furnitures[index].decorations = (layout.furnitures[index].decorations ?? []) + [decoration]
+        markLayoutChanged()
+        self.pendingFigure = nil
+        selectedDecorID = decoration.decorId
+        sceneRevision += 1
+        Haptics.impact(.light)
+    }
+
+    /// 선택된 피규어를 다른 선반 지점(부모 로컬 좌표)으로 옮긴다.
+    func moveSelectedDecor(toLocal position: FurnitureTransform.Vector3) {
+        guard let indices = selectedDecorIndices() else { return }
+        guard layout.furnitures[indices.furniture].decorations?[indices.decor].position != position else { return }
+        recordHistoryStep()
+        layout.furnitures[indices.furniture].decorations?[indices.decor].position = position
+        markLayoutChanged()
+        sceneRevision += 1
+    }
+
+    var selectedDecoration: PlacedDecoration? {
+        guard let indices = selectedDecorIndices() else { return nil }
+        return layout.furnitures[indices.furniture].decorations?[indices.decor]
+    }
+
+    var selectedDecorRotationDegrees: Double {
+        guard let decoration = selectedDecoration else { return 0 }
+        return (decoration.rotationY * 180 / .pi).rounded()
+    }
+
+    /// 피규어 Y 회전(도). 슬라이더 연속 조작이라 씬 리빌드 없이 노드만 갱신되도록 revision은 올리지 않는다.
+    func setSelectedDecorRotation(degrees: Double) {
+        guard let indices = selectedDecorIndices() else { return }
+        let snapped = Self.snapRotation(degrees)
+        guard layout.furnitures[indices.furniture].decorations?[indices.decor].rotationY != snapped * .pi / 180 else { return }
+        recordHistoryStep()
+        layout.furnitures[indices.furniture].decorations?[indices.decor].rotationY = snapped * .pi / 180
+        markLayoutChanged()
+    }
+
+    /// 피규어 표시 크기(cm) = 기준 최대 변 × 균일 스케일. 프런트 figureSizeCmForObject 대응.
+    var selectedDecorSizeCm: Double {
+        guard let decoration = selectedDecoration else { return 0 }
+        let maxSide = max(decoration.width, decoration.height, decoration.depth)
+        return (maxSide * decoration.scale * 100).rounded()
+    }
+
+    func setSelectedDecorSize(cm: Double) {
+        guard let indices = selectedDecorIndices(),
+              let decoration = layout.furnitures[indices.furniture].decorations?[indices.decor] else { return }
+        let maxSide = max(decoration.width, decoration.height, decoration.depth)
+        guard maxSide > 0 else { return }
+        let clamped = min(max(cm, Self.figureSizeRangeCm.lowerBound), Self.figureSizeRangeCm.upperBound)
+        let scale = clamped / 100 / maxSide
+        guard decoration.scale != scale else { return }
+        recordHistoryStep()
+        layout.furnitures[indices.furniture].decorations?[indices.decor].scale = scale
+        markLayoutChanged()
+    }
+
+    func deleteSelectedDecor() {
+        guard let indices = selectedDecorIndices() else { return }
+        recordHistoryStep()
+        layout.furnitures[indices.furniture].decorations?.remove(at: indices.decor)
+        markLayoutChanged()
+        selectedDecorID = nil
+        sceneRevision += 1
+    }
+
+    private func selectedDecorIndices() -> (furniture: Int, decor: Int)? {
+        guard let decoratingItemID, let selectedDecorID,
+              let furnitureIndex = layout.furnitures.firstIndex(where: { $0.itemId == decoratingItemID }),
+              let decorIndex = layout.furnitures[furnitureIndex].decorations?
+                  .firstIndex(where: { $0.decorId == selectedDecorID }) else { return nil }
+        return (furnitureIndex, decorIndex)
+    }
+
     /// 벽 색상 변경(4종 팝오버). 씬을 다시 지어 벽/배경에 반영합니다.
     func setWallColor(_ hex: String) {
+        guard layout.space?.wallColor.caseInsensitiveCompare(hex) != .orderedSame else { return }
+        recordHistoryStep()
         layout.space?.wallColor = hex
-        hasUnsavedChanges = true
+        markLayoutChanged()
         sceneRevision += 1
 
         guard !isOffline, let spaceID = layout.space?.spaceId else { return }
@@ -381,8 +907,9 @@ final class RoomEditorViewModel: ObservableObject {
 
     func setFloorColor(_ hex: String) {
         guard layout.space?.floorColor?.caseInsensitiveCompare(hex) != .orderedSame else { return }
+        recordHistoryStep()
         layout.space?.floorColor = hex
-        hasUnsavedChanges = true
+        markLayoutChanged()
         // 스캔 방은 바닥 mesh만 증분 tint하고, 박스 방은 바닥을 다시 만듭니다.
         sceneRevision += 1
     }
@@ -409,6 +936,7 @@ final class RoomEditorViewModel: ObservableObject {
     func replaceSelected(with furniture: FurnitureDetail) {
         guard let item = selectedFurniture, !Self.isWallInfill(item),
               let index = layout.furnitures.firstIndex(where: { $0.itemId == item.itemId }) else { return }
+        recordHistoryStep()
         layout.furnitures[index].furnitureId = furniture.furnitureId
         layout.furnitures[index].furnitureName = furniture.name
         layout.furnitures[index].width = furniture.width
@@ -420,7 +948,9 @@ final class RoomEditorViewModel: ObservableObject {
         layout.furnitures[index].modelName = furniture.modelName
             ?? FurnitureCatalog.defaultModelName(matching: furniture.name)
             ?? layout.furnitures[index].modelName
-        hasUnsavedChanges = true
+        // 꾸미기 책장을 다른 가구로 교체하면 새 모델엔 선반이 없으므로 피규어는 함께 삭제(웹과 동일).
+        layout.furnitures[index].decorations = nil
+        markLayoutChanged()
         // 벽에 붙어 있던 가구가 더 큰 가구로 바뀌면 새 발자국이 벽을 뚫는다. 씬에 되밀기를 요청.
         pendingWallResolveItemID = item.itemId
         sceneRevision += 1
@@ -433,8 +963,9 @@ final class RoomEditorViewModel: ObservableObject {
 
     func deleteSelected() {
         guard let selectedItemID else { return }
+        recordHistoryStep()
         layout.furnitures.removeAll { $0.itemId == selectedItemID }
-        hasUnsavedChanges = true
+        markLayoutChanged()
         let deletedID = selectedItemID
         self.selectedItemID = nil
         isMovingSelectedFurniture = false
@@ -452,6 +983,7 @@ final class RoomEditorViewModel: ObservableObject {
     func fillOpeningWithWall() {
         guard let item = selectedFurniture, Self.isReference(item),
               let index = layout.furnitures.firstIndex(where: { $0.itemId == item.itemId }) else { return }
+        recordHistoryStep()
         let infill = PlacedFurniture(
             itemId: takeLocalItemID(),
             furnitureId: 0,
@@ -466,7 +998,7 @@ final class RoomEditorViewModel: ObservableObject {
         )
         layout.furnitures.remove(at: index)
         layout.furnitures.append(infill)
-        hasUnsavedChanges = true
+        markLayoutChanged()
         selectedItemID = nil
         isMovingSelectedFurniture = false
         sceneRevision += 1
@@ -540,10 +1072,17 @@ final class RoomEditorViewModel: ObservableObject {
                     metadataURL: metadataURL,
                     usdzURL: usdzURL
                 )
+                let localDraftURL = draftFileURL
                 roomID = created.id
                 layout.roomId = created.id
+                draftFileName = Self.makeDraftFileName(
+                    projectID: projectID,
+                    roomID: created.id,
+                    roomName: layout.roomName
+                )
+                try? FileManager.default.removeItem(at: localDraftURL)
                 isOffline = false
-                hasUnsavedChanges = false
+                markCurrentLayoutSaved()
                 statusMessage = "스캔이 업로드되어 저장되었습니다."
                 onServerRoomCreated?(created)
                 return
@@ -558,7 +1097,7 @@ final class RoomEditorViewModel: ObservableObject {
             // 서버 메타데이터가 바뀌었으므로 로컬 스캔 캐시를 비워, 방 목록의 항목 수와
             // 다음 렌더가 최신 편집 상태를 반영하게 한다.
             RoomScanAssetService().invalidateCache(forRoomID: roomID)
-            hasUnsavedChanges = false
+            markCurrentLayoutSaved()
             statusMessage = "저장되었습니다."
         } catch {
             statusMessage = "저장 실패: \(error.localizedDescription)"
@@ -581,6 +1120,8 @@ final class RoomEditorViewModel: ObservableObject {
             item.detectedRotationY = f.rotation.y
             item.rotationY = 0
             item.modelName = f.modelName
+            // 책장 위 피규어(부모 로컬 transform)도 함께 저장해 다음에 열 때 복원한다.
+            item.decorations = (f.decorations?.isEmpty == false) ? f.decorations : nil
             return item
         }
 

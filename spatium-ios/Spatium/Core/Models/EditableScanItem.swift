@@ -19,6 +19,8 @@ struct EditableScanItem: Identifiable, Codable {
     var detectedRotationY: Double = 0
     /// 사용자가 고른 3D 모델 파일명(확장자 제외). nil이면 카테고리 기본 모델을 사용합니다.
     var modelName: String? = nil
+    /// 꾸미기 책장 위에 올려둔 피규어들(부모 로컬 transform 기준). 저장/복원용.
+    var decorations: [PlacedDecoration]? = nil
     var isReplacementTarget: Bool
     var editNote: String
 

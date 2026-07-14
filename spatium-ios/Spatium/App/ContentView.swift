@@ -34,7 +34,8 @@ struct ContentView: View {
             )
         } else if ProcessInfo.processInfo.arguments.contains("-UITestSettings")
                     || ProcessInfo.processInfo.arguments.contains("-UITestHome")
-                    || ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D") {
+                    || ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D")
+                    || ProcessInfo.processInfo.arguments.contains("-UITestGuestCreate") {
             // 스크린샷 검증용: 로그인 게이트를 건너뛰고 메인 탭(설정·홈·가구만들기)으로 바로 진입.
             MainTabView()
         } else {
@@ -145,7 +146,12 @@ struct MainTabView: View {
                     for: nil
                 )
                 if newValue != .imgTo3D {
-                    scrollContentTab = newValue
+                    // 실제 중앙 콘텐츠는 selectedTab이 아니라 scrollContentTab으로
+                    // 결정된다. 이 상태 변경도 같은 트랜잭션에서 애니메이션해야
+                    // 프로젝트·스캔 등 스크롤 탭 사이의 transition이 하드 컷이 되지 않는다.
+                    withAnimation(tabContentAnimation) {
+                        scrollContentTab = newValue
+                    }
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -224,6 +230,16 @@ struct MainTabView: View {
             if ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D") {
                 selectedTab = .imgTo3D
             }
+            // 게스트 프로젝트 생성 크래시 재현용: 게스트 상태로 로컬 프로젝트를 자동 생성한다.
+            if ProcessInfo.processInfo.arguments.contains("-UITestGuestCreate") {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(800))
+                    selectedTab = .rooms
+                    _ = try? await projectStore.createProject(name: "게스트 테스트 프로젝트")
+                    try? await Task.sleep(for: .milliseconds(500))
+                    _ = try? await projectStore.createProject(name: "게스트 테스트 프로젝트 2")
+                }
+            }
             // 탭 전환 애니메이션 검증용: 앱 실행 후 자동으로 홈 → 가구만들기 → 스캔 순으로 전환한다.
             if ProcessInfo.processInfo.arguments.contains("-UITestTabToggle") {
                 Task { @MainActor in
@@ -296,9 +312,14 @@ struct MainTabView: View {
                 )
             }
         case .scan:
-            if let projectBinding = Binding($scanProject) {
+            if let scanProjectValue = scanProject {
+                // Binding($scanProject) 강제 언래핑 바인딩은 리뷰 화면이 떠 있는 동안
+                // scanProject가 nil이 되면 크래시한다. 마지막 값으로 폴백하는 안전한 바인딩 사용.
                 ScanReviewView(
-                    project: projectBinding,
+                    project: Binding(
+                        get: { scanProject ?? scanProjectValue },
+                        set: { scanProject = $0 }
+                    ),
                     projectID: activeProjectID,
                     projectName: activeProjectID.flatMap { projectStore.project(withID: $0)?.resolvedName },
                     exporting: exporting,
@@ -378,8 +399,10 @@ struct MainTabView: View {
             return
         }
         scanReturnTab = selectedTab
-        scanProject = nil
-        activeRoomID = nil
+        // 주의: 여기서 scanProject를 nil로 만들면 안 된다. 리뷰 화면(ScanReviewView)이
+        // Binding($scanProject) 강제 언래핑 바인딩을 들고 있어서, "다시 스캔"을 누르는 순간
+        // nil을 읽으며 EXC_BREAKPOINT로 크래시한다. 기존 스캔은 새 스캔이 "완료"될 때
+        // onCompleted에서 교체된다 — 덕분에 다시 스캔을 취소해도 이전 스캔이 유지된다.
         exportError = nil
         uploadMessage = nil
         isScanning = true

@@ -102,6 +102,9 @@ struct RoomEditorSceneView: UIViewRepresentable {
         coordinator.applySelection(itemID: viewModel.selectedItemID)
         coordinator.setMeasurementVisible(viewModel.isMeasuring)
         coordinator.syncSelectedRotation(from: viewModel.layout, selectedID: viewModel.selectedItemID)
+        coordinator.syncSelectedSize(from: viewModel.layout, selectedID: viewModel.selectedItemID)
+        coordinator.syncDecorState(from: viewModel.layout)
+        coordinator.syncDecorCamera()
         coordinator.resolveWallPenetrationIfNeeded()
         // 이동 모드에서도 카메라 컨트롤은 그대로 둔다. 가구 드래그는 "선택된 가구 위에서 시작한
         // 한 손가락 팬"만 가로채고, 나머지(빈 곳 드래그·핀치)는 평소처럼 시점 조작이 된다.
@@ -178,6 +181,14 @@ struct RoomEditorSceneView: UIViewRepresentable {
         /// item ID별 마지막 GLB 렌더 형태. SceneKit의 SCNNode는 userData를 제공하지 않아
         /// coordinator가 별도로 보관한다.
         private var furnitureRenderSignatures: [Int: String] = [:]
+        /// item ID별 마지막 피규어(꾸미기) 렌더 형태. 바뀐 책장의 피규어들만 다시 만든다.
+        private var decorRenderSignatures: [Int: String] = [:]
+        /// 노드 생성 시점의 (표시 치수, 노드 스케일). 크기 슬라이더가 GLB를 다시 만들지 않고
+        /// "기준 대비 비율"로 스케일만 조정할 수 있게 한다. (맞춤 스케일이 축별 선형이라
+        /// 비율 스케일 결과는 리빌드 결과와 정확히 같다)
+        private var renderedBaseStates: [Int: (width: Double, depth: Double, height: Double, scale: SCNVector3)] = [:]
+        /// 꾸미기 카메라가 적용된 책장 itemId. viewModel.decoratingItemID와 비교해 전환을 감지한다.
+        private var decorCameraItemID: Int?
         private let floorNode = SCNNode()
         private let measurementContainer = SCNNode()
         private let selectionHighlightName = "__selection_highlight"
@@ -483,9 +494,19 @@ struct RoomEditorSceneView: UIViewRepresentable {
             // 프런트엔드처럼 기존 GLB 인스턴스를 유지한다. 추가/삭제/교체된 모델만 다시
             // 만들므로 벽 색상 변경이나 다른 가구의 회전 때문에 전체 모델을 복제하지 않는다.
             furnitureContainer.childNodes
-                .filter { Self.furnitureID(fromNodeOrAncestors: $0).map { !requestedIDs.contains($0) } ?? true }
+                .filter { node in
+                    if let itemID = Self.furnitureID(fromNodeOrAncestors: node) {
+                        return !requestedIDs.contains(itemID)
+                    }
+                    if let itemID = Self.decorContainerItemID(node) {
+                        return !requestedIDs.contains(itemID)
+                    }
+                    return true
+                }
                 .forEach { $0.removeFromParentNode() }
             furnitureRenderSignatures = furnitureRenderSignatures.filter { requestedIDs.contains($0.key) }
+            decorRenderSignatures = decorRenderSignatures.filter { requestedIDs.contains($0.key) }
+            renderedBaseStates = renderedBaseStates.filter { requestedIDs.contains($0.key) }
 
             for furniture in layout.furnitures {
                 let renderFurniture = displayFurniture(for: furniture)
@@ -494,6 +515,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 if let existing = furnitureContainer.childNode(withName: nodeName, recursively: false),
                    furnitureRenderSignatures[furniture.itemId] == signature {
                     applyRenderTransform(to: existing, furniture: renderFurniture, source: furniture, roomCenter: roomCenter)
+                    updateDecorContainer(for: furniture, furnitureNode: existing)
                     continue
                 }
 
@@ -502,8 +524,17 @@ struct RoomEditorSceneView: UIViewRepresentable {
                     ? makeWallInfillNode(for: renderFurniture)
                     : modelLoader.makeNode(for: renderFurniture)
                 furnitureRenderSignatures[furniture.itemId] = signature
+                // 유효 치수(치수 × 렌더 스케일) 기준 — 방 크기 제한(fittingScaleLimit)이 걸린
+                // 상태에서도 크기 슬라이더 비율 계산이 어긋나지 않는다.
+                renderedBaseStates[furniture.itemId] = (
+                    width: (renderFurniture.width ?? 0.5) * renderFurniture.scale.x,
+                    depth: (renderFurniture.depth ?? 0.5) * renderFurniture.scale.z,
+                    height: (renderFurniture.height ?? 0.5) * renderFurniture.scale.y,
+                    scale: node.scale
+                )
                 applyRenderTransform(to: node, furniture: renderFurniture, source: furniture, roomCenter: roomCenter)
                 furnitureContainer.addChildNode(node)
+                updateDecorContainer(for: furniture, furnitureNode: node)
             }
             // 벽 메우기 패널은 실제 벽처럼 가구 드래그/되밀기를 막아야 한다. 패널 박스 노드로
             // 콜라이더를 만들어 셸 벽 콜라이더와 함께 검사한다. (패널 추가/제거 때마다 갱신)
@@ -575,6 +606,229 @@ struct RoomEditorSceneView: UIViewRepresentable {
             node.position = SCNVector3(Float(furniture.position.x), Float(furniture.position.y), Float(furniture.position.z))
             node.eulerAngles.y = Float(furniture.rotation.y)
             return node
+        }
+
+        // MARK: - 책장 꾸미기 (피규어) 렌더링
+
+        /// 피규어들은 가구 노드의 "자식"이 아니라 나란히 놓인 전용 컨테이너에 담는다.
+        /// 가구 노드는 GLB 맞춤 스케일(비균일)이 걸려 있어 자식으로 붙이면 피규어가 찌그러지므로,
+        /// 스케일 없는 컨테이너를 가구와 같은 위치/회전으로 동기화해 부모 역할을 시킨다.
+        private func updateDecorContainer(for furniture: PlacedFurniture, furnitureNode: SCNNode) {
+            let containerName = "decorbox-\(furniture.itemId)"
+            let decorations = furniture.decorations ?? []
+
+            guard !decorations.isEmpty else {
+                furnitureContainer.childNode(withName: containerName, recursively: false)?.removeFromParentNode()
+                decorRenderSignatures[furniture.itemId] = nil
+                return
+            }
+
+            let container: SCNNode
+            if let existing = furnitureContainer.childNode(withName: containerName, recursively: false) {
+                container = existing
+            } else {
+                container = SCNNode()
+                container.name = containerName
+                furnitureContainer.addChildNode(container)
+            }
+            syncDecorContainerTransform(container: container, furnitureNode: furnitureNode)
+
+            let signature = decorations.map { d in
+                [
+                    d.decorId.description, d.modelName ?? "", d.name,
+                    d.width.description, d.height.description, d.depth.description,
+                    d.position.x.description, d.position.y.description, d.position.z.description,
+                    d.rotationY.description, d.scale.description
+                ].joined(separator: "|")
+            }.joined(separator: "#")
+            guard decorRenderSignatures[furniture.itemId] != signature else { return }
+            decorRenderSignatures[furniture.itemId] = signature
+
+            container.childNodes.forEach { $0.removeFromParentNode() }
+            for decoration in decorations {
+                let name = "decor-\(furniture.itemId)-\(decoration.decorId)"
+                // 래퍼가 배치(위치/회전/균일 크기)를, 안쪽 모델 노드가 GLB 맞춤 스케일을 담당한다.
+                // 분리해 두면 크기 슬라이더가 맞춤 스케일을 다시 계산할 필요 없이 래퍼만 만진다.
+                let wrapper = SCNNode()
+                wrapper.name = name
+                wrapper.position = SCNVector3(decoration.position.x, decoration.position.y, decoration.position.z)
+                wrapper.eulerAngles.y = Float(decoration.rotationY)
+                let uniform = Float(max(decoration.scale, 0.001))
+                wrapper.scale = SCNVector3(uniform, uniform, uniform)
+                wrapper.addChildNode(modelLoader.makeDecorNode(identifier: name, decoration: decoration))
+                container.addChildNode(wrapper)
+            }
+        }
+
+        private func syncDecorContainerTransform(container: SCNNode, furnitureNode: SCNNode) {
+            container.position = furnitureNode.position
+            container.eulerAngles = SCNVector3(0, furnitureNode.eulerAngles.y, 0)
+        }
+
+        /// 가구 노드가 직접 움직였을 때(드래그/슬라이더/벽 되밀기) 피규어 컨테이너를 따라 붙인다.
+        private func syncDecorContainer(forItemID itemID: Int) {
+            guard let node = furnitureContainer.childNode(withName: "furniture-\(itemID)", recursively: false),
+                  let container = furnitureContainer.childNode(withName: "decorbox-\(itemID)", recursively: false) else { return }
+            syncDecorContainerTransform(container: container, furnitureNode: node)
+        }
+
+        private static func decorContainerItemID(_ node: SCNNode) -> Int? {
+            guard let name = node.name, name.hasPrefix("decorbox-") else { return nil }
+            return Int(name.dropFirst("decorbox-".count))
+        }
+
+        /// "decor-<가구ID>-<피규어ID>" 이름을 노드 또는 조상에서 찾아 해석한다.
+        /// 가구ID는 로컬 아이템일 때 음수라서("decor--2-1"), 마지막 "-"를 기준으로 나눈다.
+        private static func decorID(fromNodeOrAncestors node: SCNNode) -> (itemID: Int, decorID: Int)? {
+            var current: SCNNode? = node
+            while let candidate = current {
+                if let name = candidate.name, name.hasPrefix("decor-"), !name.hasPrefix("decorbox-") {
+                    let body = name.dropFirst("decor-".count)
+                    if let separator = body.lastIndex(of: "-"),
+                       let itemID = Int(body[..<separator]),
+                       let decorID = Int(body[body.index(after: separator)...]) {
+                        return (itemID, decorID)
+                    }
+                }
+                current = candidate.parent
+            }
+            return nil
+        }
+
+        /// 꾸미기 모드의 선택 하이라이트 + 회전/크기 슬라이더 실시간 반영.
+        func syncDecorState(from layout: RoomLayout) {
+            let decoratingID = viewModel.decoratingItemID
+            let selectedDecorID = viewModel.selectedDecorID
+
+            for container in furnitureContainer.childNodes {
+                guard let itemID = Self.decorContainerItemID(container) else { continue }
+                for figure in container.childNodes {
+                    removeSelectionHighlight(from: figure)
+                    guard let id = Self.decorID(fromNodeOrAncestors: figure),
+                          id.itemID == itemID else { continue }
+                    if itemID == decoratingID, id.decorID == selectedDecorID {
+                        addSelectionHighlight(to: figure)
+                    }
+                    // 슬라이더 연속 조작(회전/크기)은 sceneRevision 없이 노드에 바로 반영한다.
+                    if let decoration = layout.furnitures
+                        .first(where: { $0.itemId == itemID })?
+                        .decorations?.first(where: { $0.decorId == id.decorID }) {
+                        figure.eulerAngles.y = Float(decoration.rotationY)
+                        let uniform = Float(max(decoration.scale, 0.001))
+                        figure.scale = SCNVector3(uniform, uniform, uniform)
+                    }
+                }
+            }
+        }
+
+        /// 꾸미기 모드 진입/이탈에 맞춰 카메라를 책장 정면 뷰로 전환하거나 원래대로 되돌린다.
+        func syncDecorCamera() {
+            let target = viewModel.decoratingItemID
+            guard decorCameraItemID != target else { return }
+            if let target,
+               let node = furnitureContainer.childNode(withName: "furniture-\(target)", recursively: false) {
+                decorCameraItemID = target
+                applyDecorCamera(to: node)
+            } else {
+                decorCameraItemID = nil
+                applyCamera(mode: viewModel.viewMode, animated: true)
+            }
+        }
+
+        /// 웹 computeDecorView 대응: 책장 정면(방 중심을 향한 쪽)에서 25도 위로 내려다보는
+        /// 근접 시점. 선반 안쪽 바닥이 보여 피규어를 올릴 자리를 탭하기 좋다.
+        private func applyDecorCamera(to node: SCNNode) {
+            guard let bounds = Self.localHierarchyBounds(of: node) else { return }
+            let localCenter = SCNVector3(
+                (bounds.min.x + bounds.max.x) / 2,
+                (bounds.min.y + bounds.max.y) / 2,
+                (bounds.min.z + bounds.max.z) / 2
+            )
+            let worldCenter = node.convertPosition(localCenter, to: nil)
+            let size = SIMD3(
+                (bounds.max.x - bounds.min.x) * node.scale.x,
+                (bounds.max.y - bounds.min.y) * node.scale.y,
+                (bounds.max.z - bounds.min.z) * node.scale.z
+            )
+            let radius = max(simd_length(size) / 2, 0.4)
+
+            // 로컬 +Z를 수평 정면 후보로 삼고, 방 중심을 향하는 쪽으로 뒤집어 "앞면"을 정한다.
+            let frontWorld = node.convertVector(SCNVector3(0, 0, 1), to: nil)
+            var front = SIMD2(frontWorld.x, frontWorld.z)
+            if simd_length(front) < 0.001 { front = SIMD2(0, 1) }
+            front = simd_normalize(front)
+            let toCenter = SIMD2(sceneCenter.x - worldCenter.x, sceneCenter.z - worldCenter.z)
+            if simd_length(toCenter) > 0.01, simd_dot(front, simd_normalize(toCenter)) < 0 {
+                front = -front
+            }
+
+            let distance = max(radius * 2.2, 1.1)
+            let elevation = Float(25 * Double.pi / 180)
+            SCNTransaction.begin()
+            SCNTransaction.animationDuration = 0.45
+            cameraNode.camera?.usesOrthographicProjection = false
+            cameraNode.camera?.fieldOfView = 60
+            cameraNode.position = SCNVector3(
+                worldCenter.x + front.x * distance * cos(elevation),
+                worldCenter.y + distance * sin(elevation),
+                worldCenter.z + front.y * distance * cos(elevation)
+            )
+            cameraNode.look(at: worldCenter, up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
+            SCNTransaction.commit()
+            sceneView?.pointOfView = cameraNode
+
+            // 궤도 회전 중심을 책장으로 옮겨, 꾸미는 동안의 시점 조작이 책장을 축으로 돌게 한다.
+            if let controller = sceneView?.defaultCameraController {
+                controller.interactionMode = .orbitTurntable
+                controller.target = worldCenter
+                controller.automaticTarget = false
+            }
+        }
+
+        /// 꾸미기 모드의 탭: 피규어 선택 → 선반 표면 배치/이동 → 빈 곳 선택 해제 순으로 판정.
+        private func handleDecorTap(at point: CGPoint, in sceneView: SCNView, decoratingID: Int) {
+            let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
+
+            if let decor = hits.compactMap({ Self.decorID(fromNodeOrAncestors: $0.node) })
+                .first(where: { $0.itemID == decoratingID }) {
+                viewModel.selectedDecorID = decor.decorID
+                return
+            }
+
+            let wantsPlacement = viewModel.pendingFigure != nil
+            let wantsMove = viewModel.selectedDecorID != nil
+            if wantsPlacement || wantsMove,
+               // 웹 decorSurface 대응: 책장 mesh 중 "위를 향한 면"(법선 Y ≥ 0.7 — 상판·선반 바닥)만
+               // 지지면으로 인정한다. 옆면/앞면 탭은 배치로 이어지지 않는다.
+               let support = hits.first(where: { hit in
+                   Self.furnitureID(fromNodeOrAncestors: hit.node) == decoratingID && hit.worldNormal.y >= 0.7
+               }),
+               let container = furnitureContainer.childNode(withName: "decorbox-\(decoratingID)", recursively: false)
+                   ?? makeDecorContainerIfMissing(for: decoratingID) {
+                let local = container.convertPosition(support.worldCoordinates, from: nil)
+                let position = FurnitureTransform.Vector3(x: Double(local.x), y: Double(local.y), z: Double(local.z))
+                if wantsPlacement {
+                    viewModel.placePendingFigure(atLocal: position)
+                } else {
+                    viewModel.moveSelectedDecor(toLocal: position)
+                }
+                return
+            }
+
+            viewModel.selectedDecorID = nil
+        }
+
+        /// 첫 피규어를 올릴 때는 컨테이너가 아직 없다. 가구 노드 transform으로 즉석 생성해
+        /// 월드 → 부모 로컬 변환에 쓴다. (실제 피규어 노드는 다음 rebuild에서 채워진다)
+        private func makeDecorContainerIfMissing(for itemID: Int) -> SCNNode? {
+            guard let node = furnitureContainer.childNode(withName: "furniture-\(itemID)", recursively: false) else {
+                return nil
+            }
+            let container = SCNNode()
+            container.name = "decorbox-\(itemID)"
+            syncDecorContainerTransform(container: container, furnitureNode: node)
+            furnitureContainer.addChildNode(container)
+            return container
         }
 
         func applyCamera(mode: RoomViewMode, animated: Bool) {
@@ -859,13 +1113,38 @@ struct RoomEditorSceneView: UIViewRepresentable {
             node.eulerAngles.y = Float(item.rotation.y)
             // 높이(수직) 슬라이더 값을 바로 반영. x/z는 드래그가 관리하므로 y만 맞춘다.
             node.position.y = Float(item.position.y)
+            syncDecorContainer(forItemID: selectedID)
+        }
+
+        /// 크기 슬라이더 값을 리빌드 없이 반영한다. 노드 생성 시점의 (치수, 스케일)을 기준으로
+        /// "새 치수 / 기준 치수" 비율만 곱한다 — GLB 맞춤 스케일이 축별 선형이라 리빌드와 결과가 같다.
+        func syncSelectedSize(from layout: RoomLayout, selectedID: Int?) {
+            guard let selectedID,
+                  let item = layout.furnitures.first(where: { $0.itemId == selectedID }),
+                  !RoomEditorViewModel.isWallInfill(item),
+                  let base = renderedBaseStates[selectedID],
+                  let node = furnitureContainer.childNode(withName: "furniture-\(selectedID)", recursively: false) else { return }
+            let display = displayFurniture(for: item)
+            let ratioX = Float(((display.width ?? 0.5) * display.scale.x) / max(base.width, 0.001))
+            let ratioY = Float(((display.height ?? 0.5) * display.scale.y) / max(base.height, 0.001))
+            let ratioZ = Float(((display.depth ?? 0.5) * display.scale.z) / max(base.depth, 0.001))
+            let target = SCNVector3(base.scale.x * ratioX, base.scale.y * ratioY, base.scale.z * ratioZ)
+            guard abs(node.scale.x - target.x) > 0.0001
+                || abs(node.scale.y - target.y) > 0.0001
+                || abs(node.scale.z - target.z) > 0.0001 else { return }
+            node.scale = target
+            if viewModel.isMeasuring {
+                rebuildMeasurementNodes()
+            }
         }
 
         func applySelection(itemID: Int?) {
             for node in furnitureContainer.childNodes {
                 removeSelectionHighlight(from: node)
-                let isSelected = Self.furnitureID(fromNodeOrAncestors: node) == itemID
-                if isSelected {
+                // itemID가 nil일 때 이름 없는 노드(피규어 컨테이너 등)의 nil과 겹쳐
+                // 하이라이트가 붙지 않도록 선택이 있을 때만 비교한다.
+                guard let itemID else { continue }
+                if Self.furnitureID(fromNodeOrAncestors: node) == itemID {
                     addSelectionHighlight(to: node)
                 }
             }
@@ -1231,10 +1510,20 @@ struct RoomEditorSceneView: UIViewRepresentable {
             }
 
             let point = gesture.location(in: sceneView)
+
+            // 꾸미기 모드: 탭은 피규어 선택/배치 전용으로 동작한다.
+            if let decoratingID = viewModel.decoratingItemID {
+                handleDecorTap(at: point, in: sceneView, decoratingID: decoratingID)
+                return
+            }
+
             let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
 
             if let itemID = hits.compactMap({ Self.furnitureID(fromNodeOrAncestors: $0.node) }).first {
                 viewModel.selectedItemID = itemID
+            } else if let decor = hits.compactMap({ Self.decorID(fromNodeOrAncestors: $0.node) }).first {
+                // 꾸미기 모드 밖에서 피규어를 탭하면 피규어가 올려진 책장을 선택한다.
+                viewModel.selectedItemID = decor.itemID
             } else {
                 viewModel.selectedItemID = nil
                 viewModel.isMovingSelectedFurniture = false
@@ -1461,6 +1750,8 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 next = SCNVector3(node.position.x + allowed.x, node.position.y, node.position.z + allowed.y)
             }
             node.position = next
+            // 책장 위 피규어들이 드래그를 실시간으로 따라오게 컨테이너를 동기화한다.
+            syncDecorContainer(forItemID: selectedID)
 
             // 벽/가구에 새로 막히는 순간에만 가벼운 햅틱 — 닿았다는 걸 손끝으로 알 수 있게.
             let blockedDistance = simd_length(SIMD2(next.x - proposed.x, next.z - proposed.z))
@@ -1665,13 +1956,15 @@ struct RoomEditorSceneView: UIViewRepresentable {
             guard moved > 0.0005 else { return }
 
             node.position = resolved
+            syncDecorContainer(forItemID: itemID)
             viewModel.commitTransform(
                 itemID: itemID,
                 transform: FurnitureTransform(
                     position: .init(x: Double(resolved.x), y: Double(resolved.y), z: Double(resolved.z)),
                     rotation: item.rotation,
                     scale: item.scale
-                )
+                ),
+                recordHistory: false
             )
         }
 

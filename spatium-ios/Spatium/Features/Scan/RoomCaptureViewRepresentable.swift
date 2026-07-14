@@ -36,6 +36,16 @@ struct RoomCaptureViewRepresentable: UIViewRepresentable {
     func makeCoordinator() -> RoomCaptureViewCoordinator {
         RoomCaptureViewCoordinator(self)
     }
+
+    /// 스캔 화면이 닫힐 때 AR 세션을 확실히 멈춘다. RoomPlan 뷰가 세션을 돌린 채
+    /// 해제되면 카메라/LiDAR 파이프라인이 프레임을 계속 들고 있어 메모리가 치솟고
+    /// ("delegate retaining ARFrames" 경고), 이어지는 에디터 렌더와 겹치면 jetsam으로 앱이 죽는다.
+    static func dismantleUIView(_ uiView: RoomCaptureView, coordinator: RoomCaptureViewCoordinator) {
+        coordinator.stopSessionIfNeeded(for: uiView)
+        // stop()은 RoomPlan 라이프사이클 제약(첫 업데이트 전 호출 불가)이 있어 가드되지만,
+        // ARSession.pause()는 어느 상태에서든 안전하다.
+        uiView.captureSession.arSession.pause()
+    }
 }
 
 /// RoomPlan의 비동기 시작·업데이트 순서를 명시적으로 추적한다.
@@ -89,6 +99,11 @@ final class RoomCaptureViewCoordinator: NSObject, RoomCaptureViewDelegate, RoomC
     var parent: RoomCaptureViewRepresentable
     private var lifecycle = RoomCaptureSessionLifecycle()
 
+    /// 캡처 사진의 최대 변 길이(px). 서버 업로드·리뷰 썸네일에 충분하면서 메모리는 원본의 ~1/4.
+    static let capturedPhotoMaxDimension: CGFloat = 2048
+    /// CIContext는 GPU 자원을 잡는 무거운 객체라 캡처마다 만들지 않고 재사용한다.
+    static let photoContext = CIContext()
+
     init(_ parent: RoomCaptureViewRepresentable) {
         self.parent = parent
         super.init()
@@ -129,9 +144,16 @@ final class RoomCaptureViewCoordinator: NSObject, RoomCaptureViewDelegate, RoomC
 
         let pixelBuffer = currentFrame.capturedImage
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let orientedImage = ciImage.oriented(.right)
-        let context = CIContext()
-        if let cgImage = context.createCGImage(orientedImage, from: orientedImage.extent) {
+        var orientedImage = ciImage.oriented(.right)
+        // 원본 카메라 프레임(12MP ≈ 장당 46MB)을 그대로 들고 있으면 몇 장만 찍어도
+        // 스캔+에디터 메모리 피크가 jetsam 한계를 넘는다. 업로드/미리보기 용도로는
+        // 충분한 크기로 캡처 시점에 줄인다.
+        let maxSide = max(orientedImage.extent.width, orientedImage.extent.height)
+        if maxSide > Self.capturedPhotoMaxDimension {
+            let scale = Self.capturedPhotoMaxDimension / maxSide
+            orientedImage = orientedImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        }
+        if let cgImage = Self.photoContext.createCGImage(orientedImage, from: orientedImage.extent) {
             let uiImage = UIImage(cgImage: cgImage)
             DispatchQueue.main.async {
                 self.parent.onPhotoCaptured(uiImage)

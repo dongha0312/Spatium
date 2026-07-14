@@ -53,6 +53,28 @@ struct RoomSpace: Codable, Identifiable {
     var id: String { spaceId }
 }
 
+/// 꾸미기 책장 위에 올려놓은 피규어(소품) 하나. 프런트엔드 `decorationToJson` 대응.
+/// position은 부모 가구(바닥 중심 pivot) 로컬 좌표계 기준이라, 책장을 옮기거나 돌려도
+/// 상대 배치가 그대로 유지된다.
+struct PlacedDecoration: Codable, Identifiable, Equatable {
+    var decorId: Int
+    var name: String
+    /// 렌더할 GLB 파일명(확장자 제외). 번들 모델 또는 사용자 가구(usr_) 파일명.
+    var modelName: String?
+    /// 배치 시점에 0.35m 이하로 정규화된 기준 치수(m).
+    var width: Double
+    var height: Double
+    var depth: Double
+    /// 부모 가구 로컬 좌표(피규어 바닥 중심).
+    var position: FurnitureTransform.Vector3
+    /// 부모 기준 Y 회전(라디안).
+    var rotationY: Double
+    /// 크기 슬라이더의 균일 스케일. 표시 크기 = 기준 치수 × scale.
+    var scale: Double = 1
+
+    var id: Int { decorId }
+}
+
 struct PlacedFurniture: Codable, Identifiable {
     var itemId: Int
     var furnitureId: Int
@@ -65,6 +87,8 @@ struct PlacedFurniture: Codable, Identifiable {
     var height: Double?
     /// 선택한 정확한 GLB 파일명(확장자 제외). nil이면 카테고리 기본 모델을 사용합니다.
     var modelName: String? = nil
+    /// 꾸미기 책장 위에 올려둔 피규어들. 일반 가구는 nil/빈 배열.
+    var decorations: [PlacedDecoration]? = nil
 
     var id: Int { itemId }
 }

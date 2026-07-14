@@ -68,12 +68,63 @@ final class SpatiumUITests: XCTestCase {
     func testRoomCatalogShowsUserFurnitureAndOtherCategories() throws {
         let app = XCUIApplication()
         app.launchArguments = [
-            "-UITestEditor", "-UITestScan", "other-room-2", "-UITestCatalog"
+            "-UITestEditor", "-UITestScan", "other-room-2", "-UITestCatalog",
+            "-UITestClearEditorDrafts"
         ]
         app.launch()
 
         XCTAssertTrue(app.buttons["사용자 가구"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.buttons["기타"].exists)
+    }
+
+    @MainActor
+    func testAddingFurnitureReturnsToFocusedPlacementCanvas() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestEditor", "-UITestScan", "other-room-2", "-UITestCatalog",
+            "-UITestClearEditorDrafts"
+        ]
+        app.launch()
+
+        let addBedButton = app.buttons["기본 침대 추가"]
+        XCTAssertTrue(addBedButton.waitForExistence(timeout: 8))
+        addBedButton.tap()
+
+        let movingButton = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "이동")
+        ).firstMatch
+        XCTAssertTrue(movingButton.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["어떤 가구를 놓을까요?"].exists)
+        XCTAssertFalse(app.buttons["Skyview 보기"].exists)
+
+        movingButton.tap()
+        XCTAssertTrue(app.buttons["Skyview 보기"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testEditorUndoAndRedoRestoreFurnitureSelection() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestEditor", "-UITestScan", "other-room-2", "-UITestSelectFurniture",
+            "-UITestClearEditorDrafts"
+        ]
+        app.launch()
+
+        let undoButton = app.buttons["editor-undo-button"]
+        XCTAssertTrue(undoButton.waitForExistence(timeout: 8))
+        XCTAssertTrue(undoButton.isEnabled)
+        XCTAssertTrue(app.staticTexts["이 기기에 임시 저장됨"].waitForExistence(timeout: 3))
+
+        undoButton.tap()
+        let redoButton = app.buttons["editor-redo-button"]
+        XCTAssertTrue(redoButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(redoButton.isEnabled)
+
+        redoButton.tap()
+        let movingButton = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "이동")
+        ).firstMatch
+        XCTAssertTrue(movingButton.waitForExistence(timeout: 3))
     }
 
     @MainActor

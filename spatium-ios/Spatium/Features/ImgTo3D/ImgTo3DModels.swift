@@ -80,6 +80,8 @@ struct ImgTo3DNormalizedName: Equatable {
 }
 
 enum ImgTo3DCategory: String, CaseIterable, Identifiable {
+    // 3D 에디터의 "책장 꾸미기"에서 책장 위에 올려놓는 소품용 카테고리 (프런트엔드 SaveStep 대응)
+    case figure = "피규어·소품"
     case bathtub = "욕조"
     case bed = "침대"
     case chair = "의자"
@@ -102,6 +104,7 @@ enum ImgTo3DCategory: String, CaseIterable, Identifiable {
 
     var code: String {
         switch self {
+        case .figure: "figure"
         case .bathtub: "bathtub"
         case .bed: "bed"
         case .chair: "chair"
