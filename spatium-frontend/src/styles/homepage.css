@@ -1,23 +1,5 @@
 .hp-root {
-  --g: #5c3d2e;
-  --ga: #c4956a;
-  --t: #1c1209;
-  --t2: #5a4535;
-  --t3: #a08878;
-  --bd: #ddd3c6;
-  --bg: #f2ede6;
-  --sur: #faf7f3;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
   background: var(--sur);
-  font-family: -apple-system, "Pretendard", sans-serif;
-}
-
-.hp-root *,
-.hp-root *::before,
-.hp-root *::after {
-  box-sizing: border-box;
 }
 
 /* 로그인버튼 */

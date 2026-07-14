@@ -124,7 +124,7 @@ function SignupPage() {
   };
 
   return (
-    <div className="su-root">
+    <div className="app-page su-root">
       {/* 상단 네비게이션 */}
       <Header prefix="su">
         <div className="su-nav-right">
@@ -136,7 +136,7 @@ function SignupPage() {
 
       {/* 회원가입 폼 (화면 정중앙 배치) */}
       <div className="su-auth-wrap">
-        <div className="su-auth-card">
+        <div className="ui-card su-auth-card">
           <form className="su-auth-form" onSubmit={handleSubmit}>
             <div className="su-auth-form-title">회원가입</div>
             <div className="su-auth-form-sub">

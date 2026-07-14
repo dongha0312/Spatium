@@ -1,25 +1,8 @@
 .ed-root {
-  --g: #5C3D2E;
-  --ga: #C4956A;
-  --t: #1C1209;
-  --t2: #5A4535;
-  --t3: #A08878;
-  --bd: #DDD3C6;
-  --bg: #F2EDE6;
-  --sur: #FAF7F3;
   height: 100vh;
   max-height: 100vh;
-  display: flex;
-  flex-direction: column;
   background: #1E1B18;
-  font-family: -apple-system, "Pretendard", sans-serif;
   overflow: hidden;
-}
-
-.ed-root *,
-.ed-root *::before,
-.ed-root *::after {
-  box-sizing: border-box;
 }
 
 .ed-nav-center {

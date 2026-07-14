@@ -1,25 +1,6 @@
 /* 이미지 → 3D 가구 생성 위저드 (홈페이지와 같은 웜톤 팔레트) */
 .it3-root {
-  --g: #5c3d2e;
-  --ga: #c4956a;
-  --t: #1c1209;
-  --t2: #5a4535;
-  --t3: #a08878;
-  --bd: #ddd3c6;
-  --bg: #f2ede6;
-  --sur: #faf7f3;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
   background: var(--bg);
-  font-family: -apple-system, "Pretendard", sans-serif;
-  color: var(--t);
-}
-
-.it3-root *,
-.it3-root *::before,
-.it3-root *::after {
-  box-sizing: border-box;
 }
 
 /* 상단바 : 마이페이지 버튼(외곽선) + 닉네임 버튼 묶음 (우측 정렬) */

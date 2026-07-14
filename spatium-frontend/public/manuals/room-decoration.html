@@ -60,15 +60,15 @@
     <p>실제 에디터 화면을 따라가며 각 기능의 위치와 사용 방법, 저장 전 확인할 내용을 순서대로 살펴보세요.</p>
   </div>
   <div class="layout">
-    <nav class="rail">
-      <p class="rail-title">Contents</p>
-      <a href="#layout-guide">01 화면 구성</a>
-      <a href="#place">02 가구 배치하기</a>
-      <a href="#control">03 가구 선택·조작</a>
-      <a href="#doors">04 문·창문 교체/삭제</a>
-      <a href="#view-tools">05 보기 도구</a>
-      <a href="#save">06 저장 &amp; 나가기</a>
-      <a href="#faq">07 문제 해결</a>
+    <nav class="rail side-nav" aria-label="단계 바로가기">
+      <p class="rail-title side-nav-title">QUICK NAVIGATION</p>
+      <a class="side-link active" href="#layout-guide"><span class="side-index">1</span><span>화면 구성</span></a>
+      <a class="side-link" href="#place"><span class="side-index">2</span><span>가구 배치하기</span></a>
+      <a class="side-link" href="#control"><span class="side-index">3</span><span>가구 선택·조작</span></a>
+      <a class="side-link" href="#doors"><span class="side-index">4</span><span>문·창문 교체/삭제</span></a>
+      <a class="side-link" href="#view-tools"><span class="side-index">5</span><span>보기 도구</span></a>
+      <a class="side-link" href="#save"><span class="side-index">6</span><span>저장 &amp; 나가기</span></a>
+      <a class="side-link" href="#faq"><span class="side-index">7</span><span>문제 해결</span></a>
     </nav>
 
     <main>
@@ -245,7 +245,7 @@
 
 <script>
   (() => {
-    const links = [...document.querySelectorAll(".rail a")];
+    const links = [...document.querySelectorAll(".side-link")];
     const sections = [...document.querySelectorAll("section[id]")];
 
     const observer = new IntersectionObserver(

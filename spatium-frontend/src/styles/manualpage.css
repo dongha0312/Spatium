@@ -1,25 +1,6 @@
 .manual-root {
-  --g: #5c3d2e;
-  --ga: #c4956a;
-  --t: #1c1209;
-  --t2: #5a4535;
-  --t3: #a08878;
-  --bd: #ddd3c6;
-  --bg: #f2ede6;
-  --sur: #faf7f3;
-  min-height: 100vh;
   overflow-anchor: none;
-  display: flex;
-  flex-direction: column;
-  color: var(--t);
   background: var(--sur);
-  font-family: -apple-system, BlinkMacSystemFont, "Pretendard", "Segoe UI", sans-serif;
-}
-
-.manual-root *,
-.manual-root *::before,
-.manual-root *::after {
-  box-sizing: border-box;
 }
 
 .manual-nav {
@@ -93,10 +74,10 @@
   background: var(--sur);
 }
 
-.manual-frame {
+.manual-document-host {
   display: block;
   width: 100%;
-  border: 0;
+  min-height: 70vh;
   background: var(--sur);
 }
 
@@ -130,7 +111,7 @@
     display: none !important;
   }
 
-  .manual-frame {
+  .manual-document-host {
     min-height: 0;
   }
 }

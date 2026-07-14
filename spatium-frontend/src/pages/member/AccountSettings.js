@@ -249,7 +249,7 @@ function AccountSettings() {
   // 계정설정 화면 진입 전, 비밀번호 재확인 화면부터 보여줌
   if (!verified) {
     return (
-      <div className="as-root">
+      <div className="app-page as-root">
         {/* 상단 네비게이션 */}
         <Header prefix="as">
           <div className="as-nav-right">
@@ -309,7 +309,7 @@ function AccountSettings() {
   }
 
   return (
-    <div className="as-root">
+    <div className="app-page as-root">
       {/* 상단 네비게이션 */}
       <Header prefix="as">
         <div className="as-nav-right">

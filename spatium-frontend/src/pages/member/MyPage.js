@@ -505,7 +505,7 @@ function MyPage() {
   };
 
   return (
-    <div className="mp-root">
+    <div className="app-page mp-root">
       <Header prefix="mp">
         <div className="mp-nav-right">
           <AvatarButton

@@ -118,7 +118,7 @@ function HomePage() {
   };
 
   return (
-    <div className="hp-root">
+    <div className="app-page hp-root">
       {/* 상단 네비게이션 */}
       <Header prefix="hp">
         <div className="hp-nav-right">
