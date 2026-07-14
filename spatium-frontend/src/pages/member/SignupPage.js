@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import "../../styles/signuppage.css";
 import { saveLoginSession } from "../../utils/authSession";
@@ -10,6 +10,11 @@ import {
 } from "../../springApi/MemberSpringBootApi";
 import Footer from "../../components/Footer";
 import Header from "../../components/Header";
+import {
+  LegalDocumentContent,
+  PRIVACY_SECTIONS,
+  TERMS_SECTIONS,
+} from "../../components/legal/LegalDocumentContent";
 
 function SignupPage() {
   // 로그인 페이지의 구글 소셜 로그인에서 넘어온 경우, 구글 인증 결과(이메일)가 담겨있음
@@ -32,15 +37,28 @@ function SignupPage() {
   // 성별 : "male" | "female"
   const [gender, setGender] = useState("male");
 
-  // 이용약관 및 개인정보처리방침 동의 여부
-  const [agree, setAgree] = useState(false);
+  // 이용약관과 개인정보 수집·이용 동의는 각각 구분해서 받는다.
+  const [termsAgreed, setTermsAgreed] = useState(false);
+  const [privacyAgreed, setPrivacyAgreed] = useState(false);
+  const [openPolicy, setOpenPolicy] = useState(null);
 
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!openPolicy) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setOpenPolicy(null);
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [openPolicy]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!agree) {
+    if (!termsAgreed || !privacyAgreed) {
       alert("이용약관 및 개인정보처리방침에 동의해주세요.");
       return;
     }
@@ -60,8 +78,8 @@ function SignupPage() {
           nickname,
           birthDate: birth,
           gender: genderCode,
-          termsAgreed: agree,
-          privacyAgreed: agree,
+          termsAgreed,
+          privacyAgreed,
         });
 
         // 회원가입 API는 JWT 토큰을 내려주지 않으므로, 가입 직후 소셜 로그인을 한 번 더 호출해 토큰을 발급받음
@@ -77,8 +95,8 @@ function SignupPage() {
           password: pw,
           birthDate: birth,
           gender: genderCode,
-          termsAgreed: agree,
-          privacyAgreed: agree,
+          termsAgreed,
+          privacyAgreed,
         });
 
         // 회원가입 API는 JWT 토큰을 내려주지 않으므로, 가입 직후 로그인을 한 번 더 호출해 토큰을 발급받음
@@ -210,12 +228,33 @@ function SignupPage() {
               <input
                 type="checkbox"
                 id="terms"
-                checked={agree}
-                onChange={(e) => setAgree(e.target.checked)}
+                checked={termsAgreed}
+                onChange={(e) => setTermsAgreed(e.target.checked)}
+                aria-label="이용약관 필수 동의"
+                aria-describedby="terms-description"
               />
-              <label htmlFor="terms">
-                <a>이용약관</a> 및 <a>개인정보처리방침</a>에 동의합니다 (필수)
-              </label>
+              <div id="terms-description" className="su-agreement-text">
+                <button type="button" onClick={() => setOpenPolicy("terms")}>
+                  이용약관
+                </button>
+                <span>에 동의합니다 (필수)</span>
+              </div>
+            </div>
+            <div className="su-check-row">
+              <input
+                type="checkbox"
+                id="privacy"
+                checked={privacyAgreed}
+                onChange={(e) => setPrivacyAgreed(e.target.checked)}
+                aria-label="개인정보 수집·이용 필수 동의"
+                aria-describedby="privacy-description"
+              />
+              <div id="privacy-description" className="su-agreement-text">
+                <button type="button" onClick={() => setOpenPolicy("privacy")}>
+                  개인정보 수집·이용 및 처리방침
+                </button>
+                <span>에 동의합니다 (필수)</span>
+              </div>
             </div>
 
             <button type="submit" className="su-btn-full">
@@ -224,6 +263,51 @@ function SignupPage() {
           </form>
         </div>
       </div>
+      {openPolicy && (
+        <div
+          className="su-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setOpenPolicy(null);
+          }}
+        >
+          <section
+            className="su-policy-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="su-policy-title"
+          >
+            <div className="su-policy-modal-header">
+              <h2 id="su-policy-title">
+                {openPolicy === "terms"
+                  ? "이용약관"
+                  : "개인정보 수집·이용 및 처리방침"}
+              </h2>
+              <button
+                type="button"
+                className="su-policy-close"
+                onClick={() => setOpenPolicy(null)}
+                aria-label="약관 창 닫기"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="su-policy-modal-body">
+              <LegalDocumentContent
+                sections={openPolicy === "terms" ? TERMS_SECTIONS : PRIVACY_SECTIONS}
+                compact
+              />
+            </div>
+
+            <div className="su-policy-modal-footer">
+              <button type="button" onClick={() => setOpenPolicy(null)}>
+                확인
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <Footer />
     </div>
   );

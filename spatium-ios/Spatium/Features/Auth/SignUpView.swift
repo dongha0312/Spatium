@@ -59,7 +59,7 @@ struct SignUpView: View {
 
                     VStack(spacing: 10) {
                         AgreementToggle(title: "이용약관에 동의합니다", linkURL: SpatiumLegalLinks.termsOfServiceURL, isOn: $termsAgreed)
-                        AgreementToggle(title: "개인정보처리방침에 동의합니다", linkURL: SpatiumLegalLinks.privacyPolicyURL, isOn: $privacyAgreed)
+                        AgreementToggle(title: "개인정보 수집·이용에 동의합니다", linkURL: SpatiumLegalLinks.privacyPolicyURL, isOn: $privacyAgreed)
                     }
 
                     if let errorMessage {

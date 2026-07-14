@@ -51,7 +51,7 @@ struct SocialSignUpView: View {
 
                     VStack(spacing: 10) {
                         AgreementToggle(title: "이용약관에 동의합니다", linkURL: SpatiumLegalLinks.termsOfServiceURL, isOn: $termsAgreed)
-                        AgreementToggle(title: "개인정보처리방침에 동의합니다", linkURL: SpatiumLegalLinks.privacyPolicyURL, isOn: $privacyAgreed)
+                        AgreementToggle(title: "개인정보 수집·이용에 동의합니다", linkURL: SpatiumLegalLinks.privacyPolicyURL, isOn: $privacyAgreed)
                     }
 
                     if let errorMessage {
@@ -185,15 +185,16 @@ struct AgreementToggle: View {
             Button {
                 isOn.toggle()
             } label: {
-                HStack(spacing: 10) {
-                    Image(systemName: isOn ? "checkmark.square.fill" : "square")
-                        .foregroundStyle(isOn ? SpatiumTheme.accent : SpatiumTheme.soft)
-                    Text(title)
-                        .font(.footnote)
-                        .foregroundStyle(SpatiumTheme.text)
-                }
+                Image(systemName: isOn ? "checkmark.square.fill" : "square")
+                    .foregroundStyle(isOn ? SpatiumTheme.accent : SpatiumTheme.soft)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(title)
+            .accessibilityValue(isOn ? "동의함" : "동의하지 않음")
+
+            Text(title)
+                .font(.footnote)
+                .foregroundStyle(SpatiumTheme.text)
 
             Spacer()
 
