@@ -7,6 +7,11 @@ import {
 } from "./sceneConfig";
 import { saveRoomMetadataJson } from "../../../springApi/RoomSpringBootApi";
 
+// Keep parsed GLTF promises at module scope so a scene rebuild (for example
+// structural undo/redo) reuses the already downloaded and parsed asset.
+// Callers always clone the returned scene before attaching it to the editor.
+const gltfPromiseCache = new Map();
+
 // USD/USDZ 방 모델을 로드한다. blob: URL은 그대로, 일반 URL은 캐시 무효화용 timestamp를
 // 붙여서 로드한다. 로드에 실패해도 예외를 던지지 않고 null을 반환한다(呼출부가 fallback 처리).
 export function loadUsdRoomModel(url) {
@@ -29,9 +34,20 @@ export function loadGltfModel(url, label) {
     return Promise.reject(new Error(`Missing model URL for ${label}.`));
   }
 
-  return new Promise((resolve, reject) => {
+  const cachedPromise = gltfPromiseCache.get(url);
+  if (cachedPromise) return cachedPromise;
+
+  const request = new Promise((resolve, reject) => {
     new GLTFLoader().load(url, resolve, undefined, reject);
   });
+  const cachedRequest = request.catch((error) => {
+    if (gltfPromiseCache.get(url) === cachedRequest) {
+      gltfPromiseCache.delete(url);
+    }
+    throw error;
+  });
+  gltfPromiseCache.set(url, cachedRequest);
+  return cachedRequest;
 }
 
 // 설정 파일의 models 목록 중, 주어진 category들과 이름이 매칭되는 항목만 골라낸다.

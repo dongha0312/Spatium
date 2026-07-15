@@ -47,6 +47,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     selectedFigureSizeCm,
     setSelectedFigureSizeCm,
     setSelectedSizeCm,
+    commitSelectedTransformChange,
     addFurniture,
     cancelFurniturePlacement,
     deleteSelectedObject,
@@ -110,6 +111,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
 
   const handleSizeChange = (event) => {
     setSelectedSizeCm(Number(event.target.value));
+  };
+
+  const commitSliderChange = () => {
+    commitSelectedTransformChange();
   };
 
   const handleDeleteAsOpening = () => {
@@ -261,6 +266,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
                   step="1"
                   value={selectedRotationDegrees}
                   onChange={handleRotationChange}
+                  onPointerUp={commitSliderChange}
+                  onPointerCancel={commitSliderChange}
+                  onKeyUp={commitSliderChange}
+                  onBlur={commitSliderChange}
                   aria-label="Rotation degrees"
                 />
                 <div
@@ -289,6 +298,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
                   step="1"
                   value={selectedFigureSizeCm}
                   onChange={handleFigureSizeChange}
+                  onPointerUp={commitSliderChange}
+                  onPointerCancel={commitSliderChange}
+                  onKeyUp={commitSliderChange}
+                  onBlur={commitSliderChange}
                   aria-label="Figure size"
                 />
               </div>
@@ -308,6 +321,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
                   step="1"
                   value={selectedSizeCm}
                   onChange={handleSizeChange}
+                  onPointerUp={commitSliderChange}
+                  onPointerCancel={commitSliderChange}
+                  onKeyUp={commitSliderChange}
+                  onBlur={commitSliderChange}
                   aria-label="Furniture size"
                 />
               </div>
@@ -327,6 +344,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
                   step="1"
                   value={selectedElevationCm}
                   onChange={handleElevationChange}
+                  onPointerUp={commitSliderChange}
+                  onPointerCancel={commitSliderChange}
+                  onKeyUp={commitSliderChange}
+                  onBlur={commitSliderChange}
                   aria-label="Elevation from floor"
                 />
               </div>

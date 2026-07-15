@@ -341,8 +341,16 @@ export function createReplayableMetadataJson(
   editedItems,
   roomModel,
   floorColor = null,
+  options = {},
 ) {
-  const nextMetadata = cloneJsonValue(metadata) || {};
+  const { includeRoomModel = true, roomModelJson } = options;
+  // _spatiumRoom은 방 전체 geometry 배열이라 metadata를 복제할 때마다 같이
+  // deep-clone하면 Undo/Redo와 저장 준비 비용이 커진다. 호출자가 방 JSON을
+  // 캐시해서 넘길 수 있도록 원본 필드는 먼저 제외한다.
+  const metadataWithoutRoom = metadata
+    ? { ...metadata, _spatiumRoom: undefined, _spatiumRoomRef: undefined }
+    : metadata;
+  const nextMetadata = cloneJsonValue(metadataWithoutRoom) || {};
   const originalObjects = nextMetadata.objects || [];
   const originalDoors = nextMetadata.doors || [];
   const originalWindows = nextMetadata.windows || [];
@@ -400,13 +408,16 @@ export function createReplayableMetadataJson(
   nextMetadata.openings = openingEdits.map((edit) =>
     applyReferenceEdit(edit, originalOpenings),
   );
-  nextMetadata._spatiumRoom =
-    serializeRoomModelToJson(
-      roomModel,
-      nextMetadata._spatiumRoom?.generatedFrom || "api:room-scene",
-    ) ||
-    nextMetadata._spatiumRoom ||
-    null;
+  if (includeRoomModel) {
+    nextMetadata._spatiumRoom =
+      roomModelJson ??
+      (serializeRoomModelToJson(
+        roomModel,
+        metadata?._spatiumRoom?.generatedFrom || "api:room-scene",
+      ) || null);
+  } else {
+    delete nextMetadata._spatiumRoom;
+  }
   nextMetadata._spatiumFloorColor = floorColor || null;
   nextMetadata._spatiumExport = {
     version: 1,
