@@ -21,9 +21,35 @@ struct ScanProject {
         self.items = EditableScanItem.makeItems(from: room)
     }
 
-    func exportPackage() throws -> [URL] {
+    /// 메시 export와 사진 JPEG 인코딩은 수 초짜리 동기 작업이라 백그라운드에서 실행한다.
+    /// (메인 액터에서 그대로 돌리면 내보내기/업로드 동안 UI가 통째로 멈춘다)
+    func exportPackage() async throws -> [URL] {
+        // 메타데이터 JSON(변환행렬/치수 목록)은 가벼우므로 메인에서 인코딩하고,
+        // 파일 쓰기 전부를 백그라운드로 넘긴다.
+        let metadataData = try JSONEncoder.prettyPrinted.encode(
+            RoomPlanMetadata(room: room, roomType: roomType, editedObjects: items)
+        )
+        let folderName = "Spatium-\(Self.fileStamp.string(from: createdAt))"
+        let room = self.room
+        let photos = self.photos
+        return try await Task.detached {
+            try Self.writePackageFiles(
+                room: room,
+                photos: photos,
+                folderName: folderName,
+                metadataData: metadataData
+            )
+        }.value
+    }
+
+    nonisolated private static func writePackageFiles(
+        room: CapturedRoom,
+        photos: [UIImage],
+        folderName: String,
+        metadataData: Data
+    ) throws -> [URL] {
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Spatium-\(Self.fileStamp.string(from: createdAt))", isDirectory: true)
+            .appendingPathComponent(folderName, isDirectory: true)
 
         if FileManager.default.fileExists(atPath: folder.path) {
             try FileManager.default.removeItem(at: folder)
@@ -45,25 +71,26 @@ struct ScanProject {
         }
 
         // 편집기에서 수정/추가/삭제한 객체 목록(items)을 함께 실어 보냅니다.
-        let package = RoomPlanMetadata(room: room, roomType: roomType, editedObjects: items)
-        let data = try JSONEncoder.prettyPrinted.encode(package)
-        try data.write(to: requestURL)
+        try metadataData.write(to: requestURL)
 
         return urls
     }
 
-    /// 3D 편집 화면에서 방 메시를 렌더링하기 위한 USDZ만 내보냅니다.
-    func exportUSDZForEditing() throws -> URL {
-        let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Spatium-Edit", isDirectory: true)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    /// 3D 편집 화면에서 방 메시를 렌더링하기 위한 USDZ만 내보냅니다. (메시 export는 백그라운드)
+    func exportUSDZForEditing() async throws -> URL {
+        let room = self.room
+        return try await Task.detached {
+            let folder = FileManager.default.temporaryDirectory
+                .appendingPathComponent("Spatium-Edit", isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
 
-        let url = folder.appendingPathComponent("room-scan-edit.usdz")
-        if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
-        }
-        try room.export(to: url, metadataURL: nil, modelProvider: nil, exportOptions: .mesh)
-        return url
+            let url = folder.appendingPathComponent("room-scan-edit.usdz")
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+            try room.export(to: url, metadataURL: nil, modelProvider: nil, exportOptions: .mesh)
+            return url
+        }.value
     }
 
     private static let fileStamp: DateFormatter = {

@@ -49,8 +49,12 @@ struct ScanReviewView: View {
             ScanStatusHeader(project: project, onStartScan: onStartScan)
             RoomTypeCard(project: $project)
             ScanEditEntryCard(itemCount: project.items.count) {
-                editorUSDZURL = try? project.exportUSDZForEditing()
-                showScanEditor = true
+                // 메시 export가 백그라운드에서 도는 동안 메인 스레드는 멈추지 않는다.
+                let snapshot = project
+                Task {
+                    editorUSDZURL = try? await snapshot.exportUSDZForEditing()
+                    showScanEditor = true
+                }
             }
             DetectedItemsCard(items: $project.items)
             CapturedPhotosCard(photos: project.photos)

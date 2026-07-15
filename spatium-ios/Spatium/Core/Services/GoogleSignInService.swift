@@ -17,6 +17,7 @@ enum GoogleSignInError: LocalizedError {
     case cancelled
     case invalidCallback
     case tokenExchangeFailed
+    case failedToStart
 
     var errorDescription: String? {
         switch self {
@@ -28,6 +29,8 @@ enum GoogleSignInError: LocalizedError {
             return "Google 인증 응답을 처리할 수 없습니다."
         case .tokenExchangeFailed:
             return "Google 토큰 교환에 실패했습니다."
+        case .failedToStart:
+            return "Google 로그인 창을 열지 못했습니다. 잠시 후 다시 시도해 주세요."
         }
     }
 }
@@ -109,7 +112,12 @@ final class GoogleSignInService: NSObject {
             session.presentationContextProvider = self
             session.prefersEphemeralWebBrowserSession = false
             self.session = session
-            session.start()
+            // start()가 실패하면 completion이 영영 불리지 않아 await가 멈추고
+            // 로그인 버튼이 잠긴다. 즉시 에러로 재개한다.
+            if !session.start() {
+                self.session = nil
+                continuation.resume(throwing: GoogleSignInError.failedToStart)
+            }
         }
     }
 
