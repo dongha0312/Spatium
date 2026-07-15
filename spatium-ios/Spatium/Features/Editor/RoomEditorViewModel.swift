@@ -480,6 +480,10 @@ final class RoomEditorViewModel: ObservableObject {
     }
 
     func place(furniture: FurnitureDetail) {
+        guard viewMode != .person else {
+            statusMessage = "1인칭 시점에서는 가구를 추가할 수 없어요"
+            return
+        }
         recordHistoryStep()
         let placed = PlacedFurniture(
             itemId: takeLocalItemID(),
@@ -531,6 +535,10 @@ final class RoomEditorViewModel: ObservableObject {
     /// 카탈로그 상품을 방에 배치합니다. 선택한 정확한 GLB 파일명을 함께 실어 렌더합니다.
     /// 여러 개 추가 시 원점에 겹치지 않도록 작은 격자로 흩어 놓습니다.
     func place(catalogItem: FurnitureCatalogItem) {
+        guard viewMode != .person else {
+            statusMessage = "1인칭 시점에서는 가구를 추가할 수 없어요"
+            return
+        }
         recordHistoryStep()
         let n = layout.furnitures.count
         let col = Double(n % 3) - 1        // -1, 0, 1
@@ -733,12 +741,14 @@ final class RoomEditorViewModel: ObservableObject {
         isMeasuring = false
         pendingFigure = nil
         selectedDecorID = nil
+        statusMessage = nil
     }
 
     func endDecorating() {
         decoratingItemID = nil
         pendingFigure = nil
         selectedDecorID = nil
+        statusMessage = nil
     }
 
     /// 카탈로그 치수를 피규어 크기로 정규화(최대 변 0.35m). 프런트 figureDimensionsFromCatalog 대응.
@@ -752,12 +762,44 @@ final class RoomEditorViewModel: ObservableObject {
         return (width * scale, height * scale, depth * scale)
     }
 
+    /// 꾸미기 책장에 올릴 수 있는 카탈로그 항목. 사용자 생성 여부와 관계없이 저장된
+    /// 카테고리가 `figure`인 피규어·소품만 허용한다.
+    static func isDecorFigure(_ item: FurnitureCatalogItem) -> Bool {
+        item.category.trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare("figure") == .orderedSame
+    }
+
+    /// 꾸미기 카탈로그에서 피규어를 선택해 선반 직접 탭 배치를 준비한다.
+    func prepareDecorPlacement(_ item: FurnitureCatalogItem) {
+        guard isDecorating else { return }
+        guard Self.isDecorFigure(item) else {
+            pendingFigure = nil
+            statusMessage = "꾸미기 책장에는 피규어만 올릴 수 있어요"
+            return
+        }
+        selectedDecorID = nil
+        pendingFigure = item
+        statusMessage = "피규어를 놓을 선반의 윗면을 탭하세요"
+    }
+
     /// 씬이 찾은 선반 표면 지점(부모 로컬 좌표)에 대기 중인 피규어를 올려놓는다.
     func placePendingFigure(atLocal position: FurnitureTransform.Vector3) {
         guard let decoratingItemID, let pendingFigure,
               let index = layout.furnitures.firstIndex(where: { $0.itemId == decoratingItemID }) else { return }
+        guard Self.isDecorFigure(pendingFigure) else {
+            self.pendingFigure = nil
+            statusMessage = "꾸미기 책장에는 피규어만 올릴 수 있어요"
+            return
+        }
         recordHistoryStep()
         let dims = Self.figureDimensions(for: pendingFigure)
+        let safePosition = clampedDecorPosition(
+            position,
+            itemWidth: dims.width,
+            itemDepth: dims.depth,
+            scale: 1,
+            furniture: layout.furnitures[index]
+        )
         let decoration = PlacedDecoration(
             decorId: nextDecorID,
             name: pendingFigure.name,
@@ -765,7 +807,7 @@ final class RoomEditorViewModel: ObservableObject {
             width: dims.width,
             height: dims.height,
             depth: dims.depth,
-            position: position,
+            position: safePosition,
             rotationY: 0,
             scale: 1
         )
@@ -774,6 +816,7 @@ final class RoomEditorViewModel: ObservableObject {
         markLayoutChanged()
         self.pendingFigure = nil
         selectedDecorID = decoration.decorId
+        statusMessage = nil
         sceneRevision += 1
         Haptics.impact(.light)
     }
@@ -781,11 +824,89 @@ final class RoomEditorViewModel: ObservableObject {
     /// 선택된 피규어를 다른 선반 지점(부모 로컬 좌표)으로 옮긴다.
     func moveSelectedDecor(toLocal position: FurnitureTransform.Vector3) {
         guard let indices = selectedDecorIndices() else { return }
-        guard layout.furnitures[indices.furniture].decorations?[indices.decor].position != position else { return }
+        guard let decoration = layout.furnitures[indices.furniture].decorations?[indices.decor] else { return }
+        let safePosition = clampedDecorPosition(
+            position,
+            itemWidth: decoration.width,
+            itemDepth: decoration.depth,
+            scale: decoration.scale,
+            furniture: layout.furnitures[indices.furniture]
+        )
+        guard decoration.position != safePosition else { return }
         recordHistoryStep()
-        layout.furnitures[indices.furniture].decorations?[indices.decor].position = position
+        layout.furnitures[indices.furniture].decorations?[indices.decor].position = safePosition
         markLayoutChanged()
+        statusMessage = nil
         sceneRevision += 1
+    }
+
+    /// 드래그 중인 소품의 후보 위치를 책장 안쪽으로 제한한다. SceneKit 노드는 손가락을
+    /// 실시간으로 따라가고, 드래그 종료 시 `moveSelectedDecor`가 최종 위치를 한 번만 저장한다.
+    func constrainedSelectedDecorPosition(
+        _ position: FurnitureTransform.Vector3
+    ) -> FurnitureTransform.Vector3? {
+        guard let indices = selectedDecorIndices(),
+              let decoration = layout.furnitures[indices.furniture].decorations?[indices.decor] else { return nil }
+        return clampedDecorPosition(
+            position,
+            itemWidth: decoration.width,
+            itemDepth: decoration.depth,
+            scale: decoration.scale,
+            furniture: layout.furnitures[indices.furniture]
+        )
+    }
+
+    /// 프런트엔드 `replaceSelectedFigure` 대응. 현재 소품의 지지점과 회전은 유지하고,
+    /// 카탈로그 모델과 기본 소품 크기만 교체한다.
+    func replaceSelectedDecor(with item: FurnitureCatalogItem) {
+        guard let indices = selectedDecorIndices(),
+              let current = layout.furnitures[indices.furniture].decorations?[indices.decor] else { return }
+        guard Self.isDecorFigure(item) else {
+            statusMessage = "꾸미기 책장에는 피규어만 올릴 수 있어요"
+            return
+        }
+        recordHistoryStep()
+        let dimensions = Self.figureDimensions(for: item)
+        let position = clampedDecorPosition(
+            current.position,
+            itemWidth: dimensions.width,
+            itemDepth: dimensions.depth,
+            scale: 1,
+            furniture: layout.furnitures[indices.furniture]
+        )
+        layout.furnitures[indices.furniture].decorations?[indices.decor] = PlacedDecoration(
+            decorId: current.decorId,
+            name: item.name,
+            modelName: item.modelFileName,
+            width: dimensions.width,
+            height: dimensions.height,
+            depth: dimensions.depth,
+            position: position,
+            rotationY: current.rotationY,
+            scale: 1
+        )
+        markLayoutChanged()
+        statusMessage = nil
+        sceneRevision += 1
+        Haptics.impact(.light)
+    }
+
+    private func clampedDecorPosition(
+        _ position: FurnitureTransform.Vector3,
+        itemWidth: Double,
+        itemDepth: Double,
+        scale: Double,
+        furniture: PlacedFurniture
+    ) -> FurnitureTransform.Vector3 {
+        // 회전된 소품도 밖으로 나가지 않도록 두 수평 축 중 큰 쪽을 안전 여백으로 쓴다.
+        let footprintRadius = max(itemWidth, itemDepth) * max(scale, 0.001) / 2
+        let maxX = max((furniture.width ?? 0.8) / 2 - footprintRadius - 0.015, 0)
+        let maxZ = max((furniture.depth ?? 0.3) / 2 - footprintRadius - 0.015, 0)
+        return .init(
+            x: min(max(position.x, -maxX), maxX),
+            y: position.y,
+            z: min(max(position.z, -maxZ), maxZ)
+        )
     }
 
     var selectedDecoration: PlacedDecoration? {

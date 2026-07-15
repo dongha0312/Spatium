@@ -7,7 +7,8 @@ import UIKit
 private let modelModeTransitionAnimation = Animation.spring(response: 0.3, dampingFraction: 0.82)
 
 struct ImgTo3DView: View {
-    var onFurnitureSaved: () -> Void = {}
+    var onFurnitureSaved: () -> Void
+    private let initialCategory: ImgTo3DCategory
 
     @EnvironmentObject private var userFurnitureStore: UserFurnitureStore
     @State private var step: ImgTo3DStep = .upload
@@ -60,6 +61,15 @@ struct ImgTo3DView: View {
     @State private var saveNotice: String?
     @State private var alertMessage: String?
     @FocusState private var focusedField: ImgTo3DFocusField?
+
+    init(
+        initialCategory: ImgTo3DCategory = .bathtub,
+        onFurnitureSaved: @escaping () -> Void = {}
+    ) {
+        self.onFurnitureSaved = onFurnitureSaved
+        self.initialCategory = initialCategory
+        _category = State(initialValue: initialCategory)
+    }
 
     private var generationStages: [String] {
         ["이미지 전처리", "\(generationProvider.title) 메시 생성", "텍스처 베이킹", "GLB 내보내기"]
@@ -1276,7 +1286,7 @@ struct ImgTo3DView: View {
         cameraResetToken = 0
         autoAlignToken = 0
         saveName = ""
-        category = .bathtub
+        category = initialCategory
         saved = false
         saveNotice = nil
     }

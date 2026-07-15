@@ -10,6 +10,27 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
     private let modelLoader: FurnitureModelLoader = TestDataFurnitureModelLoader()
 
+    /// `SCNHitTestResult.worldNormal`은 노드에 비균일 스케일이 걸리면 단위 벡터가
+    /// 아닐 수 있다. 방향만 비교하도록 길이를 제거해야 책장 모델의 수평 선반을
+    /// 안정적으로 지지면으로 판정할 수 있다.
+    static func isDecorSupportNormal(_ normal: SCNVector3) -> Bool {
+        let vector = SIMD3<Float>(normal.x, normal.y, normal.z)
+        let length = simd_length(vector)
+        guard length.isFinite, length > .ulpOfOne else { return false }
+        return normal.y / length >= 0.7
+    }
+
+    /// 꾸미기 책장 모델은 열린 선반 면이 로컬 +Z를 향하도록 제작되어 있다.
+    /// 방 중심 위치와 무관하게 이 축을 그대로 사용해야 배치/회전된 책장의 뒤판으로
+    /// 카메라가 뒤집히지 않는다.
+    static func decorFrontDirection(from worldLocalPositiveZ: SCNVector3) -> SIMD2<Float> {
+        var direction = SIMD2(worldLocalPositiveZ.x, worldLocalPositiveZ.z)
+        let length = simd_length(direction)
+        guard length.isFinite, length > 0.001 else { return SIMD2(0, 1) }
+        direction /= length
+        return direction
+    }
+
     func makeUIView(context: Context) -> SCNView {
         let view = CameraFittingSceneView()
         view.backgroundColor = UIColor { traits in
@@ -110,9 +131,10 @@ struct RoomEditorSceneView: UIViewRepresentable {
         // 한 손가락 팬"만 가로채고, 나머지(빈 곳 드래그·핀치)는 평소처럼 시점 조작이 된다.
         // 사람 뷰는 기본 카메라 컨트롤 대신 전용 제스처(시선/걷기 + 가구·벽 충돌)를 쓴다.
         let isEditingSelection = viewModel.isMovingSelectedFurniture && viewModel.selectedItemID != nil
+        let isEditingDecor = viewModel.isDecorating && viewModel.pendingFigure == nil
         let isPersonMode = viewModel.viewMode == .person
         view.allowsCameraControl = !isPersonMode
-        coordinator.movePanGesture?.isEnabled = isEditingSelection
+        coordinator.movePanGesture?.isEnabled = isEditingSelection || isEditingDecor
         coordinator.personLookGesture?.isEnabled = isPersonMode
         coordinator.personWalkGesture?.isEnabled = isPersonMode
         coordinator.personPinchGesture?.isEnabled = isPersonMode
@@ -141,6 +163,10 @@ struct RoomEditorSceneView: UIViewRepresentable {
         /// 드래그 시작 시 "손가락이 짚은 바닥 지점 → 가구 중심" 오프셋.
         /// 이걸 유지해야 가구의 잡은 부분이 손가락에 붙어 따라온다. (없으면 중심이 손가락으로 점프)
         private var dragGrabOffset = SIMD2<Float>(0, 0)
+        /// 프런트엔드의 figure-move interaction 대응. 소품 노드는 드래그 중 직접 움직이고,
+        /// 종료 시점에만 ViewModel에 최종 위치를 커밋해 히스토리/씬 재생성을 한 번으로 제한한다.
+        private var draggingDecorID: Int?
+        private var decorDragStartPosition: SCNVector3?
         /// 벽/가구에 새로 막히는 순간(엣지)에만 햅틱을 한 번 주기 위한 상태.
         private var isSnapEngaged = false
         /// require(toFail:)를 이미 걸어둔 카메라 제스처들. (중복 설정 방지)
@@ -735,7 +761,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             }
         }
 
-        /// 웹 computeDecorView 대응: 책장 정면(방 중심을 향한 쪽)에서 25도 위로 내려다보는
+        /// 웹 computeDecorView 대응: 책장의 열린 선반 정면에서 25도 위로 내려다보는
         /// 근접 시점. 선반 안쪽 바닥이 보여 피규어를 올릴 자리를 탭하기 좋다.
         private func applyDecorCamera(to node: SCNNode) {
             guard let bounds = Self.localHierarchyBounds(of: node) else { return }
@@ -752,15 +778,10 @@ struct RoomEditorSceneView: UIViewRepresentable {
             )
             let radius = max(simd_length(size) / 2, 0.4)
 
-            // 로컬 +Z를 수평 정면 후보로 삼고, 방 중심을 향하는 쪽으로 뒤집어 "앞면"을 정한다.
+            // 모델의 열린 면은 로컬 +Z다. 가구 회전은 convertVector에 이미 반영되므로,
+            // 방 중심을 기준으로 다시 뒤집으면 책장 뒤판을 바라보게 될 수 있다.
             let frontWorld = node.convertVector(SCNVector3(0, 0, 1), to: nil)
-            var front = SIMD2(frontWorld.x, frontWorld.z)
-            if simd_length(front) < 0.001 { front = SIMD2(0, 1) }
-            front = simd_normalize(front)
-            let toCenter = SIMD2(sceneCenter.x - worldCenter.x, sceneCenter.z - worldCenter.z)
-            if simd_length(toCenter) > 0.01, simd_dot(front, simd_normalize(toCenter)) < 0 {
-                front = -front
-            }
+            let front = RoomEditorSceneView.decorFrontDirection(from: frontWorld)
 
             let distance = max(radius * 2.2, 1.1)
             let elevation = Float(25 * Double.pi / 180)
@@ -785,33 +806,39 @@ struct RoomEditorSceneView: UIViewRepresentable {
             }
         }
 
-        /// 꾸미기 모드의 탭: 피규어 선택 → 선반 표면 배치/이동 → 빈 곳 선택 해제 순으로 판정.
+        /// 꾸미기 모드의 탭: 대기 소품의 선반 배치 → 기존 소품 선택 → 빈 곳 선택 해제 순으로 판정.
         private func handleDecorTap(at point: CGPoint, in sceneView: SCNView, decoratingID: Int) {
             let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
 
-            if let decor = hits.compactMap({ Self.decorID(fromNodeOrAncestors: $0.node) })
-                .first(where: { $0.itemID == decoratingID }) {
-                viewModel.selectedDecorID = decor.decorID
-                return
-            }
-
             let wantsPlacement = viewModel.pendingFigure != nil
-            let wantsMove = viewModel.selectedDecorID != nil
-            if wantsPlacement || wantsMove,
-               // 웹 decorSurface 대응: 책장 mesh 중 "위를 향한 면"(법선 Y ≥ 0.7 — 상판·선반 바닥)만
+            if wantsPlacement,
+               // 웹 decorSurface 대응: 책장 mesh 중 "위를 향한 면"(정규화한 법선 Y ≥ 0.7 — 상판·선반 바닥)만
                // 지지면으로 인정한다. 옆면/앞면 탭은 배치로 이어지지 않는다.
                let support = hits.first(where: { hit in
-                   Self.furnitureID(fromNodeOrAncestors: hit.node) == decoratingID && hit.worldNormal.y >= 0.7
+                   Self.furnitureID(fromNodeOrAncestors: hit.node) == decoratingID
+                       && RoomEditorSceneView.isDecorSupportNormal(hit.worldNormal)
                }),
                let container = furnitureContainer.childNode(withName: "decorbox-\(decoratingID)", recursively: false)
                    ?? makeDecorContainerIfMissing(for: decoratingID) {
                 let local = container.convertPosition(support.worldCoordinates, from: nil)
                 let position = FurnitureTransform.Vector3(x: Double(local.x), y: Double(local.y), z: Double(local.z))
-                if wantsPlacement {
-                    viewModel.placePendingFigure(atLocal: position)
-                } else {
-                    viewModel.moveSelectedDecor(toLocal: position)
-                }
+                viewModel.placePendingFigure(atLocal: position)
+                viewModel.statusMessage = nil
+                return
+            }
+
+            if wantsPlacement {
+                viewModel.statusMessage = "소품을 놓을 선반의 윗면을 탭하세요"
+                return
+            }
+
+            // 프런트와 동일하게 새 소품 배치가 대기 중이면 기존 소품보다 선반 배치를 우선한다.
+            // 배치 대기가 아닐 때 기존 소품을 탭하면 선택하고, 이후 드래그로 이동할 수 있다.
+            if !wantsPlacement,
+               let decor = hits.compactMap({ Self.decorID(fromNodeOrAncestors: $0.node) })
+                .first(where: { $0.itemID == decoratingID }) {
+                viewModel.selectedDecorID = decor.decorID
+                viewModel.statusMessage = nil
                 return
             }
 
@@ -1686,14 +1713,25 @@ struct RoomEditorSceneView: UIViewRepresentable {
         /// 즉시 실패하고, 카메라 컨트롤(시점 회전/이동/핀치 줌)이 평소처럼 이어받는다.
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
             guard gestureRecognizer === movePanGesture else { return true }
-            guard let sceneView, let selectedID = viewModel.selectedItemID else { return false }
+            guard let sceneView else { return false }
+            let point = touch.location(in: sceneView)
+            let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
+
+            // 꾸미기 중에는 기존 소품에서 시작한 한 손가락 팬만 가로챈다. 빈 곳 팬은
+            // SceneKit 카메라 컨트롤로 그대로 전달되어 프런트의 제한된 orbit 조작과 같다.
+            if let decoratingID = viewModel.decoratingItemID {
+                guard viewModel.pendingFigure == nil else { return false }
+                return hits.contains {
+                    Self.decorID(fromNodeOrAncestors: $0.node)?.itemID == decoratingID
+                }
+            }
+
+            guard let selectedID = viewModel.selectedItemID else { return false }
             // 벽 메우기 패널은 벽 구조라 드래그로 옮길 수 없다.
             if let item = viewModel.layout.furnitures.first(where: { $0.itemId == selectedID }),
                RoomEditorViewModel.isWallInfill(item) {
                 return false
             }
-            let point = touch.location(in: sceneView)
-            let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
             return hits.contains { Self.furnitureID(fromNodeOrAncestors: $0.node) == selectedID }
         }
 
@@ -1711,7 +1749,14 @@ struct RoomEditorSceneView: UIViewRepresentable {
         }
 
         @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-            guard let sceneView,
+            guard let sceneView else { return }
+
+            if let decoratingID = viewModel.decoratingItemID {
+                handleDecorPan(gesture, in: sceneView, decoratingID: decoratingID)
+                return
+            }
+
+            guard
                   let selectedID = viewModel.selectedItemID,
                   let node = furnitureContainer.childNode(withName: "furniture-\(selectedID)", recursively: false) else { return }
 
@@ -1779,6 +1824,109 @@ struct RoomEditorSceneView: UIViewRepresentable {
                     )
                 )
             }
+        }
+
+        /// 프런트엔드 `figure-move` 대응. 선반 위를 드래그하면 해당 표면으로 스냅하고,
+        /// 손가락이 잠시 표면을 벗어나면 현재 선반 높이의 평면을 따라 책장 가장자리까지 이동한다.
+        private func handleDecorPan(
+            _ gesture: UIPanGestureRecognizer,
+            in sceneView: SCNView,
+            decoratingID: Int
+        ) {
+            let point = gesture.location(in: sceneView)
+            let container = furnitureContainer.childNode(
+                withName: "decorbox-\(decoratingID)",
+                recursively: false
+            )
+
+            if gesture.state == .began {
+                let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
+                guard let decor = hits.compactMap({ Self.decorID(fromNodeOrAncestors: $0.node) })
+                    .first(where: { $0.itemID == decoratingID }),
+                      let wrapper = container?.childNode(
+                        withName: "decor-\(decoratingID)-\(decor.decorID)",
+                        recursively: false
+                      ) else { return }
+                draggingDecorID = decor.decorID
+                decorDragStartPosition = wrapper.position
+                viewModel.selectedDecorID = decor.decorID
+                Haptics.selection()
+            }
+
+            guard let container, let decorID = draggingDecorID,
+                  let wrapper = container.childNode(
+                    withName: "decor-\(decoratingID)-\(decorID)",
+                    recursively: false
+                  ) else { return }
+
+            if gesture.state == .cancelled || gesture.state == .failed {
+                if let start = decorDragStartPosition {
+                    wrapper.position = start
+                }
+                draggingDecorID = nil
+                decorDragStartPosition = nil
+                return
+            }
+
+            if let candidate = decorDragPosition(
+                at: point,
+                in: sceneView,
+                decoratingID: decoratingID,
+                container: container,
+                current: wrapper.position
+            ), let constrained = viewModel.constrainedSelectedDecorPosition(candidate) {
+                wrapper.position = SCNVector3(
+                    Float(constrained.x),
+                    Float(constrained.y),
+                    Float(constrained.z)
+                )
+            }
+
+            if gesture.state == .ended {
+                viewModel.moveSelectedDecor(
+                    toLocal: .init(
+                        x: Double(wrapper.position.x),
+                        y: Double(wrapper.position.y),
+                        z: Double(wrapper.position.z)
+                    )
+                )
+                draggingDecorID = nil
+                decorDragStartPosition = nil
+            }
+        }
+
+        private func decorDragPosition(
+            at point: CGPoint,
+            in sceneView: SCNView,
+            decoratingID: Int,
+            container: SCNNode,
+            current: SCNVector3
+        ) -> FurnitureTransform.Vector3? {
+            let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
+            if let support = hits.first(where: { hit in
+                Self.furnitureID(fromNodeOrAncestors: hit.node) == decoratingID
+                    && RoomEditorSceneView.isDecorSupportNormal(hit.worldNormal)
+            }) {
+                let local = container.convertPosition(support.worldCoordinates, from: nil)
+                return .init(x: Double(local.x), y: Double(local.y), z: Double(local.z))
+            }
+
+            // 프런트의 constrainedSupportPoint 폴백: 포인터 광선과 현재 선반 높이의
+            // 월드 수평면 교차점을 사용한다. 책장 범위 제한은 ViewModel이 적용한다.
+            let currentWorld = container.convertPosition(current, to: nil)
+            let near = sceneView.unprojectPoint(SCNVector3(Float(point.x), Float(point.y), 0))
+            let far = sceneView.unprojectPoint(SCNVector3(Float(point.x), Float(point.y), 1))
+            let direction = SCNVector3(far.x - near.x, far.y - near.y, far.z - near.z)
+            guard abs(direction.y) > 1e-6 else { return nil }
+            let distance = (currentWorld.y - near.y) / direction.y
+            guard distance >= 0 else { return nil }
+            let world = SCNVector3(
+                near.x + direction.x * distance,
+                currentWorld.y,
+                near.z + direction.z * distance
+            )
+            let local = container.convertPosition(world, from: nil)
+            return .init(x: Double(local.x), y: Double(current.y), z: Double(local.z))
         }
 
         private static func furnitureID(fromNodeOrAncestors node: SCNNode) -> Int? {

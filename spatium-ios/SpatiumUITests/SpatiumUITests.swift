@@ -128,6 +128,78 @@ final class SpatiumUITests: XCTestCase {
     }
 
     @MainActor
+    func testDecorCatalogStaysCompactAndPromptsForDirectShelfPlacement() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestEditor", "-UITestDecorQuickPlacement", "-UITestClearEditorDrafts"
+        ]
+        app.launch()
+
+        let modeBanner = app.descendants(matching: .any)["decor-mode-banner"]
+        let placementBanner = app.descendants(matching: .any)["decor-placement-banner"]
+        let catalog = app.scrollViews["decor-catalog"]
+        XCTAssertTrue(modeBanner.waitForExistence(timeout: 8))
+        XCTAssertTrue(placementBanner.waitForExistence(timeout: 3))
+        XCTAssertTrue(catalog.waitForExistence(timeout: 3))
+        XCTAssertLessThan(catalog.frame.height, 100)
+        XCTAssertTrue(app.staticTexts["‘모던 피규어’ 소품을 놓을 선반을 탭하세요"].exists)
+        XCTAssertFalse(app.buttons["decor-shelf-1"].exists)
+
+        let beforePlacement = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        beforePlacement.name = "Frontend-style compact decor controls"
+        beforePlacement.lifetime = .keepAlways
+        add(beforePlacement)
+
+        // 정면 카메라에서 보이는 가운데 선반의 윗면을 직접 탭한다. 별도 칸 버튼 없이
+        // 프런트와 같은 카탈로그 선택 → 3D 선반 탭 흐름으로 배치되어야 한다.
+        app.windows.firstMatch
+            .coordinate(withNormalizedOffset: CGVector(dx: 0.47, dy: 0.35))
+            .tap()
+        let selectionControls = app.descendants(matching: .any)["decor-selection-controls"]
+        XCTAssertTrue(selectionControls.waitForExistence(timeout: 5))
+        XCTAssertFalse(placementBanner.exists)
+
+        let afterPlacement = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        afterPlacement.name = "Decor placed by direct shelf tap"
+        afterPlacement.lifetime = .keepAlways
+        add(afterPlacement)
+
+        // 선택한 소품 위에서 시작한 팬은 소품 이동으로, 빈 곳 팬은 카메라 조작으로 동작한다.
+        let window = app.windows.firstMatch
+        window.coordinate(withNormalizedOffset: CGVector(dx: 0.47, dy: 0.29))
+            .press(
+                forDuration: 0.2,
+                thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.59, dy: 0.29))
+            )
+        XCTAssertTrue(selectionControls.exists)
+        Thread.sleep(forTimeInterval: 0.8)
+
+        let afterDrag = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+        afterDrag.name = "Decor moved by direct drag"
+        afterDrag.lifetime = .keepAlways
+        add(afterDrag)
+    }
+
+    @MainActor
+    func testPersonViewHidesFurnitureAddition() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestEditor", "-UITestScan", "other-room-2", "-UITestClearEditorDrafts"
+        ]
+        app.launch()
+
+        let addFurniture = app.buttons["가구 추가"]
+        let personView = app.buttons["1인칭으로 방 안 둘러보기"]
+        XCTAssertTrue(addFurniture.waitForExistence(timeout: 8))
+        XCTAssertTrue(personView.waitForExistence(timeout: 3))
+
+        personView.tap()
+
+        XCTAssertTrue(app.staticTexts["1인칭 · 드래그로 둘러보기 · 탭해서 이동"].waitForExistence(timeout: 5))
+        XCTAssertFalse(addFurniture.exists)
+    }
+
+    @MainActor
     func testNewProjectKeyboardUsesFullScreenCover() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-UITestHome"]

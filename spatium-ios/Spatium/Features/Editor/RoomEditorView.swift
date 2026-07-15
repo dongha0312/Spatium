@@ -57,6 +57,11 @@ struct RoomEditorView: View {
 
     @State private var showReplacePanel = false
     @State private var showCatalog = false
+    /// 카탈로그의 "사용자 가구" 카테고리에서 여는 사진→3D 가구 만들기 화면.
+    @State private var showImgTo3D = false
+    /// 책장 꾸미기 패널(소품 없음)에서 여는 가구 만들기 화면.
+    /// 카탈로그 시트용과 상태를 분리해야 시트가 닫힌 상태에서도 띄울 수 있다.
+    @State private var showImgTo3DFromDecor = false
     /// 저장 안 된 변경이 있을 때 방 전환 확인용으로 보관해 두는 대상 방.
     @State private var pendingRoomSwitch: RoomRecord?
     @State private var activeGroup: String? = nil
@@ -71,6 +76,8 @@ struct RoomEditorView: View {
     @State private var showDeleteOptions = false
     /// 선택 카드에서는 한 번에 하나의 조절 슬라이더만 보여 캔버스를 덜 가린다.
     @State private var selectedFurnitureAdjustment: FurnitureAdjustment = .rotation
+    /// 프런트엔드의 `isReplacingSelected`에 대응하는 꾸미기 전용 교체 상태.
+    @State private var isReplacingDecor = false
 
     private static let wallColors = ["#F5F0EA", "#E8DCC8", "#C4956A", "#3A3A3A"]
     private static let floorColors = ["#D8C4A0", "#B08968", "#6B4A34", "#C9C9C9"]
@@ -140,7 +147,7 @@ struct RoomEditorView: View {
     /// 카탈로그가 열려 있거나 새 가구의 위치를 잡는 동안에는 하단 UI가 룸을
     /// 가리므로, 두 단계를 하나의 배치 흐름으로 보고 같은 상향 위치를 유지한다.
     private var shouldLiftRoomForFurniturePlacement: Bool {
-        showCatalog || viewModel.isMovingSelectedFurniture
+        showCatalog || viewModel.isMovingSelectedFurniture || viewModel.isDecorating
     }
 
     var body: some View {
@@ -166,9 +173,24 @@ struct RoomEditorView: View {
             placementNoticeTask?.cancel()
             viewModel.persistDraftImmediately()
         }
+        .onChange(of: viewModel.selectedDecorID) { _, selectedDecorID in
+            if selectedDecorID == nil {
+                isReplacingDecor = false
+            }
+        }
+        .onChange(of: viewModel.viewMode) { _, viewMode in
+            if viewMode == .person {
+                showCatalog = false
+            }
+        }
         #if DEBUG
         .onAppear {
             if ProcessInfo.processInfo.arguments.contains("-UITestCatalog") {
+                showCatalog = true
+            }
+            // 스크린샷 검증용: 카탈로그를 "사용자 가구" 카테고리로 연다.
+            if ProcessInfo.processInfo.arguments.contains("-UITestCatalogUserGroup") {
+                activeGroup = FurnitureCatalog.userFurnitureFilterID
                 showCatalog = true
             }
             if ProcessInfo.processInfo.arguments.contains("-UITestViewHelp") {
@@ -183,8 +205,11 @@ struct RoomEditorView: View {
                     }
                 }
             }
-            // 꾸미기 검증용: 책장을 놓고 꾸미기 모드로 들어가 피규어 하나를 상판에 올린다.
-            if ProcessInfo.processInfo.arguments.contains("-UITestDecor") {
+            // 꾸미기 검증용: 책장을 놓고 꾸미기 모드로 들어간다. QuickPlacement 플래그는
+            // 프런트와 같은 "소품 선택 → 선반 직접 탭" 대기 상태를 만든다.
+            let testsPlacedDecor = ProcessInfo.processInfo.arguments.contains("-UITestDecor")
+            let testsQuickDecorPlacement = ProcessInfo.processInfo.arguments.contains("-UITestDecorQuickPlacement")
+            if testsPlacedDecor || testsQuickDecorPlacement {
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(700))
                     guard let bookcase = userFurnitureStore.catalogItems
@@ -195,10 +220,22 @@ struct RoomEditorView: View {
                     try? await Task.sleep(for: .milliseconds(900))
                     viewModel.beginDecorating()
                     try? await Task.sleep(for: .milliseconds(900))
-                    if let figure = userFurnitureStore.catalogItems.first(where: { $0.id == "modern_chair" }) {
-                        viewModel.pendingFigure = figure
-                        viewModel.placePendingFigure(atLocal: .init(x: 0.15, y: 1.8, z: 0))
-                        viewModel.selectedDecorID = nil
+                    if let model = userFurnitureStore.catalogItems.first(where: { $0.id == "modern_chair" }) {
+                        let figure = FurnitureCatalogItem(
+                            id: "ui_test_figure",
+                            name: "모던 피규어",
+                            group: "피규어",
+                            category: "figure",
+                            width: model.width,
+                            height: model.height,
+                            depth: model.depth,
+                            modelFileName: model.modelFileName
+                        )
+                        viewModel.prepareDecorPlacement(figure)
+                        if testsPlacedDecor {
+                            viewModel.placePendingFigure(atLocal: .init(x: 0.15, y: 1.8, z: 0))
+                            viewModel.selectedDecorID = nil
+                        }
                     }
                 }
             }
@@ -206,6 +243,9 @@ struct RoomEditorView: View {
         #endif
         .sheet(isPresented: $showViewHelp) {
             ViewHelpSheet(currentMode: viewModel.viewMode)
+        }
+        .fullScreenCover(isPresented: $showImgTo3DFromDecor) {
+            imgTo3DCover(isPresented: $showImgTo3DFromDecor, initialCategory: .figure)
         }
         .sheet(isPresented: $showCatalog) {
             catalogSheet
@@ -373,7 +413,7 @@ struct RoomEditorView: View {
             Spacer()
 
             // 꾸미기 모드에서는 방 가구 추가 대신 피규어 패널이 카탈로그 역할을 한다.
-            if !viewModel.isDecorating {
+            if !viewModel.isDecorating && !viewModel.isPersonView {
                 Button {
                     viewModel.selectedItemID = nil
                     viewModel.isMovingSelectedFurniture = false
@@ -461,6 +501,10 @@ struct RoomEditorView: View {
 
             ScrollView {
                 LazyVStack(spacing: 8) {
+                    // 사용자 가구 카테고리에서는 가구를 새로 만들 수 있는 입구를 함께 보여준다.
+                    if activeGroup == FurnitureCatalog.userFurnitureFilterID {
+                        createFurnitureCTA
+                    }
                     if visibleItems.isEmpty {
                         catalogEmptyState
                     } else {
@@ -471,8 +515,25 @@ struct RoomEditorView: View {
                         }
                     }
                 }
-                .padding(14)
+                // 좌우 18: 위 검색창·칩과 같은 인셋으로 정렬.
+                .padding(.horizontal, 18)
+                .padding(.top, 14)
+                .padding(.bottom, 8)
             }
+            // 시트 하단에서 카드가 뚝 잘려 보이지 않게 알파 마스크로 페이드아웃.
+            // (배경색을 덧씌우는 방식은 진한 버튼만 도드라져 얼룩져 보인다)
+            .mask(
+                VStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(
+                        colors: [.black, .clear],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 30)
+                }
+                .ignoresSafeArea(edges: .bottom)
+            )
         }
         .background(SpatiumTheme.surface)
         .presentationDetents([.medium, .large])
@@ -481,6 +542,73 @@ struct RoomEditorView: View {
         .presentationContentInteraction(.scrolls)
         // 시트 자체 배경(기본 회색 크롬)을 테마 서페이스로 통일해 회색이 비치지 않게.
         .presentationBackground(SpatiumTheme.surface)
+        .fullScreenCover(isPresented: $showImgTo3D) {
+            imgTo3DCover(isPresented: $showImgTo3D)
+        }
+    }
+
+    /// 사용자 가구 카테고리 상단의 "사진으로 3D 가구 만들기" 입구 카드.
+    private var createFurnitureCTA: some View {
+        Button {
+            showImgTo3D = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "photo.badge.plus")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(SpatiumTheme.onCta)
+                    .frame(width: 44, height: 44)
+                    .background(SpatiumTheme.ctaFill)
+                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("사진으로 3D 가구 만들기")
+                        .font(.footnote.weight(.bold))
+                        .foregroundStyle(SpatiumTheme.text)
+                    Text("가구 사진 한 장으로 나만의 3D 가구를 만들어요")
+                        .font(.caption2)
+                        .foregroundStyle(SpatiumTheme.soft)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(SpatiumTheme.soft)
+            }
+            .padding(12)
+            .background(SpatiumTheme.warmPanel)
+            .overlay(
+                RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous)
+                    .stroke(SpatiumTheme.accent.opacity(0.35), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityHint("가구 만들기 화면을 엽니다")
+    }
+
+    /// 카탈로그·꾸미기 패널에서 여는 가구 만들기(ImgTo3D) 전체 화면. 저장하면
+    /// 사용자 가구/소품 목록이 곧바로 갱신된다(UserFurnitureStore 공유).
+    private func imgTo3DCover(
+        isPresented: Binding<Bool>,
+        initialCategory: ImgTo3DCategory = .bathtub
+    ) -> some View {
+        NavigationStack {
+            ImgTo3DView(initialCategory: initialCategory) {
+                // 저장 직후 원래 목록으로 돌아오면 새 항목을 곧바로 선택할 수 있다.
+                isPresented.wrappedValue = false
+            }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(SpatiumTheme.background.ignoresSafeArea())
+                .navigationTitle(initialCategory == .figure ? "소품 만들기" : "가구 만들기")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("닫기") { isPresented.wrappedValue = false }
+                    }
+                }
+        }
     }
 
     /// 시트 헤더. (기존의 거실/주방/침실 구역 메뉴는 목록에 아무 영향이 없는
@@ -679,7 +807,7 @@ struct RoomEditorView: View {
             VStack {
                 HStack {
                     if viewModel.isSkyview { canvasBadge("Skyview 모드") }
-                    if viewModel.isPersonView { canvasBadge("사람 뷰 · 드래그로 둘러보기 · 탭해서 이동") }
+                    if viewModel.isPersonView { canvasBadge("1인칭 · 드래그로 둘러보기 · 탭해서 이동") }
                     if viewModel.isMeasuring { canvasBadge("측정 모드") }
                     Spacer()
                 }
@@ -695,7 +823,7 @@ struct RoomEditorView: View {
             .padding(12)
 
             // 방이 비었을 때 안내 (가구가 없고, 카탈로그도 닫혀 있을 때)
-            if viewModel.layout.furnitures.isEmpty && !showCatalog {
+            if viewModel.layout.furnitures.isEmpty && !showCatalog && !viewModel.isPersonView {
                 emptyRoomHint
             }
 
@@ -712,7 +840,7 @@ struct RoomEditorView: View {
                 }
 
                 if viewModel.isDecorating {
-                    // 꾸미기 모드: 선택 카드/뷰바 대신 피규어 패널만 노출한다.
+                    // 프런트와 동일하게 꾸미기 상태 배너·카탈로그·선택 도구만 캔버스 위에 띄운다.
                     decorControls
                 } else {
                     // 카탈로그 시트가 열려 있을 땐 선택 카드를 숨겨 시트와 겹치지 않게 합니다.
@@ -722,7 +850,9 @@ struct RoomEditorView: View {
 
                     // 새 가구 위치를 잡는 동안에는 선택 카드만 남겨 조작 대상을 분명히 한다.
                     // 배치를 끝내면 시점/색상 도구 막대가 다시 나타난다.
-                    if !viewModel.isMovingSelectedFurniture {
+                    // 카탈로그 시트가 떠 있을 땐 흰 도구 막대가 시트 모서리 밖으로
+                    // 비쳐 보이므로 함께 숨긴다.
+                    if !viewModel.isMovingSelectedFurniture && !showCatalog {
                         viewbar
                     }
                 }
@@ -820,9 +950,9 @@ struct RoomEditorView: View {
 
             viewbarButton(
                 icon: "figure.stand",
-                title: "사람 뷰",
+                title: "1인칭",
                 isActive: viewModel.isPersonView,
-                accessibilityLabel: "사람 뷰로 방 안 둘러보기"
+                accessibilityLabel: "1인칭으로 방 안 둘러보기"
             ) {
                 viewModel.setViewMode(viewModel.isPersonView ? .threeD : .person)
                 activeSurfaceColorPicker = nil
@@ -1142,138 +1272,261 @@ struct RoomEditorView: View {
 
     // MARK: - 책장 꾸미기 패널
 
-    /// 피규어로 쓸 수 있는 카탈로그: 사용자가 만든 가구(가구 만들기) + figure 카테고리(프런트와 동일).
+    /// 꾸미기 책장에는 저장 카테고리가 figure인 피규어·소품만 노출한다.
     private var figureItems: [FurnitureCatalogItem] {
-        userFurnitureStore.catalogItems.filter { $0.source == .user || $0.category == "figure" }
-    }
-
-    private var decorHint: String {
-        if viewModel.pendingFigure != nil {
-            return "책장의 원하는 칸(선반)을 탭하면 그 자리에 올라가요"
-        }
-        if viewModel.selectedDecoration != nil {
-            return "다른 선반을 탭하면 옮겨져요"
-        }
-        return figureItems.isEmpty
-            ? "아직 올릴 소품이 없어요"
-            : "아래에서 소품을 고르고 선반을 탭해 올려놓으세요"
+        userFurnitureStore.catalogItems.filter(RoomEditorViewModel.isDecorFigure)
     }
 
     private var decorControls: some View {
-        VStack(spacing: 10) {
-            // 헤더: 제목 + 완료
+        VStack(spacing: 8) {
+            decorModeBanner
+
+            if let pending = viewModel.pendingFigure {
+                decorPlacementBanner(pending)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if let decoration = viewModel.selectedDecoration {
+                decorSelectionControls(decoration)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+
+            decorCatalog
+        }
+        // 수평 ScrollView가 남은 세로 공간을 전부 차지하지 않도록 콘텐츠 높이에 고정한다.
+        .fixedSize(horizontal: false, vertical: true)
+        .animation(.spring(response: 0.34, dampingFraction: 0.88), value: viewModel.pendingFigure?.id)
+        .animation(.spring(response: 0.34, dampingFraction: 0.88), value: viewModel.selectedDecorID)
+    }
+
+    private var decorModeBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(SpatiumTheme.accentLight)
+            Text("책장 꾸미기")
+                .font(.caption.weight(.black))
+                .foregroundStyle(.white)
+            Text("소품을 고르고 선반을 탭하세요")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.64))
+                .lineLimit(1)
+            Spacer(minLength: 4)
+            Button("완료") {
+                Haptics.selection()
+                isReplacingDecor = false
+                viewModel.endDecorating()
+            }
+            .font(.caption.weight(.black))
+            .foregroundStyle(SpatiumTheme.accent)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(.white, in: Capsule())
+            .buttonStyle(.pressable)
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
+        .padding(.vertical, 6)
+        .background(SpatiumTheme.editorToolbar.opacity(0.95), in: Capsule())
+        .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("decor-mode-banner")
+    }
+
+    private func decorPlacementBanner(_ item: FurnitureCatalogItem) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "hand.tap.fill")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(SpatiumTheme.accent)
+            Text("‘\(item.name)’ 소품을 놓을 선반을 탭하세요")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(SpatiumTheme.text)
+                .lineLimit(1)
+            Spacer(minLength: 6)
+            Button("취소") {
+                Haptics.selection()
+                viewModel.pendingFigure = nil
+                viewModel.statusMessage = nil
+            }
+            .font(.caption2.weight(.black))
+            .foregroundStyle(SpatiumTheme.accent)
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(SpatiumTheme.warmPanel, in: Capsule())
+        .overlay(Capsule().stroke(SpatiumTheme.border.opacity(0.75), lineWidth: 1))
+        .shadow(color: SpatiumTheme.shadow.opacity(0.15), radius: 8, y: 3)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("decor-placement-banner")
+    }
+
+    private func decorSelectionControls(_ decoration: PlacedDecoration) -> some View {
+        VStack(spacing: 7) {
             HStack(spacing: 8) {
-                Image(systemName: "sparkles")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(SpatiumTheme.accent)
-                Text("책장 꾸미기")
-                    .font(.caption.weight(.black))
-                    .foregroundStyle(SpatiumTheme.text)
-                Spacer()
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(decoration.name)
+                        .font(.caption.weight(.black))
+                        .foregroundStyle(SpatiumTheme.text)
+                        .lineLimit(1)
+                    Text("드래그해서 다른 위치로 옮기세요")
+                        .font(.caption2)
+                        .foregroundStyle(SpatiumTheme.soft)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 6)
                 Button {
                     Haptics.selection()
-                    viewModel.endDecorating()
+                    isReplacingDecor.toggle()
+                    viewModel.pendingFigure = nil
                 } label: {
-                    Text("완료")
-                        .font(.caption.weight(.black))
-                        .foregroundStyle(SpatiumTheme.onCta)
-                        .padding(.horizontal, 14)
+                    Label("교체", systemImage: "arrow.triangle.2.circlepath")
+                        .font(.caption2.weight(.black))
+                        .foregroundStyle(isReplacingDecor ? .white : SpatiumTheme.accent)
+                        .padding(.horizontal, 9)
                         .padding(.vertical, 6)
-                        .background(SpatiumTheme.ctaFill, in: Capsule())
+                        .background(isReplacingDecor ? SpatiumTheme.accent : SpatiumTheme.warmPanel, in: Capsule())
                 }
                 .buttonStyle(.pressable)
+
+                Button {
+                    Haptics.impact(.rigid)
+                    isReplacingDecor = false
+                    viewModel.deleteSelectedDecor()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(SpatiumTheme.coral)
+                        .frame(width: 30, height: 30)
+                        .background(SpatiumTheme.coral.opacity(0.10), in: Circle())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("소품 제거")
             }
 
-            Text(decorHint)
-                .font(.caption2)
-                .foregroundStyle(SpatiumTheme.soft)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            RotationSlider(
+                degrees: viewModel.selectedDecorRotationDegrees,
+                onChange: { viewModel.setSelectedDecorRotation(degrees: $0) },
+                onEditingChanged: handleHistoryEditingChanged
+            )
 
-            // 피규어 목록 — 가구 만들기에서 저장한 모델 + 피규어 카테고리.
-            if figureItems.isEmpty {
-                Text("가구 만들기 탭에서 '피규어·소품'을 만들어 보세요.")
-                    .font(.caption2)
-                    .foregroundStyle(SpatiumTheme.soft)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(figureItems) { item in
-                            let isPending = viewModel.pendingFigure?.id == item.id
-                            Button {
-                                Haptics.selection()
-                                viewModel.selectedDecorID = nil
-                                viewModel.pendingFigure = isPending ? nil : item
-                            } label: {
-                                HStack(spacing: 5) {
-                                    Image(systemName: isPending ? "hand.tap.fill" : "cube")
-                                        .font(.system(size: 10, weight: .bold))
-                                    Text(item.name)
-                                        .font(.caption2.weight(.bold))
-                                        .lineLimit(1)
-                                }
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 7)
-                                .background(isPending ? SpatiumTheme.accent : SpatiumTheme.warmPanel, in: Capsule())
-                                .foregroundStyle(isPending ? .white : SpatiumTheme.text)
-                            }
-                            .buttonStyle(.pressable)
-                        }
-                    }
-                    .padding(.vertical, 2)
-                }
-            }
-
-            // 선택한 피규어 편집: 회전 · 크기 · 제거
-            if let decoration = viewModel.selectedDecoration {
-                VStack(spacing: 8) {
-                    HStack(spacing: 6) {
-                        Text(decoration.name)
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(SpatiumTheme.text)
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        Text("\(Int(viewModel.selectedDecorSizeCm))cm")
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(SpatiumTheme.soft)
-                    }
-                    RotationSlider(
-                        degrees: viewModel.selectedDecorRotationDegrees,
-                        onChange: { viewModel.setSelectedDecorRotation(degrees: $0) },
-                        onEditingChanged: handleHistoryEditingChanged
-                    )
-                    // 크기(5~50cm) — 프런트엔드 피규어 크기 슬라이더 대응.
-                    HStack(spacing: 8) {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right")
-                            .font(.caption.weight(.bold))
-                            .foregroundStyle(SpatiumTheme.accent)
-                        Slider(
-                            value: Binding(
-                                get: { viewModel.selectedDecorSizeCm },
-                                set: { viewModel.setSelectedDecorSize(cm: $0) }
-                            ),
-                            in: RoomEditorViewModel.figureSizeRangeCm,
-                            step: 1,
-                            onEditingChanged: handleHistoryEditingChanged
-                        )
-                        .tint(SpatiumTheme.accent)
-                        Text("\(Int(viewModel.selectedDecorSizeCm))cm")
-                            .font(.caption2.weight(.black).monospacedDigit())
-                            .foregroundStyle(SpatiumTheme.accent)
-                            .frame(width: 44, alignment: .trailing)
-                    }
-                    SelectionToolButton(title: "제거", systemImage: "trash", tint: SpatiumTheme.coral) {
-                        Haptics.impact(.rigid)
-                        viewModel.deleteSelectedDecor()
-                    }
-                }
-                .padding(.top, 2)
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(SpatiumTheme.accent)
+                Slider(
+                    value: Binding(
+                        get: { viewModel.selectedDecorSizeCm },
+                        set: { viewModel.setSelectedDecorSize(cm: $0) }
+                    ),
+                    in: RoomEditorViewModel.figureSizeRangeCm,
+                    step: 1,
+                    onEditingChanged: handleHistoryEditingChanged
+                )
+                .tint(SpatiumTheme.accent)
+                Text("\(Int(viewModel.selectedDecorSizeCm))cm")
+                    .font(.caption2.weight(.black).monospacedDigit())
+                    .foregroundStyle(SpatiumTheme.accent)
+                    .frame(width: 44, alignment: .trailing)
             }
         }
         .padding(10)
         .background(SpatiumTheme.elevatedSurface, in: RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous).stroke(SpatiumTheme.border.opacity(0.65), lineWidth: 1))
-        .shadow(color: SpatiumTheme.shadow.opacity(0.2), radius: 12, y: 5)
+        .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous).stroke(SpatiumTheme.border.opacity(0.7), lineWidth: 1))
+        .shadow(color: SpatiumTheme.shadow.opacity(0.2), radius: 10, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("decor-selection-controls")
+    }
+
+    private var decorCatalog: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Text(isReplacingDecor ? "교체할 소품을 선택하세요" : "소품")
+                    .font(.caption2.weight(.black))
+                    .foregroundStyle(isReplacingDecor ? SpatiumTheme.accent : SpatiumTheme.soft)
+                if !isReplacingDecor, viewModel.selectedDecoration != nil {
+                    Text("선택하면 새 소품을 추가해요")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(SpatiumTheme.soft.opacity(0.78))
+                }
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 7) {
+                    ForEach(figureItems) { item in
+                        decorCatalogButton(item)
+                    }
+                    createDecorItemButton
+                }
+                .padding(.horizontal, 1)
+            }
+            .frame(height: 50)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(SpatiumTheme.elevatedSurface, in: RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous).stroke(SpatiumTheme.border.opacity(0.7), lineWidth: 1))
+        .shadow(color: SpatiumTheme.shadow.opacity(0.2), radius: 10, y: 4)
+        .accessibilityIdentifier("decor-catalog")
+    }
+
+    private func decorCatalogButton(_ item: FurnitureCatalogItem) -> some View {
+        let isPending = viewModel.pendingFigure?.id == item.id
+        return Button {
+            Haptics.selection()
+            if isReplacingDecor, viewModel.selectedDecoration != nil {
+                viewModel.replaceSelectedDecor(with: item)
+                isReplacingDecor = false
+            } else {
+                if isPending {
+                    viewModel.pendingFigure = nil
+                    viewModel.statusMessage = nil
+                } else {
+                    viewModel.prepareDecorPlacement(item)
+                }
+                isReplacingDecor = false
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: isPending ? "hand.tap.fill" : "cube")
+                    .font(.system(size: 10, weight: .bold))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(item.name)
+                        .font(.caption2.weight(.black))
+                        .lineLimit(1)
+                    Text(item.group)
+                        .font(.system(size: 9, weight: .medium))
+                        .opacity(0.7)
+                        .lineLimit(1)
+                }
+            }
+            .foregroundStyle(isPending ? .white : SpatiumTheme.text)
+            .padding(.horizontal, 9)
+            .frame(height: 44)
+            .background(isPending ? SpatiumTheme.accent : SpatiumTheme.warmPanel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(isPending ? Color.clear : SpatiumTheme.border.opacity(0.72), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("\(item.name) 소품")
+        .accessibilityAddTraits(isPending ? .isSelected : [])
+    }
+
+    private var createDecorItemButton: some View {
+        Button {
+            Haptics.selection()
+            showImgTo3DFromDecor = true
+        } label: {
+            Label(figureItems.isEmpty ? "소품 만들기" : "새 소품", systemImage: "plus")
+                .font(.caption2.weight(.black))
+                .foregroundStyle(SpatiumTheme.accent)
+                .padding(.horizontal, 10)
+                .frame(height: 44)
+                .background(SpatiumTheme.elevatedSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(SpatiumTheme.accent.opacity(0.32), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityHint("사진으로 새 소품을 만듭니다")
     }
 
     // MARK: - 하단 액션바

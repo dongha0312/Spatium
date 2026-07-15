@@ -10,7 +10,7 @@ enum RoomViewMode: String, Codable, CaseIterable {
         switch self {
         case .threeD: "3D"
         case .skyView: "스카이뷰"
-        case .person: "사람 뷰"
+        case .person: "1인칭"
         }
     }
 

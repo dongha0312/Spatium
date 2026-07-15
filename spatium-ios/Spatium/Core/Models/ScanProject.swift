@@ -1,11 +1,9 @@
 import Foundation
 import RoomPlan
 import simd
-import UIKit
 
 struct ScanProject {
     var room: CapturedRoom
-    var photos: [UIImage] = []
     var createdAt = Date()
     var roomType = ""
     var items: [EditableScanItem]
@@ -15,13 +13,12 @@ struct ScanProject {
         return trimmed.isEmpty ? "이름 없는 공간" : trimmed
     }
 
-    init(room: CapturedRoom, photos: [UIImage] = []) {
+    init(room: CapturedRoom) {
         self.room = room
-        self.photos = photos
         self.items = EditableScanItem.makeItems(from: room)
     }
 
-    /// 메시 export와 사진 JPEG 인코딩은 수 초짜리 동기 작업이라 백그라운드에서 실행한다.
+    /// 메시 export는 수 초짜리 동기 작업이라 백그라운드에서 실행한다.
     /// (메인 액터에서 그대로 돌리면 내보내기/업로드 동안 UI가 통째로 멈춘다)
     func exportPackage() async throws -> [URL] {
         // 메타데이터 JSON(변환행렬/치수 목록)은 가벼우므로 메인에서 인코딩하고,
@@ -31,11 +28,9 @@ struct ScanProject {
         )
         let folderName = "Spatium-\(Self.fileStamp.string(from: createdAt))"
         let room = self.room
-        let photos = self.photos
         return try await Task.detached {
             try Self.writePackageFiles(
                 room: room,
-                photos: photos,
                 folderName: folderName,
                 metadataData: metadataData
             )
@@ -44,7 +39,6 @@ struct ScanProject {
 
     nonisolated private static func writePackageFiles(
         room: CapturedRoom,
-        photos: [UIImage],
         folderName: String,
         metadataData: Data
     ) throws -> [URL] {
@@ -58,17 +52,9 @@ struct ScanProject {
 
         let roomURL = folder.appendingPathComponent("room-scan.usdz")
         let requestURL = folder.appendingPathComponent("ai-edit-request.json")
-        var urls = [roomURL, requestURL]
+        let urls = [roomURL, requestURL]
 
         try room.export(to: roomURL, metadataURL: nil, modelProvider: nil, exportOptions: .mesh)
-
-        for (index, photo) in photos.enumerated() {
-            if let data = photo.jpegData(compressionQuality: 0.8) {
-                let photoURL = folder.appendingPathComponent("room-photo-\(index + 1).jpg")
-                try data.write(to: photoURL)
-                urls.append(photoURL)
-            }
-        }
 
         // 편집기에서 수정/추가/삭제한 객체 목록(items)을 함께 실어 보냅니다.
         try metadataData.write(to: requestURL)

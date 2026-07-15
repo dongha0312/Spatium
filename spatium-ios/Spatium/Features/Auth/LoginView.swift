@@ -163,19 +163,20 @@ struct LoginView: View {
             }
             .signInWithAppleButtonStyle(.black)
             .frame(height: 50)
-            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+            .clipShape(Capsule())
 
             Button(action: startGoogleSignIn) {
                 Label("Google로 계속하기", systemImage: "g.circle.fill")
                     .font(.subheadline.weight(.bold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 13)
+                    .frame(height: 50)
                     .background(SpatiumTheme.elevatedSurface)
                     .foregroundStyle(SpatiumTheme.text)
-                    .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                    .overlay(Capsule().stroke(SpatiumTheme.border, lineWidth: 1))
+                    .clipShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
+            .contentShape(Capsule())
             .disabled(isLoading)
         }
     }
