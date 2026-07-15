@@ -1,15 +1,12 @@
 import RoomPlan
 import SwiftUI
-import UIKit
 
 struct ScanCaptureSheet: View {
     @Binding var isScanning: Bool
-    var onCompleted: (CapturedRoom, [UIImage]) -> Void
+    var onCompleted: (CapturedRoom) -> Void
     var onError: (Error) -> Void
     var onCancel: () -> Void
 
-    @State private var triggerCapture = false
-    @State private var capturedPhotos: [UIImage] = []
     @State private var isCancelled = false
     @State private var isCaptureReady = false
 
@@ -26,13 +23,9 @@ struct ScanCaptureSheet: View {
             RoomCaptureViewRepresentable(
                 isScanning: $isScanning,
                 isCaptureReady: $isCaptureReady,
-                triggerCapture: $triggerCapture,
-                onPhotoCaptured: { photo in
-                    capturedPhotos.append(photo)
-                },
                 onScanCompleted: { room in
                     guard !isCancelled else { return }
-                    onCompleted(room, capturedPhotos)
+                    onCompleted(room)
                 },
                 onError: { error in
                     guard !isCancelled else { return }
@@ -61,44 +54,13 @@ struct ScanCaptureSheet: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
 
-                    // 찍은 사진은 상단에 모아, 하단의 RoomPlan 미니 모델을 가리지 않게 한다.
-                    if !capturedPhotos.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(0..<capturedPhotos.count, id: \.self) { index in
-                                    Image(uiImage: capturedPhotos[index])
-                                        .resizable()
-                                        .scaledToFill()
-                                        .frame(width: 50, height: 50)
-                                        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.sm))
-                                        .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.sm).stroke(.white, lineWidth: 2))
-                                }
-                            }
-                            .padding(.horizontal)
-                        }
-                        .frame(height: 58)
-                    }
-
                     Spacer()
                 }
             }
 
             // RoomPlan은 스캔 중 만들어지는 미니 3D 모델을 하단 "중앙"에 그린다.
-            // 컨트롤은 양쪽 모서리에 컴팩트하게 붙여 중앙을 비워 둔다.
+            // 완료 컨트롤은 오른쪽 모서리에 붙여 중앙을 비워 둔다.
             HStack(alignment: .bottom) {
-                Button {
-                    triggerCapture = true
-                } label: {
-                    Image(systemName: "camera.fill")
-                        .font(.title3)
-                        .foregroundStyle(.white)
-                        .frame(width: 56, height: 56)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(.white.opacity(0.34), lineWidth: 1))
-                }
-                .disabled(!isScanning || !isCaptureReady)
-                .accessibilityLabel("사진 촬영")
-
                 Spacer()
 
                 Button {
@@ -141,7 +103,6 @@ struct ScanCaptureSheet: View {
                     .padding(.bottom, 28)
             }
         }
-        .animation(.default, value: capturedPhotos.count)
         .interactiveDismissDisabled(isScanning)
     }
 

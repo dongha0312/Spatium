@@ -1,5 +1,4 @@
 import ARKit
-import CoreImage
 import RoomPlan
 import SwiftUI
 import UIKit
@@ -7,8 +6,6 @@ import UIKit
 struct RoomCaptureViewRepresentable: UIViewRepresentable {
     @Binding var isScanning: Bool
     @Binding var isCaptureReady: Bool
-    @Binding var triggerCapture: Bool
-    var onPhotoCaptured: (UIImage) -> Void
     var onScanCompleted: (CapturedRoom) -> Void
     var onError: (Error) -> Void
 
@@ -26,10 +23,6 @@ struct RoomCaptureViewRepresentable: UIViewRepresentable {
             context.coordinator.startSessionIfNeeded(for: uiView)
         } else {
             context.coordinator.stopSessionIfNeeded(for: uiView)
-        }
-
-        if triggerCapture {
-            context.coordinator.capturePhoto(from: uiView)
         }
     }
 
@@ -99,11 +92,6 @@ final class RoomCaptureViewCoordinator: NSObject, RoomCaptureViewDelegate, RoomC
     var parent: RoomCaptureViewRepresentable
     private var lifecycle = RoomCaptureSessionLifecycle()
 
-    /// 캡처 사진의 최대 변 길이(px). 서버 업로드·리뷰 썸네일에 충분하면서 메모리는 원본의 ~1/4.
-    static let capturedPhotoMaxDimension: CGFloat = 2048
-    /// CIContext는 GPU 자원을 잡는 무거운 객체라 캡처마다 만들지 않고 재사용한다.
-    static let photoContext = CIContext()
-
     init(_ parent: RoomCaptureViewRepresentable) {
         self.parent = parent
         super.init()
@@ -128,42 +116,6 @@ final class RoomCaptureViewCoordinator: NSObject, RoomCaptureViewDelegate, RoomC
         guard lifecycle.requestStop() else { return }
         publishCaptureReadiness(false)
         roomCaptureView.captureSession.stop()
-    }
-
-    func capturePhoto(from roomCaptureView: RoomCaptureView) {
-        guard lifecycle.canFinish else {
-            parent.triggerCapture = false
-            return
-        }
-        guard let currentFrame = roomCaptureView.captureSession.arSession.currentFrame else {
-            DispatchQueue.main.async {
-                self.parent.triggerCapture = false
-            }
-            return
-        }
-
-        let pixelBuffer = currentFrame.capturedImage
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        var orientedImage = ciImage.oriented(.right)
-        // 원본 카메라 프레임(12MP ≈ 장당 46MB)을 그대로 들고 있으면 몇 장만 찍어도
-        // 스캔+에디터 메모리 피크가 jetsam 한계를 넘는다. 업로드/미리보기 용도로는
-        // 충분한 크기로 캡처 시점에 줄인다.
-        let maxSide = max(orientedImage.extent.width, orientedImage.extent.height)
-        if maxSide > Self.capturedPhotoMaxDimension {
-            let scale = Self.capturedPhotoMaxDimension / maxSide
-            orientedImage = orientedImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-        }
-        if let cgImage = Self.photoContext.createCGImage(orientedImage, from: orientedImage.extent) {
-            let uiImage = UIImage(cgImage: cgImage)
-            DispatchQueue.main.async {
-                self.parent.onPhotoCaptured(uiImage)
-                self.parent.triggerCapture = false
-            }
-        } else {
-            DispatchQueue.main.async {
-                self.parent.triggerCapture = false
-            }
-        }
     }
 
     func captureSession(

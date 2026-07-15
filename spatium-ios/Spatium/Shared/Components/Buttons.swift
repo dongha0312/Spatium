@@ -1,13 +1,24 @@
 import SwiftUI
 
 /// HIG "provide feedback" — 커스텀(.plain) 버튼도 눌렀을 때 즉각 반응하도록
-/// 살짝 눌리고 흐려지는 공용 스타일. 탭 가능한 요소면 어디든 붙일 수 있습니다.
+/// 살짝 눌리고 흐려지며 햅틱이 울리는 공용 스타일. 탭 가능한 요소면 어디든 붙일 수 있습니다.
 struct PressableButtonStyle: ButtonStyle {
+    private static let feedbackGenerator: UIImpactFeedbackGenerator = {
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.prepare()
+        return generator
+    }()
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .opacity(configuration.isPressed ? 0.82 : 1)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
             .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .onChange(of: configuration.isPressed) { _, isPressed in
+                guard isPressed else { return }
+                Self.feedbackGenerator.impactOccurred()
+                Self.feedbackGenerator.prepare()
+            }
     }
 }
 

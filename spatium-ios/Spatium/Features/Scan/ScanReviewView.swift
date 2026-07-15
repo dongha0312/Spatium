@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 struct EmptyScanView: View {
     var onStartScan: () -> Void
@@ -57,7 +56,6 @@ struct ScanReviewView: View {
                 }
             }
             DetectedItemsCard(items: $project.items)
-            CapturedPhotosCard(photos: project.photos)
             ExportCard(
                 exporting: exporting,
                 uploading: uploading,
@@ -139,7 +137,7 @@ private struct ScanStatusHeader: View {
                 Text(project.resolvedRoomType)
                     .font(.title3.weight(.black))
                     .foregroundStyle(SpatiumTheme.text)
-                Text("\(project.items.count)개 요소 · 사진 \(project.photos.count)장")
+                Text("\(project.items.count)개 요소")
                     .font(.subheadline)
                     .foregroundStyle(SpatiumTheme.soft)
             }
@@ -182,38 +180,6 @@ private struct RoomTypeCard: View {
                 Text("입력한 값은 metadata JSON 파일의 roomType으로 함께 전송됩니다.")
                     .font(.footnote)
                     .foregroundStyle(SpatiumTheme.soft)
-            }
-        }
-    }
-}
-
-private struct CapturedPhotosCard: View {
-    let photos: [UIImage]
-
-    var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("촬영된 방 사진 (\(photos.count)장)")
-                    .font(.headline)
-                    .foregroundStyle(SpatiumTheme.text)
-
-                if photos.isEmpty {
-                    Text("스캔 중 촬영된 사진이 없습니다.")
-                        .font(.footnote)
-                        .foregroundStyle(SpatiumTheme.soft)
-                } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(0..<photos.count, id: \.self) { index in
-                                Image(uiImage: photos[index])
-                                    .resizable()
-                                    .scaledToFill()
-                                    .frame(width: 98, height: 126)
-                                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
-                            }
-                        }
-                    }
-                }
             }
         }
     }

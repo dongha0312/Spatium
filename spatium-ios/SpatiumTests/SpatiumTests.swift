@@ -81,6 +81,143 @@ struct SpatiumTests {
         #expect(FurnitureCatalog.matches(userOther, groupFilter: FurnitureCatalog.otherGroup))
     }
 
+    @Test func decorSupportNormalIsNormalizedBeforeCheckingItsDirection() {
+        // editable_bookcase의 비균일 맞춤 스케일 뒤 실제 hit-test에서 관측된 윗면 법선.
+        // 길이는 0.508이지만 정규화하면 정확히 위쪽을 향한다.
+        #expect(RoomEditorSceneView.isDecorSupportNormal(SCNVector3(0, 0.508, 0)))
+
+        // 수직 면과 유효하지 않은 0 벡터는 선반으로 취급하지 않는다.
+        #expect(!RoomEditorSceneView.isDecorSupportNormal(SCNVector3(0.508, 0, 0)))
+        #expect(!RoomEditorSceneView.isDecorSupportNormal(SCNVector3Zero))
+    }
+
+    @Test func decorCameraKeepsTheBookcaseModelFrontDirection() {
+        let front = RoomEditorSceneView.decorFrontDirection(
+            from: SCNVector3(x: -2, y: 0.5, z: 0)
+        )
+
+        // 방 중심이 반대편에 있더라도 모델의 로컬 +Z가 변환된 -X 방향을 유지해야 한다.
+        #expect(abs(front.x + 1) < 0.0001)
+        #expect(abs(front.y) < 0.0001)
+
+        // 비정상적으로 수평 성분이 사라진 경우에도 유효한 기본 정면을 반환한다.
+        #expect(
+            RoomEditorSceneView.decorFrontDirection(from: SCNVector3(0, 1, 0))
+                == SIMD2<Float>(0, 1)
+        )
+    }
+
+    @Test func replacingDecorKeepsItsSupportPointRotationAndIdentity() throws {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let viewModel = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "꾸미기 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory
+        )
+        let bookcase = try #require(FurnitureCatalog.items.first { $0.modelFileName == "editable_bookcase" })
+        let figure = FurnitureCatalogItem(
+            id: "test_figure",
+            name: "테스트 피규어",
+            group: "피규어",
+            category: "figure",
+            width: 0.2,
+            height: 0.3,
+            depth: 0.15,
+            modelFileName: "chair"
+        )
+        let replacement = FurnitureCatalogItem(
+            id: "replacement_figure",
+            name: "교체 피규어",
+            group: "피규어",
+            category: "figure",
+            width: 0.18,
+            height: 0.28,
+            depth: 0.12,
+            modelFileName: "modern_chair"
+        )
+
+        viewModel.place(catalogItem: bookcase)
+        viewModel.isMovingSelectedFurniture = false
+        viewModel.beginDecorating()
+
+        viewModel.pendingFigure = figure
+        let supportPoint = FurnitureTransform.Vector3(x: 0.14, y: 0.64, z: 0.02)
+        viewModel.placePendingFigure(atLocal: supportPoint)
+        viewModel.setSelectedDecorRotation(degrees: 90)
+        let original = try #require(viewModel.selectedDecoration)
+
+        viewModel.replaceSelectedDecor(with: replacement)
+
+        let replaced = try #require(viewModel.selectedDecoration)
+        #expect(replaced.decorId == original.decorId)
+        #expect(replaced.position == original.position)
+        #expect(replaced.rotationY == original.rotationY)
+        #expect(replaced.name == replacement.name)
+        #expect(replaced.modelName == replacement.modelFileName)
+        #expect(replaced.scale == 1)
+
+        let constrained = try #require(
+            viewModel.constrainedSelectedDecorPosition(.init(x: 20, y: 0.64, z: 20))
+        )
+        #expect(abs(constrained.x) < bookcase.width / 2)
+        #expect(abs(constrained.z) < bookcase.depth / 2)
+        viewModel.discardCurrentDraft()
+    }
+
+    @Test func decorRejectsNonFigureItemsAndPersonViewRejectsFurniturePlacement() throws {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let viewModel = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "편집 제한 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory
+        )
+        let bookcase = try #require(FurnitureCatalog.items.first { $0.modelFileName == "editable_bookcase" })
+        let chair = try #require(FurnitureCatalog.items.first { $0.modelFileName == "chair" })
+        let figure = FurnitureCatalogItem(
+            id: "allowed_figure",
+            name: "허용 피규어",
+            group: "피규어",
+            category: "FIGURE",
+            width: 0.2,
+            height: 0.3,
+            depth: 0.15,
+            modelFileName: "chair"
+        )
+
+        #expect(!RoomEditorViewModel.isDecorFigure(chair))
+        #expect(RoomEditorViewModel.isDecorFigure(figure))
+
+        viewModel.place(catalogItem: bookcase)
+        viewModel.isMovingSelectedFurniture = false
+        viewModel.beginDecorating()
+        viewModel.prepareDecorPlacement(chair)
+        #expect(viewModel.pendingFigure == nil)
+        #expect(viewModel.statusMessage == "꾸미기 책장에는 피규어만 올릴 수 있어요")
+
+        viewModel.prepareDecorPlacement(figure)
+        #expect(viewModel.pendingFigure?.id == figure.id)
+
+        viewModel.endDecorating()
+        let furnitureCount = viewModel.layout.furnitures.count
+        viewModel.setViewMode(.person)
+        viewModel.place(catalogItem: chair)
+        #expect(viewModel.layout.furnitures.count == furnitureCount)
+        #expect(viewModel.statusMessage == "1인칭 시점에서는 가구를 추가할 수 없어요")
+        viewModel.discardCurrentDraft()
+    }
+
     @Test func editorHistoryCoalescesSliderGestureAndSupportsRedo() throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

@@ -7,6 +7,8 @@ import UIKit
 struct ContentView: View {
     @ObservedObject private var tokenStore = AuthTokenStore.shared
     @State private var isGuestSession = false
+    /// 첫 실행 온보딩을 봤는지 여부. 한 번 완료(또는 건너뛰기)하면 다시 보여주지 않는다.
+    @AppStorage("hasSeenOnboarding") private var hasSeenOnboarding = false
 
     var body: some View {
         #if DEBUG
@@ -49,7 +51,15 @@ struct ContentView: View {
     @ViewBuilder
     private var gate: some View {
         Group {
-            if tokenStore.isLoggedIn || isGuestSession {
+            if !hasSeenOnboarding {
+                // 첫 실행: 로그인보다 먼저 기능 소개 온보딩을 보여준다.
+                OnboardingView {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        hasSeenOnboarding = true
+                    }
+                }
+                .transition(.opacity)
+            } else if tokenStore.isLoggedIn || isGuestSession {
                 MainTabView()
                     .transition(.opacity)
             } else {
@@ -176,8 +186,8 @@ struct MainTabView: View {
         .sheet(isPresented: $showScanner) {
             ScanCaptureSheet(
                 isScanning: $isScanning,
-                onCompleted: { room, photos in
-                    let project = ScanProject(room: room, photos: photos)
+                onCompleted: { room in
+                    let project = ScanProject(room: room)
                     scanProject = project
                     selectedTab = .scan
                     isScanning = false
@@ -447,7 +457,7 @@ struct MainTabView: View {
     private func handleEditorCreatedRoom(_ room: RoomRecord) {
         var adopted = room
         adopted.itemCount = scanProject?.items.count ?? 0
-        adopted.photoCount = scanProject?.photos.count ?? 0
+        adopted.photoCount = 0
         if let activeProjectID {
             projectStore.adoptUploadedRoom(adopted, projectID: activeProjectID, replacingLocalRoomID: activeRoomID)
         }
@@ -489,7 +499,7 @@ struct MainTabView: View {
                     metadataURL: jsonURL,
                     usdzURL: usdzURL,
                     itemCount: scanProject.items.count,
-                    photoCount: scanProject.photos.count
+                    photoCount: 0
                 )
                 activeRoomID = room.id
                 selectedProjectID = activeProjectID
