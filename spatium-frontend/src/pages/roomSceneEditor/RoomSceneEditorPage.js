@@ -18,6 +18,7 @@ const REPLACEABLE_TYPES = new Set([
 const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
   {
     isSkyview = false,
+    isPersonView = false,
     showMeasurements = false,
     wallColor = null,
     floorColor = null,
@@ -35,6 +36,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     selectedRotationDegrees,
     selectedElevationCm,
     selectedMaxElevationCm,
+    selectedSizeCm,
     isReplacingSelected,
     isPlacingFurniture,
     canSaveJson,
@@ -44,6 +46,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     exitDecorMode,
     selectedFigureSizeCm,
     setSelectedFigureSizeCm,
+    setSelectedSizeCm,
     addFurniture,
     cancelFurniturePlacement,
     deleteSelectedObject,
@@ -52,8 +55,13 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     setSelectedElevationCm,
     saveEditedSceneJson,
     startReplaceSelectedObject,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   } = useRoomSceneEditor({
     isSkyview,
+    isPersonView,
     showMeasurements,
     wallColor,
     floorColor,
@@ -79,6 +87,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
     selectedItem?.sourceType === "door" ||
     selectedItem?.sourceType === "window";
   const canShowElevationControl = selectedItem?.sourceType === "object";
+  const canShowSizeControl = selectedItem?.sourceType === "object";
   const isOpeningSelected = selectedItem?.sourceType === "opening";
   // 꾸미기 전용 모델(editable_furniture 폴더 GLB)을 선택했을 때만
   // "서랍장 꾸미기" 버튼을 보여준다.
@@ -97,6 +106,10 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
 
   const handleFigureSizeChange = (event) => {
     setSelectedFigureSizeCm(Number(event.target.value));
+  };
+
+  const handleSizeChange = (event) => {
+    setSelectedSizeCm(Number(event.target.value));
   };
 
   const handleDeleteAsOpening = () => {
@@ -134,6 +147,21 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
   return (
     <div className="room-scene-editor-page">
       <div ref={containerRef} className="room-scene-editor-viewport" />
+
+      <div className="room-scene-editor-history-toolbar" aria-label="편집 이력">
+        <button type="button" onClick={undo} disabled={!canUndo} title="Undo">
+          되돌리기
+        </button>
+        <button type="button" onClick={redo} disabled={!canRedo} title="Redo">
+          다시 실행
+        </button>
+      </div>
+
+      {isPersonView && (
+        <div className="room-scene-editor-person-banner">
+          1인칭 시점 · WASD/방향키로 이동 · 드래그로 시야 회전
+        </div>
+      )}
 
       {/* 서랍장 꾸미기 모드 배너 — 완료 버튼으로 원래 시점에 복귀한다 */}
       {isDecorMode && (
@@ -176,7 +204,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
       )}
 
       {/* 선택된 오브젝트의 치수/회전/높이 정보 패널 */}
-      {canShowSelectionControls && (
+      {canShowSelectionControls && !isPersonView && (
         <aside className="room-scene-editor-info-drawer">
           <div className="room-scene-editor-info-title">
             {selectedItem.name || selectedItem.category || "Selected item"}
@@ -191,15 +219,15 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
           <dl className="room-scene-editor-info-list">
             <div>
               <dt>가로</dt>
-              <dd>{selectedItem.dimensionsCm?.width ?? "-"} cm</dd>
+              <dd>{(selectedItem.currentDimensionsCm || selectedItem.dimensionsCm)?.width ?? "-"} cm</dd>
             </div>
             <div>
               <dt>세로</dt>
-              <dd>{selectedItem.dimensionsCm?.depth ?? "-"} cm</dd>
+              <dd>{(selectedItem.currentDimensionsCm || selectedItem.dimensionsCm)?.depth ?? "-"} cm</dd>
             </div>
             <div>
               <dt>높이</dt>
-              <dd>{selectedItem.dimensionsCm?.height ?? "-"} cm</dd>
+              <dd>{(selectedItem.currentDimensionsCm || selectedItem.dimensionsCm)?.height ?? "-"} cm</dd>
             </div>
             <div>
               <dt>각도</dt>
@@ -216,7 +244,7 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
       )}
 
       {/* 회전/높이 슬라이더 + 교체·삭제 툴바 */}
-      {canShowSelectionControls && (
+      {canShowSelectionControls && !isPersonView && (
         <div className="room-scene-editor-selection-controls">
           {/* 개구부는 벽에 고정된 자리라서 자유 회전이 의미 없다(벽과 바로 충돌한다) */}
           {!isOpeningSelected && (
@@ -262,6 +290,25 @@ const RoomSceneEditorPage = forwardRef(function RoomSceneEditorPage(
                   value={selectedFigureSizeCm}
                   onChange={handleFigureSizeChange}
                   aria-label="Figure size"
+                />
+              </div>
+            </div>
+          )}
+          {canShowSizeControl && selectedSizeCm > 0 && (
+            <div className="room-scene-editor-elevation-panel">
+              <div className="room-scene-editor-elevation-value">
+                가구 크기 : {selectedSizeCm}cm
+              </div>
+              <div className="room-scene-editor-elevation-track-wrap">
+                <input
+                  type="range"
+                  className="room-scene-editor-elevation-slider"
+                  min="10"
+                  max="500"
+                  step="1"
+                  value={selectedSizeCm}
+                  onChange={handleSizeChange}
+                  aria-label="Furniture size"
                 />
               </div>
             </div>

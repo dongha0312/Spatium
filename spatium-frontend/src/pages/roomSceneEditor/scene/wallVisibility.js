@@ -309,12 +309,10 @@ export function updateViewFacingWalls(
   });
 }
 
-// 모든 벽 material의 색상을 지정한 색으로 바꾼다. color가 없으면(null) 아무것도 하지 않는다
-// — 즉 사용자가 벽 색을 따로 지정하지 않으면 스캔 당시의 원래 색/텍스처가 유지된다.
+// 모든 벽 material의 색상을 지정한 색으로 바꾼다. color가 없으면 처음 기록해둔
+// 스캔/저장 당시의 기본 색으로 되돌린다.
 export function applyRoomWallColor(wallColliders, color) {
-  if (!color) return;
-
-  const nextColor = new THREE.Color(color);
+  const nextColor = color ? new THREE.Color(color) : null;
   const wallObjects = new Set(wallColliders.map((wall) => wall.object));
 
   wallObjects.forEach((wallObject) => {
@@ -326,9 +324,12 @@ export function applyRoomWallColor(wallColliders, color) {
       materials.forEach((material) => {
         if (!material?.color) return;
 
-        material.color.copy(nextColor);
+        material.userData.spatiumDefaultWallColor ||= material.color.clone();
+        material.color.copy(
+          nextColor || material.userData.spatiumDefaultWallColor,
+        );
         if (material.userData.spatiumOriginalWallState) {
-          material.userData.spatiumOriginalWallState.color = nextColor.clone();
+          material.userData.spatiumOriginalWallState.color = material.color.clone();
         }
         material.needsUpdate = true;
       });

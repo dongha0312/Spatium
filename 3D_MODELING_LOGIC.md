@@ -3,7 +3,7 @@
 > 현재 코드 기준 3D 에디터 로직 정리  
 > 대상: `spatium-frontend/src/pages/3dEditor.js`, `spatium-frontend/src/pages/roomSceneEditor`
 
-Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하고, 사용자가 **가구를 배치/이동/회전/교체/삭제**한 뒤 다시 로드 가능한 metadata JSON으로 저장하는 구조다.
+Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하고, 사용자가 **가구를 배치/이동/회전/크기 조정/교체/삭제**한 뒤 다시 로드 가능한 metadata JSON으로 저장하는 구조다. 1인칭 시점과 Undo/Redo도 같은 편집 세션 상태를 기반으로 동작한다.
 
 핵심은 `useRoomSceneEditor.js` 훅이다. 이 훅이 방 모델, 벽 콜라이더, 가구 오브젝트, 포인터 입력, 충돌 판정, 저장 데이터를 하나의 편집 세션으로 연결한다. 선택 상태, 씬 설정 로딩, Skyview 전환, 벽/문/창문 표시, 치수 라벨, transform 계산은 별도 모듈과 훅으로 분리되어 있다.
 
@@ -48,9 +48,9 @@ Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하
 | 계층 | 파일 | 책임 |
 | --- | --- | --- |
 | 화면 | `spatium-frontend/src/pages/3dEditor.js` | 프로젝트/방 로딩, 카탈로그, 툴바, 저장 버튼 |
-| Three.js 래퍼 | `pages/roomSceneEditor/RoomSceneEditorPage.js` | 뷰포트, 선택 정보 패널, 회전 슬라이더, ref 액션 노출 |
+| Three.js 래퍼 | `pages/roomSceneEditor/RoomSceneEditorPage.js` | 뷰포트, 1인칭 시점 안내, 선택 정보 패널, 회전·크기 슬라이더, Undo/Redo 액션 |
 | 에디터 코어 | `hooks/useRoomSceneEditor.js` | 씬 생성, 입력 처리, 오브젝트 편집, 충돌, 저장 orchestration |
-| 선택 상태 훅 | `hooks/useSelectionState.js` | 선택 오브젝트 ref, 선택 정보, 회전값, replace mode, 삭제/초기화 가능 여부 |
+| 선택 상태 훅 | `hooks/useSelectionState.js` | 선택 오브젝트 ref, 선택 정보, 회전·크기값, replace mode, 삭제/초기화 가능 여부 |
 | 설정 로딩 훅 | `hooks/useSceneConfigStatus.js` | scene config 로딩, status/error 상태 관리 |
 | Skyview 훅 | `hooks/useSkyviewMode.js` | Skyview 카메라 전환, 기본 카메라 view 캡처/복구 |
 | transform 유틸 | `scene/editorTransforms.js` | base64 URL 변환, dimensions 정규화, transform 직렬화, 회전 계산, fallback reference 생성 |
@@ -99,7 +99,9 @@ Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하
 | 선택 가구 삭제 | `deleteSelectedObject()` |
 | 선택 가구 교체 | `startReplaceSelectedObject()` 후 카탈로그 클릭 |
 
-`addFurniture(catalogItem, customDimensions)`의 `customDimensions`(m 단위 `{x,y,z}`)는 새로 추가되는 가구에만 적용된다. 훅 내부에서 `{ ...catalogItem, dimensions: customDimensions }`로 치환한 뒤 기존 로직(`createFurnitureItemFromCatalog` → `normalizedDimensions`)을 그대로 타므로, 이미 배치된 가구의 크기를 바꾸는 기능은 아니다 — replace나 이동/회전과 달리 배치 후에는 크기를 다시 조정할 수 없다.
+`addFurniture(catalogItem, customDimensions)`의 `customDimensions`(m 단위 `{x,y,z}`)는 새로 추가되는 가구의 초기 치수다. 배치가 끝난 뒤에는 선택 패널의 `setSelectedSizeCm()`이 가장 긴 변을 기준으로 root scale을 균일하게 바꾸고, 하단 높이를 유지하며 벽 충돌을 다시 검사한다. 따라서 웹도 앱과 동일하게 “추가 시 치수 입력 + 배치 후 크기 조정” 흐름을 갖는다.
+
+`isPersonView`가 활성화되면 OrbitControls 대신 눈높이 카메라·WASD/방향키 이동·드래그 시야 회전을 사용한다. 편집 변경은 replayable metadata snapshot으로 Undo/Redo 이력에 기록한다.
 
 저장 시에는 metadata JSON이 `FormData`에 담겨 `POST /api/rooms/save`로 전송된다.
 
@@ -112,6 +114,7 @@ Spatium 3D 에디터는 **방 스캔 데이터**를 Three.js 씬으로 복원하
 ```js
 useRoomSceneEditor({
   isSkyview,
+  isPersonView,
   showMeasurements,
   wallColor,
   roomScene,

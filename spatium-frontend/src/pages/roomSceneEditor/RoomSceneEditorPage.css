@@ -10,6 +10,50 @@
   inset: 0;
 }
 
+.room-scene-editor-history-toolbar {
+  position: absolute;
+  /* 우측 상단의 도움말(?)·저장 상태 영역과 겹치지 않도록 한 줄 아래에 둔다. */
+  top: 68px;
+  right: 16px;
+  z-index: 9;
+  display: flex;
+  gap: 6px;
+}
+
+.room-scene-editor-history-toolbar button {
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 10px;
+  background: rgba(28, 28, 28, 0.92);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.room-scene-editor-history-toolbar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.room-scene-editor-person-banner {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  z-index: 9;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 7px;
+  background: rgba(28, 28, 28, 0.92);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
 .room-scene-editor-label-layer {
   position: absolute;
   inset: 0;

@@ -17,7 +17,11 @@ import {
   loadUsdRoomModel,
   saveMetadataJson,
 } from "../scene/sceneLoaders";
-import { disposeScene, frameObject } from "../scene/threeUtils";
+import {
+  disposeScene,
+  frameObject,
+  matrixFromColumns,
+} from "../scene/threeUtils";
 import {
   createReplayableMetadataJson,
   createRoomModelFromJson,
@@ -121,6 +125,7 @@ const FIGURE_MAX_DIMENSION = 0.35;
 // 크기 슬라이더 범위(cm, 최대 변 기준).
 const FIGURE_MIN_SIZE_CM = 5;
 const FIGURE_MAX_SIZE_CM = 50;
+const EDIT_HISTORY_LIMIT = 30;
 
 // 피규어의 현재 크기(최대 변, cm). localObb는 scale 1 기준이므로 root scale을 곱한다.
 function figureSizeCmForObject(object) {
@@ -131,6 +136,14 @@ function figureSizeCmForObject(object) {
 
   const baseMaxDimension = Math.max(halfSize.x, halfSize.y, halfSize.z) * 2;
   return Math.round(baseMaxDimension * object.scale.x * 100);
+}
+
+function objectSizeCmForObject(object) {
+  if (!object || object.userData.sourceType !== "object") return 0;
+  const halfSize = object.userData.localObb?.halfSize;
+  if (!halfSize) return 0;
+  const size = halfSize.clone().multiplyScalar(2).multiply(object.scale);
+  return Math.round(Math.max(size.x, size.y, size.z) * 100);
 }
 
 // 선택된 오브젝트가 꾸미기 모드를 시작할 수 있는 대상인지 판단한다 — 모델 GLB가
@@ -190,6 +203,7 @@ function debugConfigBoolean(name, defaultValue = false) {
 // 호출하는 구조다 — sceneActionsRef가 null이면(씬이 아직 준비 안 됐으면) 에러 처리한다.
 export function useRoomSceneEditor({
   isSkyview = false,
+  isPersonView = false,
   showMeasurements = false,
   wallColor = null,
   floorColor = null,
@@ -206,6 +220,7 @@ export function useRoomSceneEditor({
   const viewControllerRef = useRef(null);
   const sceneActionsRef = useRef(null);
   const showMeasurementsRef = useRef(showMeasurements);
+  const isPersonViewRef = useRef(isPersonView);
   const wallColorRef = useRef(wallColor);
   const floorColorRef = useRef(floorColor);
   const onSceneChangedRef = useRef(onSceneChanged);
@@ -223,6 +238,8 @@ export function useRoomSceneEditor({
     setSelectedElevationCmState,
     selectedMaxElevationCm,
     setSelectedMaxElevationCmState,
+    selectedSizeCm,
+    setSelectedSizeCmState,
     isReplacingSelected,
     setReplaceMode,
     canResetSelected,
@@ -248,9 +265,94 @@ export function useRoomSceneEditor({
   // 선택된 피규어의 현재 크기(최대 변, cm). 피규어가 아니면 0.
   const [selectedFigureSizeCm, setSelectedFigureSizeCmState] = useState(0);
 
+  // 씬 메타데이터 snapshot을 이용한 편집 이력. past의 마지막 항목은 현재 상태다.
+  const historyRef = useRef({ past: [], future: [] });
+  const historyApplyingRef = useRef(false);
+  const metadataOverrideRef = useRef(null);
+  const [historyVersion, setHistoryVersion] = useState(0);
+  const [sceneRevision, setSceneRevision] = useState(0);
+
+  function cloneSnapshot(snapshot) {
+    if (!snapshot) return null;
+    return JSON.parse(JSON.stringify(snapshot));
+  }
+
+  function snapshotSignature(snapshot) {
+    if (!snapshot) return "";
+    const normalized = cloneSnapshot(snapshot);
+    if (normalized?._spatiumExport) {
+      normalized._spatiumExport.exportedAt = "";
+    }
+    return JSON.stringify(normalized);
+  }
+
+  function recordHistory() {
+    if (historyApplyingRef.current) return;
+    const snapshot = sceneActionsRef.current?.captureSnapshot?.();
+    if (!snapshot) return;
+
+    const history = historyRef.current;
+    const last = history.past[history.past.length - 1];
+    if (last && snapshotSignature(last) === snapshotSignature(snapshot)) {
+      return;
+    }
+
+    history.past.push(cloneSnapshot(snapshot));
+    if (history.past.length > EDIT_HISTORY_LIMIT) history.past.shift();
+    history.future = [];
+    setHistoryVersion((value) => value + 1);
+  }
+
+  function applyHistorySnapshot(snapshot, previousSnapshot = null) {
+    if (!snapshot) return false;
+
+    // 이동·회전·높이·크기 조정처럼 씬 구조가 그대로인 변경은 전체 씬을
+    // 재생성하지 않고 기존 Object3D의 transform만 갱신한다.
+    if (
+      previousSnapshot &&
+      sceneActionsRef.current?.applySnapshotDiff?.(
+        snapshot,
+        previousSnapshot,
+      )
+    ) {
+      return true;
+    }
+
+    historyApplyingRef.current = true;
+    metadataOverrideRef.current = cloneSnapshot(snapshot);
+    setSceneRevision((value) => value + 1);
+    return true;
+  }
+
+  function undo() {
+    const history = historyRef.current;
+    if (history.past.length < 2) return false;
+    const current = history.past.pop();
+    history.future.push(current);
+    const target = history.past[history.past.length - 1];
+    setHistoryVersion((value) => value + 1);
+    return applyHistorySnapshot(target, current);
+  }
+
+  function redo() {
+    const history = historyRef.current;
+    if (!history.future.length) return false;
+    const target = history.future.pop();
+    const current = history.past[history.past.length - 1];
+    history.past.push(target);
+    setHistoryVersion((value) => value + 1);
+    return applyHistorySnapshot(target, current);
+  }
+
   function markSceneChanged() {
     onSceneChangedRef.current?.();
+    recordHistory();
   }
+
+  useEffect(() => {
+    isPersonViewRef.current = isPersonView;
+    sceneActionsRef.current?.setPersonView?.(isPersonView);
+  }, [isPersonView]);
 
   useEffect(() => {
     showMeasurementsRef.current = showMeasurements;
@@ -261,11 +363,15 @@ export function useRoomSceneEditor({
   useEffect(() => {
     wallColorRef.current = wallColor;
     sceneActionsRef.current?.setWallColor?.(wallColor);
+    if (sceneActionsRef.current) markSceneChanged();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wallColor]);
 
   useEffect(() => {
     floorColorRef.current = floorColor;
     sceneActionsRef.current?.setFloorColor?.(floorColor);
+    if (sceneActionsRef.current) markSceneChanged();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [floorColor]);
 
   useEffect(() => {
@@ -381,6 +487,16 @@ export function useRoomSceneEditor({
     return sceneActionsRef.current.setSelectedFigureSizeCm(sizeCm);
   }
 
+  // 배치된 일반 가구의 최대 변(cm)을 균일하게 조절한다.
+  function setSelectedSizeCm(sizeCm) {
+    if (!sceneActionsRef.current?.setSelectedSizeCm) {
+      setError("3D 편집기가 아직 준비되지 않았습니다.");
+      return false;
+    }
+
+    return sceneActionsRef.current.setSelectedSizeCm(sizeCm);
+  }
+
   // 진행 중인 "바닥 클릭 배치" 모드를 취소한다(ESC 키, 취소 버튼용).
   function cancelFurniturePlacement() {
     if (!sceneActionsRef.current) return false;
@@ -457,12 +573,14 @@ export function useRoomSceneEditor({
       return false;
     }
 
-    const replayableMetadata = createReplayableMetadataJson(
-      sourceMetadataRef.current,
-      editedItems,
-      roomModelRef.current,
-      floorColorRef.current,
-    );
+    const replayableMetadata =
+      sceneActionsRef.current?.captureSnapshot?.() ||
+      createReplayableMetadataJson(
+        sourceMetadataRef.current,
+        editedItems,
+        roomModelRef.current,
+        floorColorRef.current,
+      );
 
     setError("");
     setStatus("저장중...");
@@ -502,6 +620,7 @@ export function useRoomSceneEditor({
     let floorY = 0;
     let ceilingY = 0;
     let roomYawOffsetDegrees = 0;
+    let personBounds = null;
     const editableRoots = [];
     const referenceRoots = [];
     const pickTargets = [];
@@ -519,6 +638,14 @@ export function useRoomSceneEditor({
     // 벽/문/창문 구성이 바뀌면 다음 프레임에 벽 투명 처리(updateViewFacingWalls)를
     // 강제로 1회 실행하기 위한 플래그. 평소에는 카메라가 움직인 프레임에만 실행된다.
     let viewFacingWallsDirty = true;
+    const personKeys = new Set();
+    let personLookPointerId = null;
+    let personLastPointer = null;
+    let personYaw = 0;
+    let personPitch = -0.08;
+    let personSavedView = null;
+    let personSavedMaxDistance = null;
+    let previousAnimationTime = performance.now();
 
     function invalidateActiveColliders() {
       cachedActiveColliders = null;
@@ -549,11 +676,15 @@ export function useRoomSceneEditor({
     setSelectedRotationDegreesState(0);
     setSelectedElevationCmState(0);
     setSelectedMaxElevationCmState(0);
+    setSelectedSizeCmState(0);
     setEditedItems([]);
     setCollisionSummary({ hasCollision: false, with: [] });
     setDecorModeState({ active: false, targetName: "" });
     setSelectedFigureSizeCmState(0);
     setStatus("방 불러오는 중...");
+    if (!historyApplyingRef.current) {
+      historyRef.current = { past: [], future: [] };
+    }
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(sceneColor("sceneBackground"));
@@ -624,6 +755,8 @@ export function useRoomSceneEditor({
       roomYawOffsetDegrees: 0,
       transition: null,
       isInSkyview: false,
+      isPersonView: false,
+      personReturnView: null,
     };
 
     const furnitureLayer = new THREE.Group();
@@ -690,6 +823,168 @@ export function useRoomSceneEditor({
     // { target: 서랍장 root, supportMeshes: 표면 raycast 대상 mesh들,
     //   savedView: 복귀할 카메라 시점, savedLimits: 복귀할 OrbitControls 제한 }
     let decorContext = null;
+
+    // 1인칭 시점은 OrbitControls를 잠시 비활성화하고 카메라를 눈높이에 고정한다.
+    // 이동은 WASD/방향키, 시야 회전은 캔버스 드래그로 처리한다.
+    function applyPersonView(enabled) {
+      const controller = viewControllerRef.current;
+      if (!controller) return;
+
+      if (enabled) {
+        if (pendingPlacementRef.current) {
+          pendingPlacementRef.current = null;
+          setIsPlacingFurniture(false);
+          renderer.domElement.style.cursor = "default";
+        }
+        if (!controller.isPersonView) {
+          personSavedView =
+            controller.transition && controller.defaultView
+              ? controller.defaultView
+              : captureCameraView(camera, controls);
+          personSavedMaxDistance = controls.maxDistance;
+          controller.personReturnView = personSavedView;
+        }
+        const center =
+          personBounds?.getCenter(new THREE.Vector3()) ||
+          new THREE.Vector3(0, floorY, 0);
+        const size = personBounds?.getSize(new THREE.Vector3());
+        const offset = size ? Math.max(size.x, size.z) * 0.22 : 1.2;
+        const personPosition = new THREE.Vector3(
+          center.x,
+          floorY + 1.6,
+          center.z + offset,
+        );
+        personYaw = 0;
+        personPitch = -0.08;
+        const personDirection = new THREE.Vector3(0, 0, -1).applyEuler(
+          new THREE.Euler(personPitch, personYaw, 0, "YXZ"),
+        );
+        const personTarget = personPosition.clone().add(personDirection);
+        const personState = {
+          position: personPosition,
+          target: personTarget,
+          up: new THREE.Vector3(0, 1, 0),
+          near: 0.01,
+          far: Math.max(camera.far, 100),
+        };
+        controls.enableRotate = false;
+        controls.enablePan = false;
+        controls.enableZoom = false;
+        selectionLayer.visible = false;
+        roomMeasurementLayer.visible = false;
+        controller.isInSkyview = false;
+        controller.isPersonView = true;
+        startCameraTransition(
+          controller,
+          personState,
+          Math.max(controls.maxDistance, personPosition.distanceTo(personTarget)),
+          () => {
+            controls.enabled = false;
+            controls.enableRotate = false;
+            controls.enablePan = false;
+            controls.enableZoom = false;
+            camera.rotation.order = "YXZ";
+            camera.rotation.set(personPitch, personYaw, 0, "YXZ");
+          },
+        );
+        viewFacingWallsDirty = true;
+        return;
+      }
+
+      if (!controller.isPersonView) return;
+      controller.isPersonView = false;
+      selectionLayer.visible = true;
+      roomMeasurementLayer.visible = showMeasurementsRef.current;
+      // 1인칭 시점에서 Skyview를 바로 누른 경우에는 Skyview 훅이 이미 새
+      // transition을 시작했으므로, 여기서 일반 시점 복귀 transition으로 덮어쓰지 않는다.
+      if (isSkyviewRef.current) {
+        personSavedView = null;
+        personSavedMaxDistance = null;
+        controller.personReturnView = null;
+        viewFacingWallsDirty = true;
+        return;
+      }
+      if (personSavedView) {
+        const savedView = personSavedView;
+        const savedMaxDistance = personSavedMaxDistance;
+        controls.enableRotate = true;
+        controls.enablePan = true;
+        controls.enableZoom = true;
+        if (Number.isFinite(savedMaxDistance)) {
+          controls.maxDistance = savedMaxDistance;
+        }
+        startCameraTransition(
+          controller,
+          savedView,
+          savedMaxDistance,
+          () => {
+            controls.enableRotate = true;
+            controls.enablePan = true;
+            controls.enableZoom = true;
+            controls.enabled = true;
+          },
+        );
+      } else {
+        controls.enableRotate = true;
+        controls.enablePan = true;
+        controls.enableZoom = true;
+        controls.enabled = true;
+      }
+      personSavedView = null;
+      personSavedMaxDistance = null;
+      controller.personReturnView = null;
+      viewFacingWallsDirty = true;
+    }
+
+    function updatePersonMovement(deltaSeconds) {
+      const controller = viewControllerRef.current;
+      if (!controller?.isPersonView) return;
+
+      const forwardInput =
+        (personKeys.has("KeyW") || personKeys.has("ArrowUp") ? 1 : 0) -
+        (personKeys.has("KeyS") || personKeys.has("ArrowDown") ? 1 : 0);
+      const strafeInput =
+        (personKeys.has("KeyD") || personKeys.has("ArrowRight") ? 1 : 0) -
+        (personKeys.has("KeyA") || personKeys.has("ArrowLeft") ? 1 : 0);
+      if (!forwardInput && !strafeInput) return;
+
+      // 현재 카메라가 실제로 바라보는 방향을 기준으로 이동한다. yaw 변수만
+      // 사용하는 대신 camera.getWorldDirection()을 읽어, 전환/드래그 직후에도
+      // W는 화면 앞, D는 화면 오른쪽으로 일관되게 움직인다.
+      const forward = new THREE.Vector3();
+      camera.getWorldDirection(forward);
+      forward.y = 0;
+      if (forward.lengthSq() <= 1e-8) return;
+      forward.normalize();
+      const right = new THREE.Vector3()
+        .crossVectors(forward, upAxis)
+        .normalize();
+      const movement = forward
+        .multiplyScalar(forwardInput)
+        .add(right.multiplyScalar(strafeInput));
+      if (movement.lengthSq() > 1) movement.normalize();
+      const speed = personKeys.has("ShiftLeft") || personKeys.has("ShiftRight")
+        ? 4.2
+        : 2.2;
+      camera.position.addScaledVector(movement, speed * deltaSeconds);
+
+      const radius = 0.28;
+      if (personBounds && !personBounds.isEmpty()) {
+        camera.position.x = THREE.MathUtils.clamp(
+          camera.position.x,
+          personBounds.min.x + radius,
+          personBounds.max.x - radius,
+        );
+        camera.position.z = THREE.MathUtils.clamp(
+          camera.position.z,
+          personBounds.min.z + radius,
+          personBounds.max.z - radius,
+        );
+      }
+      camera.position.y = floorY + 1.6;
+      camera.rotation.order = "YXZ";
+      camera.rotation.set(personPitch, personYaw, 0, "YXZ");
+    }
 
     // 꾸미기 모드에서 클릭/드래그로 선택할 수 있는 대상 — 현재 서랍장에 올려진
     // 피규어들의 투명 hitBox 목록.
@@ -1277,6 +1572,7 @@ export function useRoomSceneEditor({
       const elevationBounds = elevationBoundsForObject(selectedObject);
       setSelectedElevationCmState(elevationBounds.currentCm);
       setSelectedMaxElevationCmState(elevationBounds.maxCm);
+      setSelectedSizeCmState(objectSizeCmForObject(selectedObject));
       setSelectedFigureSizeCmState(figureSizeCmForObject(selectedObject));
       setCollisionSummary({
         hasCollision: collisions.length > 0,
@@ -1352,6 +1648,14 @@ export function useRoomSceneEditor({
     // (pickTargets)을 검사해서 선택하고 이동 드래그를 시작한다.
     function handlePointerDown(event) {
       if (event.button !== 0) return;
+
+      if (isPersonViewRef.current) {
+        personLookPointerId = event.pointerId;
+        personLastPointer = { x: event.clientX, y: event.clientY };
+        renderer.domElement.setPointerCapture?.(event.pointerId);
+        stopSceneEvent(event);
+        return;
+      }
 
       setPointerRay(event);
 
@@ -1445,6 +1749,25 @@ export function useRoomSceneEditor({
     // pointermove 이벤트를 activeInteraction 갱신으로 라우팅한다.
     function handlePointerMove(event) {
       if (
+        isPersonViewRef.current &&
+        personLookPointerId === event.pointerId &&
+        personLastPointer
+      ) {
+        const deltaX = event.clientX - personLastPointer.x;
+        const deltaY = event.clientY - personLastPointer.y;
+        personLastPointer = { x: event.clientX, y: event.clientY };
+        personYaw -= deltaX * 0.004;
+        personPitch = THREE.MathUtils.clamp(
+          personPitch - deltaY * 0.003,
+          -1.25,
+          1.15,
+        );
+        camera.rotation.order = "YXZ";
+        camera.rotation.set(personPitch, personYaw, 0, "YXZ");
+        stopSceneEvent(event);
+        return;
+      }
+      if (
         !activeInteraction ||
         event.pointerId !== activeInteraction.pointerId
       ) {
@@ -1457,6 +1780,13 @@ export function useRoomSceneEditor({
 
     // pointerup/pointercancel 이벤트를 드래그 종료로 라우팅한다.
     function handlePointerEnd(event) {
+      if (isPersonViewRef.current && personLookPointerId === event.pointerId) {
+        personLookPointerId = null;
+        personLastPointer = null;
+        renderer.domElement.releasePointerCapture?.(event.pointerId);
+        stopSceneEvent(event);
+        return;
+      }
       if (
         !activeInteraction ||
         event.pointerId !== activeInteraction.pointerId
@@ -1486,6 +1816,45 @@ export function useRoomSceneEditor({
       true,
     );
 
+    function handlePersonKeyDown(event) {
+      if (event.ctrlKey || event.metaKey) {
+        if (event.code === "KeyZ") {
+          event.preventDefault();
+          if (event.shiftKey) redo();
+          else undo();
+          return;
+        }
+        if (event.code === "KeyY") {
+          event.preventDefault();
+          redo();
+          return;
+        }
+      }
+      if (!isPersonViewRef.current) return;
+      const allowed = new Set([
+        "KeyW",
+        "KeyA",
+        "KeyS",
+        "KeyD",
+        "ArrowUp",
+        "ArrowDown",
+        "ArrowLeft",
+        "ArrowRight",
+        "ShiftLeft",
+        "ShiftRight",
+      ]);
+      if (!allowed.has(event.code)) return;
+      event.preventDefault();
+      personKeys.add(event.code);
+    }
+
+    function handlePersonKeyUp(event) {
+      personKeys.delete(event.code);
+    }
+
+    window.addEventListener("keydown", handlePersonKeyDown);
+    window.addEventListener("keyup", handlePersonKeyUp);
+
     // 여기서부터 방 모델/metadata를 실제로 로드해서 씬을 채우는 비동기 파이프라인이 시작된다.
     // roomScene(API 응답)이 있으면 그 안의 base64 모델/metadata를 우선 쓰고, 없으면
     // scene config에 설정된 기본 URL로 fallback한다.
@@ -1499,8 +1868,10 @@ export function useRoomSceneEditor({
           return roomModelObjectUrl;
         })()
       : getRoomModelUrl();
-    const metadataPromise = roomScene?.metadata
-      ? Promise.resolve(roomScene.metadata)
+    const metadataPromise = metadataOverrideRef.current
+      ? Promise.resolve(metadataOverrideRef.current)
+      : roomScene?.metadata
+        ? Promise.resolve(roomScene.metadata)
       : fetchJson(getRoomMetadataUrl(), "room metadata");
 
     // 1) USD 방 모델 + metadata를 동시에 로드 → 2) 가구 카탈로그가 필요로 하는 모델
@@ -1549,6 +1920,7 @@ export function useRoomSceneEditor({
           viewControllerRef.current.roomYawOffsetDegrees = roomYawOffsetDegrees;
         }
         const roomBoundsBox = new THREE.Box3().setFromObject(roomModel);
+        personBounds = roomBoundsBox.clone();
         const roomCenter = roomBoundsBox.getCenter(new THREE.Vector3());
         // roomMeasurements.center.y는 "가장 넓은 바닥 면적 그룹"의 높이라서, 방 모델에
         // 섞여 들어간 작은 오염 mesh 하나가 bounding box 전체를 끌어내리는 것에 영향받지
@@ -1742,9 +2114,102 @@ export function useRoomSceneEditor({
           return objectIndex;
         }
 
+        // React state 업데이트 타이밍과 무관하게 현재 Three.js 씬을 즉시 snapshot으로
+        // 만든다. Undo/Redo와 서버 저장이 같은 직렬화 경로를 사용한다.
+        function captureCurrentSnapshot() {
+          const currentItems = [...editableRoots, ...referenceRoots].map(
+            objectToEditableJson,
+          );
+          return createReplayableMetadataJson(
+            sourceMetadataRef.current,
+            currentItems,
+            roomModelRef.current,
+            floorColorRef.current,
+          );
+        }
+
+        function applySnapshotDiff(targetSnapshot, previousSnapshot) {
+          const targetItems =
+            targetSnapshot?._spatiumExport?.editedItems || [];
+          const previousItems =
+            previousSnapshot?._spatiumExport?.editedItems || [];
+          if (!targetItems.length || targetItems.length !== previousItems.length) {
+            return false;
+          }
+
+          // 객체 개수·모델·치수·decor 구성이 달라졌다면 기존 노드를 재사용할 수
+          // 없으므로 전체 metadata 복원 경로를 사용한다.
+          const structuralPart = (item) => ({
+            id: item.id,
+            sourceType: item.sourceType,
+            index: item.index,
+            category: item.category,
+            path: item.path,
+            modelUrl: item.modelUrl,
+            dimensions: item.dimensions,
+            decorations: item.decorations || [],
+          });
+          const targetById = new Map(targetItems.map((item) => [item.id, item]));
+          const previousById = new Map(
+            previousItems.map((item) => [item.id, item]),
+          );
+          if (targetById.size !== previousById.size) return false;
+
+          for (const [id, targetItem] of targetById) {
+            const previousItem = previousById.get(id);
+            if (!previousItem) return false;
+            if (
+              JSON.stringify(structuralPart(targetItem)) !==
+              JSON.stringify(structuralPart(previousItem))
+            ) {
+              return false;
+            }
+            if (!targetItem.transform?.columns) return false;
+          }
+
+          // 방 mesh나 바닥 색상이 바뀐 경우에는 transform만 덮어쓸 수 없다.
+          if (
+            JSON.stringify(targetSnapshot._spatiumRoom || null) !==
+              JSON.stringify(previousSnapshot._spatiumRoom || null) ||
+            targetSnapshot._spatiumFloorColor !==
+              previousSnapshot._spatiumFloorColor
+          ) {
+            return false;
+          }
+
+          const sceneObjects = new Map(
+            [...editableRoots, ...referenceRoots].map((object) => [
+              `${object.userData.sourceType}-${object.userData.sourceIndex}`,
+              object,
+            ]),
+          );
+          if (sceneObjects.size !== targetById.size) return false;
+
+          for (const [id, targetItem] of targetById) {
+            const object = sceneObjects.get(id);
+            if (!object) return false;
+            matrixFromColumns(targetItem.transform.columns).decompose(
+              object.position,
+              object.quaternion,
+              object.scale,
+            );
+            object.updateWorldMatrix(true, false);
+            rememberValidTransform(object);
+          }
+
+          sourceMetadataRef.current = cloneSnapshot(targetSnapshot);
+          syncSceneState(selectedObjectRef.current);
+          return true;
+        }
+
         // 이 훅 바깥쪽 wrapper 함수들(addFurniture, rotateSelectedObject 등)이 호출하는
         // 실제 구현체 모음. 씬이 준비된 이후에만 존재하므로, wrapper들은 항상 null 체크한다.
         sceneActionsRef.current = {
+          captureSnapshot: captureCurrentSnapshot,
+          applySnapshotDiff,
+          setPersonView: (enabled) => {
+            applyPersonView(Boolean(enabled));
+          },
           // 카탈로그에서 새 가구를 추가하는 "바닥 클릭 배치" 모드를 시작한다. 문/창문
           // 카테고리는 거부한다(교체로만 가능). 실제 배치는 resolvePendingPlacement에서
           // 이뤄진다.
@@ -2022,6 +2487,54 @@ export function useRoomSceneEditor({
               syncSceneState(object);
               return false;
             }
+            rememberValidTransform(object);
+            syncSceneState(object);
+            markSceneChanged();
+            return true;
+          },
+          // 배치 후 일반 가구의 최대 변(cm)을 균일하게 조절한다. 바닥/선반에 놓인
+          // 상태를 유지하기 위해 하단 높이를 먼저 기억하고 새 스케일에 맞춰 Y를 보정한다.
+          setSelectedSizeCm: (sizeCm) => {
+            const object = selectedObjectRef.current;
+            if (!canTransformObject(object) || object.userData.isDecorFigure) {
+              return false;
+            }
+
+            const halfSize = object.userData.localObb?.halfSize;
+            if (!halfSize) return false;
+            const currentSize = halfSize
+              .clone()
+              .multiplyScalar(2)
+              .multiply(object.scale);
+            const currentMax = Math.max(
+              currentSize.x,
+              currentSize.y,
+              currentSize.z,
+            );
+            if (!Number.isFinite(currentMax) || currentMax <= 0) return false;
+
+            const clampedCm = THREE.MathUtils.clamp(
+              Number(sizeCm) || 0,
+              10,
+              500,
+            );
+            const previousScale = object.scale.clone();
+            const previousPosition = object.position.clone();
+            const bottomY =
+              object.position.y - halfSize.y * object.scale.y;
+            const ratio = clampedCm / 100 / currentMax;
+            object.scale.multiplyScalar(ratio);
+            object.position.y = bottomY + halfSize.y * object.scale.y;
+            object.updateWorldMatrix(true, false);
+
+            if (hasWallCollision(object, activeColliders())) {
+              object.scale.copy(previousScale);
+              object.position.copy(previousPosition);
+              object.updateWorldMatrix(true, false);
+              syncSceneState(object);
+              return false;
+            }
+
             rememberValidTransform(object);
             syncSceneState(object);
             markSceneChanged();
@@ -2432,7 +2945,28 @@ export function useRoomSceneEditor({
           applySkyviewMode(viewControllerRef.current, isSkyviewRef.current, {
             instant: true,
           });
+          if (isPersonViewRef.current) {
+            applyPersonView(true);
+          }
         }
+
+        const initialSnapshot = captureCurrentSnapshot();
+        if (historyApplyingRef.current) {
+          historyApplyingRef.current = false;
+          metadataOverrideRef.current = null;
+          if (!historyRef.current.past.length) {
+            historyRef.current = {
+              past: [cloneSnapshot(initialSnapshot)],
+              future: [],
+            };
+          }
+        } else {
+          historyRef.current = {
+            past: [cloneSnapshot(initialSnapshot)],
+            future: [],
+          };
+        }
+        setHistoryVersion((value) => value + 1);
         setStatus("");
       })
       .catch((caughtError) => {
@@ -2459,7 +2993,16 @@ export function useRoomSceneEditor({
 
     function animate() {
       frameId = requestAnimationFrame(animate);
-      if (!updateCameraTransition(viewControllerRef.current)) {
+      const now = performance.now();
+      const deltaSeconds = Math.min((now - previousAnimationTime) / 1000, 0.05);
+      previousAnimationTime = now;
+      const isCameraTransitioning = updateCameraTransition(
+        viewControllerRef.current,
+      );
+      if (!isCameraTransitioning && viewControllerRef.current?.isPersonView) {
+        updatePersonMovement(deltaSeconds);
+      }
+      if (!isCameraTransitioning && !viewControllerRef.current?.isPersonView) {
         controls.update();
       }
       // 벽 투명 처리는 카메라 시점의 함수이므로, 카메라가 움직였거나(회전/이동/전환 애니메이션)
@@ -2500,6 +3043,8 @@ export function useRoomSceneEditor({
       isMounted = false;
       cancelAnimationFrame(frameId);
       window.removeEventListener("resize", resize);
+      window.removeEventListener("keydown", handlePersonKeyDown);
+      window.removeEventListener("keyup", handlePersonKeyUp);
       renderer.domElement.removeEventListener(
         "pointerdown",
         handlePointerDown,
@@ -2539,8 +3084,12 @@ export function useRoomSceneEditor({
         URL.revokeObjectURL(roomModelObjectUrl);
       }
     };
+  // The scene effect intentionally owns a stable imperative Three.js session;
+  // refs carry the latest callbacks without recreating the scene per render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     isSceneConfigReady,
+    sceneRevision,
     isSkyviewRef,
     roomScene,
     selectedObjectRef,
@@ -2551,6 +3100,7 @@ export function useRoomSceneEditor({
     setSelectedRotationDegreesState,
     setSelectedElevationCmState,
     setSelectedMaxElevationCmState,
+    setSelectedSizeCmState,
     setStatus,
   ]);
 
@@ -2561,6 +3111,7 @@ export function useRoomSceneEditor({
     selectedRotationDegrees,
     selectedElevationCm,
     selectedMaxElevationCm,
+    selectedSizeCm,
     editedItems,
     isReplacingSelected,
     isPlacingFurniture,
@@ -2574,6 +3125,7 @@ export function useRoomSceneEditor({
     exitDecorMode,
     selectedFigureSizeCm,
     setSelectedFigureSizeCm,
+    setSelectedSizeCm,
     addFurniture,
     cancelFurniturePlacement,
     deleteSelectedObject,
@@ -2584,5 +3136,10 @@ export function useRoomSceneEditor({
     resetSelectedObject,
     saveEditedSceneJson,
     startReplaceSelectedObject,
+    undo,
+    redo,
+    canUndo: historyRef.current.past.length > 1,
+    canRedo: historyRef.current.future.length > 0,
+    historyVersion,
   };
 }

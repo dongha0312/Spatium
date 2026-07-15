@@ -11,6 +11,7 @@ export function useSelectionState() {
   const [selectedElevationCm, setSelectedElevationCmState] = useState(0);
   const [selectedMaxElevationCm, setSelectedMaxElevationCmState] =
     useState(0);
+  const [selectedSizeCm, setSelectedSizeCmState] = useState(0);
   const [isReplacingSelected, setReplacingSelected] = useState(false);
 
   // 교체 모드 on/off. ref는 pointer 이벤트 핸들러 안에서 즉시 참조하기 위함이고,
@@ -31,6 +32,8 @@ export function useSelectionState() {
     setSelectedElevationCmState,
     selectedMaxElevationCm,
     setSelectedMaxElevationCmState,
+    selectedSizeCm,
+    setSelectedSizeCmState,
     isReplacingSelected,
     setReplaceMode,
     canResetSelected: selectedItem?.sourceType === "object",
