@@ -3209,6 +3209,7 @@ export function useRoomSceneEditor({
     // 둬서 첫 프레임엔 반드시 실행되게 한다.
     const lastCameraPosition = new THREE.Vector3(Infinity, Infinity, Infinity);
     const lastCameraQuaternion = new THREE.Quaternion();
+    let lastCameraAngleText = "";
 
     function animate() {
       frameId = requestAnimationFrame(animate);
@@ -3234,9 +3235,13 @@ export function useRoomSceneEditor({
         lastCameraQuaternion.copy(camera.quaternion);
         viewFacingWallsDirty = false;
         updateViewFacingWalls(wallColliders, camera, referenceRoots);
-      }
-      if (cameraAngleBadge) {
-        cameraAngleBadge.textContent = formatCameraViewAngle(camera);
+        if (cameraAngleBadge) {
+          const nextCameraAngleText = formatCameraViewAngle(camera);
+          if (nextCameraAngleText !== lastCameraAngleText) {
+            cameraAngleBadge.textContent = nextCameraAngleText;
+            lastCameraAngleText = nextCameraAngleText;
+          }
+        }
       }
       renderer.render(scene, camera);
       labelRenderer.render(scene, camera);
