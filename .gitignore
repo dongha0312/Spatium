@@ -70,3 +70,5 @@ fastlane/test_output
 .claude/
 
 PROJECT_OVERVIEW.md
+
+outputs/

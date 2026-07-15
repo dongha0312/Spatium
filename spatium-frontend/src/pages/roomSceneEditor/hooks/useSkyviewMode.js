@@ -67,7 +67,10 @@ export function applySkyviewMode(viewController, isSkyview, options = {}) {
     // 애니메이션 도중 빠르게 두 번 토글했을 때 "돌아갈 원래 시점"이 전환 중간의 어중간한
     // 자세로 덮어써진다.
     if (!viewController.isInSkyview) {
-      viewController.defaultView = captureCameraView(camera, controls);
+      viewController.defaultView =
+        viewController.isPersonView && viewController.personReturnView
+          ? viewController.personReturnView
+          : captureCameraView(camera, controls);
     }
     viewController.isInSkyview = true;
     const skyState = applySkyviewCamera(viewController);

@@ -56,6 +56,7 @@ function ThreeDEditor() {
   const [activeCategory, setActiveCategory] = useState(null);
   const [catalogError, setCatalogError] = useState("");
   const [isSkyview, setIsSkyview] = useState(false);
+  const [isPersonView, setIsPersonView] = useState(false);
   const [wallColor, setWallColor] = useState(null);
   const [wallColorPickerOpen, setWallColorPickerOpen] = useState(false);
   const [floorColor, setFloorColor] = useState(null);
@@ -471,7 +472,15 @@ function ThreeDEditor() {
   };
 
   const toggleSkyview = () => {
+    setIsPersonView(false);
     setIsSkyview((prev) => !prev);
+    setWallColorPickerOpen(false);
+    setFloorColorPickerOpen(false);
+  };
+
+  const togglePersonView = () => {
+    setIsSkyview(false);
+    setIsPersonView((prev) => !prev);
     setWallColorPickerOpen(false);
     setFloorColorPickerOpen(false);
   };
@@ -484,6 +493,7 @@ function ThreeDEditor() {
   const handleSelectWallColor = (color) => {
     setWallColor(color);
     setWallColorPickerOpen(false);
+    handleSceneChanged();
   };
 
   const toggleFloorColorPicker = () => {
@@ -746,6 +756,7 @@ function ThreeDEditor() {
                 <RoomSceneEditorPage
                   ref={editorRef}
                   isSkyview={isSkyview}
+                  isPersonView={isPersonView}
                   showMeasurements={showMeasurements}
                   wallColor={wallColor}
                   floorColor={floorColor}
@@ -788,6 +799,10 @@ function ThreeDEditor() {
               <div className="ed-canvas-badge ed-canvas-badge-sky">Skyview</div>
             )}
 
+            {isPersonView && (
+              <div className="ed-canvas-badge ed-canvas-badge-sky">1인칭 시점</div>
+            )}
+
             {showMeasurements && (
               <div className="ed-canvas-badge ed-canvas-badge-measure">
                 측정모드 On
@@ -795,6 +810,32 @@ function ThreeDEditor() {
             )}
 
             <div className="ed-viewbar">
+              <button
+                type="button"
+                className={`ed-viewbar-btn ed-viewbar-person${isPersonView ? " ed-viewbar-active" : ""}`}
+                onClick={togglePersonView}
+                disabled={isDecorMode}
+                title={
+                  isDecorMode
+                    ? "서랍장 꾸미기 중에는 1인칭 시점을 사용할 수 없습니다"
+                    : "1인칭 시점으로 방을 둘러봅니다"
+                }
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="7" r="3" />
+                  <path d="M5 21c.6-4 3-6 7-6s6.4 2 7 6" />
+                </svg>
+                1인칭 시점
+              </button>
               <button
                 type="button"
                 className={`ed-viewbar-btn${isSkyview ? " ed-viewbar-active" : ""}`}
@@ -854,6 +895,17 @@ function ThreeDEditor() {
 
                 {wallColorPickerOpen && (
                   <div className="ed-wallcolor-popover">
+                    <button
+                      type="button"
+                      className={`ed-wallcolor-swatch ed-wallcolor-default${
+                        wallColor === null
+                          ? " ed-wallcolor-swatch-active"
+                          : ""
+                      }`}
+                      onClick={() => handleSelectWallColor(null)}
+                      aria-label="기본 벽 색상"
+                      title="기본 색상으로 되돌리기"
+                    />
                     {WALL_COLORS.map((color) => (
                       <button
                         key={color}
@@ -899,6 +951,17 @@ function ThreeDEditor() {
 
                 {floorColorPickerOpen && (
                   <div className="ed-wallcolor-popover">
+                    <button
+                      type="button"
+                      className={`ed-wallcolor-swatch ed-wallcolor-default${
+                        floorColor === null
+                          ? " ed-wallcolor-swatch-active"
+                          : ""
+                      }`}
+                      onClick={() => handleSelectFloorColor(null)}
+                      aria-label="기본 바닥 색상"
+                      title="기본 색상으로 되돌리기"
+                    />
                     {FLOOR_COLORS.map((color) => (
                       <button
                         key={color}

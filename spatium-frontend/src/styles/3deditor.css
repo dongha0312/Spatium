@@ -1069,6 +1069,13 @@
   color: #fff;
 }
 
+/* 1인칭 시점 버튼을 클릭한 뒤 브라우저가 남기는 갈색 focus outline 제거 */
+.ed-viewbar-person:focus,
+.ed-viewbar-person:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 .ed-viewbar-divider {
   width: 1px;
   height: 22px;
@@ -1104,6 +1111,10 @@
   border: 1px solid rgba(0, 0, 0, .08);
   cursor: pointer;
   padding: 0;
+}
+
+.ed-wallcolor-default {
+  background: linear-gradient(135deg, #ffffff 0 50%, #ece7e1 50% 100%);
 }
 
 .ed-wallcolor-swatch.ed-wallcolor-swatch-active {

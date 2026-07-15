@@ -131,8 +131,15 @@ function cloneRenderableMaterials(object) {
     if (!child.material) return;
 
     child.material = Array.isArray(child.material)
-      ? child.material.map((material) => material.clone())
+      ? child.material.map((material) => {
+          const cloned = material.clone();
+          cloned.userData.spatiumSharedTextures = true;
+          return cloned;
+        })
       : child.material.clone();
+    if (!Array.isArray(child.material)) {
+      child.material.userData.spatiumSharedTextures = true;
+    }
   });
 }
 
@@ -309,6 +316,7 @@ export function createEditableFurnitureModel(modelTemplate, item, index) {
   );
   const root = new THREE.Group();
   const model = modelTemplate.clone(true);
+  cloneRenderableMaterials(model);
   const transform = decomposeRoomTransform(item);
 
   root.name = `${category}-${index + 1}`;

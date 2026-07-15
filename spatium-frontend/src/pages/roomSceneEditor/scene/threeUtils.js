@@ -33,13 +33,17 @@ export function createLabel(text, className = "furniture-label") {
 }
 
 // material에 딸린 텍스처 등 하위 리소스까지 전부 dispose한다.
-export function disposeMaterial(material) {
+export function disposeMaterial(material, disposedTextures = null) {
+  const ownsTextures = !material.userData?.spatiumSharedTextures;
   Object.values(material).forEach((value) => {
     if (
+      ownsTextures &&
       value &&
       typeof value === "object" &&
       typeof value.dispose === "function"
     ) {
+      if (disposedTextures?.has(value)) return;
+      disposedTextures?.add(value);
       value.dispose();
     }
   });
@@ -49,14 +53,25 @@ export function disposeMaterial(material) {
 // object3D 트리를 순회하며 geometry/material(및 CSS2D label element)을 전부 정리한다.
 // 오브젝트 교체/삭제 시 GPU 메모리 누수를 막기 위해 반드시 호출해야 한다.
 export function disposeScene(scene) {
+  const disposedGeometries = new Set();
+  const disposedMaterials = new Set();
+  const disposedTextures = new Set();
   scene.traverse((object) => {
     object.element?.remove?.();
-    if (object.geometry) object.geometry.dispose();
+    if (object.geometry && !disposedGeometries.has(object.geometry)) {
+      disposedGeometries.add(object.geometry);
+      object.geometry.dispose();
+    }
     if (object.material) {
       if (Array.isArray(object.material)) {
-        object.material.forEach(disposeMaterial);
-      } else {
-        disposeMaterial(object.material);
+        object.material.forEach((material) => {
+          if (disposedMaterials.has(material)) return;
+          disposedMaterials.add(material);
+          disposeMaterial(material, disposedTextures);
+        });
+      } else if (!disposedMaterials.has(object.material)) {
+        disposedMaterials.add(object.material);
+        disposeMaterial(object.material, disposedTextures);
       }
     }
   });

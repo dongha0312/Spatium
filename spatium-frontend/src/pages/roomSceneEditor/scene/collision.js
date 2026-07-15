@@ -34,6 +34,7 @@ const solidOffset = new THREE.Vector3();
 const sweepAabb = new THREE.Box3();
 const sweepShiftedMin = new THREE.Vector3();
 const sweepShiftedMax = new THREE.Vector3();
+const collisionObjectAabb = new THREE.Box3();
 
 // OBB를 감싸는 월드 축 정렬 AABB를 구한다. Matrix3는 column-major이므로
 // elements[j*3+i]가 j번째 기저축의 i번째 성분이다.
@@ -124,7 +125,12 @@ export function canTransformObject(object) {
 // 월드 좌표계 OBB로 만든다. 충돌 판정은 전부 이 world OBB 기준으로 이뤄진다.
 export function worldObbForObject(object) {
   object.updateWorldMatrix(true, false);
-  return object.userData.localObb.clone().applyMatrix4(object.matrixWorld);
+  const localObb = object.userData.localObb;
+  if (!localObb) return null;
+
+  const worldObb =
+    object.userData.worldObb || (object.userData.worldObb = localObb.clone());
+  return worldObb.copy(localObb).applyMatrix4(object.matrixWorld);
 }
 
 // 문/창문을 가구 이동 시 부딪히는 고정 장애물로 취급하기 위한 콜라이더.
@@ -190,7 +196,20 @@ export function objectIntersectsWalls(object, wallColliders) {
   if (!object || !wallColliders.length) return false;
 
   const objectObb = worldObbForObject(object);
-  return wallColliders.some((wall) => wallBlocksObjectObb(objectObb, wall));
+  if (!objectObb) return false;
+
+  obbWorldAabb(objectObb, collisionObjectAabb).expandByScalar(
+    Math.max(
+      wallConfigNumber("collisionEpsilon"),
+      wallConfigNumber("boundaryEpsilon"),
+      wallConfigNumber("boundarySpanPadding"),
+    ),
+  );
+  return wallColliders.some(
+    (wall) =>
+      collisionObjectAabb.intersectsBox(colliderWorldAabb(wall)) &&
+      wallBlocksObjectObb(objectObb, wall),
+  );
 }
 
 // objectIntersectsWalls와 같은 판정이지만, 막고 있는 벽 콜라이더 목록 전체를 반환한다.
@@ -198,7 +217,20 @@ export function getIntersectingWalls(object, wallColliders) {
   if (!object || !wallColliders.length) return [];
 
   const objectObb = worldObbForObject(object);
-  return wallColliders.filter((wall) => wallBlocksObjectObb(objectObb, wall));
+  if (!objectObb) return [];
+
+  obbWorldAabb(objectObb, collisionObjectAabb).expandByScalar(
+    Math.max(
+      wallConfigNumber("collisionEpsilon"),
+      wallConfigNumber("boundaryEpsilon"),
+      wallConfigNumber("boundarySpanPadding"),
+    ),
+  );
+  return wallColliders.filter(
+    (wall) =>
+      collisionObjectAabb.intersectsBox(colliderWorldAabb(wall)) &&
+      wallBlocksObjectObb(objectObb, wall),
+  );
 }
 
 // OBB를 주어진 축(axis)에 투영했을 때의 "반지름"(중심에서 투영된 경계까지 거리)을 구한다.
@@ -905,13 +937,18 @@ export function refreshCollisionState(
   editableObjects,
   selectedObject,
   wallColliders = [],
+  changedObjects = null,
 ) {
-  editableObjects.forEach((object) => {
+  const objectsToRefresh = changedObjects
+    ? changedObjects.filter((object) => editableObjects.includes(object))
+    : editableObjects;
+
+  objectsToRefresh.forEach((object) => {
     object.userData.collisions = [];
     object.userData.intersectingWallColliders = [];
   });
 
-  editableObjects.forEach((object) => {
+  objectsToRefresh.forEach((object) => {
     if (!shouldCheckFurnitureCollision(object)) return;
 
     const intersectingWalls = getIntersectingWalls(object, wallColliders);
@@ -928,7 +965,7 @@ export function refreshCollisionState(
     }
   });
 
-  editableObjects.forEach((object) =>
+  objectsToRefresh.forEach((object) =>
     setFurnitureVisualState(object, selectedObject),
   );
   return selectedObject?.userData.collisions || [];
