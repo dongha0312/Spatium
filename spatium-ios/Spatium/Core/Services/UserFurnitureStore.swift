@@ -313,7 +313,8 @@ final class UserFurnitureStore: ObservableObject {
             )
         }
         if !defaults.isEmpty {
-            let remoteByID = Dictionary(uniqueKeysWithValues: defaults.map { ($0.id, $0) })
+            // 서버가 중복 ID를 내려줘도 크래시하지 않도록 첫 항목 유지로 병합한다.
+            let remoteByID = Dictionary(defaults.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let knownIDs = Set(FurnitureCatalog.items.map(\.id))
             builtInItems = FurnitureCatalog.items.map { remoteByID[$0.id] ?? $0 }
                 + defaults.filter { !knownIDs.contains($0.id) }

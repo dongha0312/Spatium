@@ -7,10 +7,22 @@ struct AuthService {
     /// 개편된 백엔드는 refreshToken을 httpOnly 쿠키(path=/api/auth)로만 내려줍니다.
     /// URLSession이 자동 저장한 쿠키에서 값을 꺼내 키체인에 보관해, 기존 세션 로직을 그대로 유지합니다.
     /// (재발급 API는 "쿠키 우선, 없으면 바디" 폴백을 지원하므로 어느 쪽이든 동작)
-    private func resolveRefreshToken(from data: LoginResponseData) -> String {
+    /// 바디에도 쿠키에도 기존 저장분에도 refreshToken이 없으면 nil을 돌려준다.
+    /// (빈 문자열을 키체인에 저장하면 다음 재발급이 빈 토큰으로 나가 조용히 로그아웃된다)
+    private func resolveRefreshToken(from data: LoginResponseData) -> String? {
         if let token = data.refreshToken, !token.isEmpty { return token }
         if let cookieToken = Self.refreshTokenCookieValue() { return cookieToken }
-        return tokenStore.refreshToken ?? ""
+        if let stored = tokenStore.refreshToken, !stored.isEmpty { return stored }
+        return nil
+    }
+
+    /// 로그인/재발급 응답에서 토큰 쌍을 확정한다. refreshToken을 어디서도 찾지 못하면
+    /// 불완전한 세션을 저장하는 대신 디코딩 실패로 처리한다.
+    private func makeTokens(from data: LoginResponseData) throws -> AuthTokens {
+        guard let refreshToken = resolveRefreshToken(from: data) else {
+            throw SpatiumAPIError.decoding(URLError(.cannotParseResponse))
+        }
+        return AuthTokens(accessToken: data.accessToken, refreshToken: refreshToken)
     }
 
     private static func refreshTokenCookieValue() -> String? {
@@ -29,7 +41,7 @@ struct AuthService {
             method: "POST", path: "/api/auth/sessions", body: body, requiresAuth: false
         )
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
-        tokenStore.save(AuthTokens(accessToken: data.accessToken, refreshToken: resolveRefreshToken(from: data)))
+        tokenStore.save(try makeTokens(from: data))
         return data.user
     }
 
@@ -86,7 +98,7 @@ struct AuthService {
             method: "POST", path: "/api/auth/social-sessions", body: request, requiresAuth: false
         )
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
-        tokenStore.save(AuthTokens(accessToken: data.accessToken, refreshToken: resolveRefreshToken(from: data)))
+        tokenStore.save(try makeTokens(from: data))
         return data.user
     }
 
@@ -122,7 +134,7 @@ struct AuthService {
         )
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
         // rotation된 새 refreshToken도 쿠키로만 오므로 쿠키에서 갱신값을 읽는다.
-        let tokens = AuthTokens(accessToken: data.accessToken, refreshToken: resolveRefreshToken(from: data))
+        let tokens = try makeTokens(from: data)
         tokenStore.save(tokens)
         return tokens
     }

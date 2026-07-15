@@ -50,15 +50,32 @@ struct ProjectService {
 
     // MARK: - 프로젝트
 
+    /// 페이지당 항목 수와, 폭주 방지를 위한 최대 페이지 수(50 × 20 = 1,000개).
+    private static let pageSize = 50
+    private static let maxPages = 20
+
+    /// hasNext를 따라 전 페이지를 수집합니다. (50개 고정 조회는 51번째 항목부터 조용히 사라졌음)
+    private func fetchAllPages<Item: Decodable>(path: String) async throws -> [Item] {
+        var items: [Item] = []
+        var page = 0
+        while true {
+            let envelope: SpatiumAPIEnvelope<PageResponseData<Item>> = try await client.send(
+                method: "GET",
+                path: path,
+                query: ["page": "\(page)", "size": "\(Self.pageSize)"]
+            )
+            guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
+            items += data.items
+            guard data.hasNext == true, !data.items.isEmpty, page < Self.maxPages - 1 else { break }
+            page += 1
+        }
+        return items
+    }
+
     /// GET /api/projects?page=&size= (JWT). 인증 토큰에서 memId를 추출합니다.
     func fetchProjects() async throws -> [SpatiumProject] {
-        let envelope: SpatiumAPIEnvelope<PageResponseData<ProjectListItem>> = try await client.send(
-            method: "GET",
-            path: "/api/projects",
-            query: ["page": "0", "size": "50"]
-        )
-        guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
-        return data.items.map { item in
+        let items: [ProjectListItem] = try await fetchAllPages(path: "/api/projects")
+        return items.map { item in
             SpatiumProject(
                 id: item.projectId,
                 name: item.projectName,
@@ -101,13 +118,8 @@ struct ProjectService {
 
     /// GET /api/projects/{projectId}/rooms?page=&size= (JWT).
     func fetchRooms(projectID: String) async throws -> [RoomRecord] {
-        let envelope: SpatiumAPIEnvelope<PageResponseData<RoomSummaryItem>> = try await client.send(
-            method: "GET",
-            path: "/api/projects/\(projectID)/rooms",
-            query: ["page": "0", "size": "50"]
-        )
-        guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
-        return data.items.map { item in
+        let items: [RoomSummaryItem] = try await fetchAllPages(path: "/api/projects/\(projectID)/rooms")
+        return items.map { item in
             RoomRecord(
                 id: item.roomId,
                 roomType: item.roomName,
@@ -249,85 +261,21 @@ struct ProjectService {
         init(from decoder: Decoder) throws {}
     }
 
-    /// multipart 요청도 JSON 요청과 동일하게 액세스 토큰 만료(401) 시
-    /// 재발급 후 한 번 재시도합니다. (에디터 저장/스캔 업로드가 이 경로를 씁니다)
+    /// multipart 전송은 SpatiumAPIClient로 일원화한다. 401 재발급 재시도, 120초 업로드
+    /// 타임아웃, 파일 스트리밍(메모리 미적재)을 클라이언트가 공통으로 처리한다.
     private static func sendMultipart<Response: Decodable>(
         path: String,
         textFields: [String: String],
         fileParts: [FilePart]
     ) async throws -> Response {
-        do {
-            return try await sendMultipartOnce(path: path, textFields: textFields, fileParts: fileParts)
-        } catch let error as SpatiumAPIError {
-            guard case .unauthorized = error,
-                  let refreshToken = AuthTokenStore.shared.refreshToken, !refreshToken.hasPrefix("mock_") else {
-                throw error
-            }
-            do {
-                try await AuthRefreshCoordinator.shared.refreshIfNeeded()
-            } catch {
-                throw SpatiumAPIError.unauthorized
-            }
-            return try await sendMultipartOnce(path: path, textFields: textFields, fileParts: fileParts)
-        }
-    }
-
-    private static func sendMultipartOnce<Response: Decodable>(
-        path: String,
-        textFields: [String: String],
-        fileParts: [FilePart]
-    ) async throws -> Response {
-        guard let baseURL = SpatiumAPIEnvironment.shared.baseURL else {
-            throw SpatiumAPIError.invalidBaseURL
-        }
-        var request = URLRequest(url: baseURL.appendingPathComponent(path))
-        request.httpMethod = "POST"
-        let boundary = UUID().uuidString
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        if let token = AuthTokenStore.shared.accessToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-
-        var body = Data()
-        for (name, value) in textFields {
-            body.appendMultipartTextField(name: name, value: value, boundary: boundary)
-        }
-        for part in fileParts {
-            try body.appendMultipartField(
-                name: part.name,
-                fileName: part.url.lastPathComponent,
-                contentType: part.contentType,
-                fileURL: part.url,
-                boundary: boundary
-            )
-        }
-        body.append("--\(boundary)--\r\n")
-        request.httpBody = body
-
-        let responseData: Data
-        let response: URLResponse
-        do {
-            (responseData, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            throw SpatiumAPIError.network(error)
-        }
-        guard let http = response as? HTTPURLResponse else {
-            throw SpatiumAPIError.network(URLError(.badServerResponse))
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 401 { throw SpatiumAPIError.unauthorized }
-            let message = String(data: responseData, encoding: .utf8) ?? "요청을 처리하지 못했습니다."
-            throw SpatiumAPIError.server(statusCode: http.statusCode, code: nil, message: message)
-        }
-
-        // 공통 엔벨로프({statusCode,message,data})의 data를 우선 시도하고, 아니면 바디 자체를 디코딩.
-        if let envelope = try? JSONDecoder.spatiumAPI.decode(SpatiumAPIEnvelope<Response>.self, from: responseData),
-           let data = envelope.data {
-            return data
-        }
-        if let direct = try? JSONDecoder.spatiumAPI.decode(Response.self, from: responseData) {
-            return direct
-        }
+        var parts = textFields.map { MultipartFormPart(name: $0.key, data: Data($0.value.utf8)) }
+        parts += fileParts.map { MultipartFormPart(name: $0.name, fileURL: $0.url, contentType: $0.contentType) }
+        let envelope: SpatiumAPIEnvelope<Response> = try await SpatiumAPIClient.shared.sendMultipart(
+            path: path, parts: parts
+        )
+        if let data = envelope.data { return data }
+        // data가 비어 있는 성공 응답(저장 등): 빈 객체로 표현 가능한 타입이면 성공으로 처리.
+        if let empty = try? JSONDecoder.spatiumAPI.decode(Response.self, from: Data("{}".utf8)) { return empty }
         throw SpatiumAPIError.decoding(URLError(.cannotParseResponse))
     }
 

@@ -67,7 +67,9 @@ final class ProjectStore: ObservableObject {
             // 서버 목록으로 통째로 교체하면 이미 불러온 방 목록과 업로드 전 로컬 방
             // (스캔 직후 placeholder)이 화면에서 사라진다. 같은 프로젝트는 기존 rooms를
             // 유지하고, 방 목록은 상세 진입 시 loadRooms가 최신으로 갱신한다.
-            let existingByID = Dictionary(uniqueKeysWithValues: projects.map { ($0.id, $0) })
+            // uniqueKeysWithValues는 중복 키에서 크래시한다. 서버가 같은 ID를 두 번 내려줘도
+            // (백엔드 버그) 앱이 죽지 않도록 첫 항목을 유지하는 병합을 쓴다.
+            let existingByID = Dictionary(projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             projects = try await service.fetchProjects().map { remote in
                 guard let existing = existingByID[remote.id] else { return remote }
                 var merged = remote
@@ -343,23 +345,49 @@ final class ProjectStore: ObservableObject {
         return projects.first { $0.id == id }
     }
 
+    /// 프로젝트별 방 개수를 병렬로 갱신합니다. (순차 N+1 요청 + 건마다 디스크 저장이었던 것을
+    /// 동시 요청 + 마지막 1회 저장으로 줄임)
     private func refreshRoomCounts(silently: Bool) async {
         let projectIDs = projects
             .map(\.id)
             .filter { !$0.hasPrefix("local-") }
+        guard !projectIDs.isEmpty else { return }
 
-        for projectID in projectIDs {
-            do {
-                let count = try await service.fetchRoomCount(projectID: projectID)
-                guard let index = projects.firstIndex(where: { $0.id == projectID }) else { continue }
-                projects[index].roomCount = count
-                lastErrorMessage = nil
-                saveCache()
-            } catch {
-                if !silently {
-                    lastErrorMessage = error.localizedDescription
+        var firstErrorMessage: String?
+        var changed = false
+        await withTaskGroup(of: (String, Result<Int, Error>).self) { group in
+            for projectID in projectIDs {
+                group.addTask { [service] in
+                    do {
+                        return (projectID, .success(try await service.fetchRoomCount(projectID: projectID)))
+                    } catch {
+                        return (projectID, .failure(error))
+                    }
                 }
             }
+            for await (projectID, result) in group {
+                switch result {
+                case let .success(count):
+                    guard let index = projects.firstIndex(where: { $0.id == projectID }),
+                          projects[index].roomCount != count else { continue }
+                    projects[index].roomCount = count
+                    changed = true
+                case let .failure(error):
+                    if firstErrorMessage == nil, !(error is CancellationError) {
+                        firstErrorMessage = error.localizedDescription
+                    }
+                }
+            }
+        }
+        if changed {
+            saveCache()
+        }
+        if let firstErrorMessage {
+            if !silently {
+                lastErrorMessage = firstErrorMessage
+            }
+        } else {
+            lastErrorMessage = nil
         }
     }
 

@@ -432,7 +432,7 @@ struct MainTabView: View {
 
         Task {
             do {
-                shareItems = try scanProject.exportPackage()
+                shareItems = try await scanProject.exportPackage()
                 showShareSheet = true
                 exporting = false
             } catch {
@@ -473,7 +473,7 @@ struct MainTabView: View {
 
         Task {
             do {
-                let urls = try scanProject.exportPackage()
+                let urls = try await scanProject.exportPackage()
                 guard let usdzURL = urls.first(where: { $0.pathExtension.lowercased() == "usdz" }),
                       let jsonURL = urls.first(where: { $0.pathExtension.lowercased() == "json" }) else {
                     uploadMessage = "업로드할 USDZ 또는 JSON 파일을 찾지 못했습니다."

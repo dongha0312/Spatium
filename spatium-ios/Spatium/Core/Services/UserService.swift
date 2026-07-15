@@ -33,55 +33,20 @@ struct UserService {
         return data
     }
 
-    /// 다른 요청들과 동일하게 액세스 토큰 만료(401) 시 재발급 후 한 번 재시도합니다.
+    /// 클라이언트 공통 multipart 경로를 쓰므로 401 재발급 재시도도 동일하게 처리됩니다.
     func uploadAvatar(imageData: Data) async throws -> AvatarUpdateResponseData {
-        do {
-            return try await uploadAvatarOnce(imageData: imageData)
-        } catch let error as SpatiumAPIError {
-            guard case .unauthorized = error,
-                  let refreshToken = AuthTokenStore.shared.refreshToken, !refreshToken.hasPrefix("mock_") else {
-                throw error
-            }
-            do {
-                try await AuthRefreshCoordinator.shared.refreshIfNeeded()
-            } catch {
-                throw SpatiumAPIError.unauthorized
-            }
-            return try await uploadAvatarOnce(imageData: imageData)
-        }
-    }
-
-    private func uploadAvatarOnce(imageData: Data) async throws -> AvatarUpdateResponseData {
-        guard let environment = SpatiumAPIEnvironment.shared.baseURL else {
-            throw SpatiumAPIError.invalidBaseURL
-        }
-        var request = URLRequest(url: environment.appendingPathComponent("/api/users/me/avatar"))
-        request.httpMethod = "PUT"
-
-        let form = MultipartFormData(parts: [
-            MultipartFormPart(
-                name: "image",
-                data: imageData,
-                fileName: "avatar.jpg",
-                contentType: "image/jpeg"
-            )
-        ])
-        request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
-        if let token = AuthTokenStore.shared.accessToken {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-
-        request.httpBody = form.body
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw SpatiumAPIError.network(URLError(.badServerResponse))
-        }
-        guard (200..<300).contains(httpResponse.statusCode) else {
-            if httpResponse.statusCode == 401 { throw SpatiumAPIError.unauthorized }
-            throw SpatiumAPIError.network(URLError(.badServerResponse))
-        }
-        let envelope = try JSONDecoder.spatiumAPI.decode(SpatiumAPIEnvelope<AvatarUpdateResponseData>.self, from: data)
+        let envelope: SpatiumAPIEnvelope<AvatarUpdateResponseData> = try await client.sendMultipart(
+            method: "PUT",
+            path: "/api/users/me/avatar",
+            parts: [
+                MultipartFormPart(
+                    name: "image",
+                    data: imageData,
+                    fileName: "avatar.jpg",
+                    contentType: "image/jpeg"
+                )
+            ]
+        )
         guard let result = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
         return result
     }

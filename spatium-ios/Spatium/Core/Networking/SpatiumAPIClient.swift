@@ -110,16 +110,23 @@ struct SpatiumAPIClient {
 
     @discardableResult
     func sendMultipart<ResponseData: Decodable>(
+        method: String = "POST",
         path: String,
         parts: [MultipartFormPart],
         requiresAuth: Bool = true,
         timeout: TimeInterval = 120
     ) async throws -> SpatiumAPIEnvelope<ResponseData> {
-        try await sendResolvingAuth(requiresAuth: requiresAuth) {
-            var request = try makeRequest(method: "POST", path: path, query: [:], requiresAuth: requiresAuth)
-            let form = MultipartFormData(parts: parts)
-            request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
-            request.httpBody = form.body
+        // 바디는 임시 파일로 만들어 스트리밍 업로드한다. 대용량 USDZ/GLB를
+        // 메모리에 통째로 올리지 않고, 바디 작성(파일 읽기)도 메인 스레드를 막지 않는다.
+        let boundary = "Spatium-\(UUID().uuidString)"
+        let bodyFileURL = try await Task.detached {
+            try MultipartFormData.writeBodyFile(parts: parts, boundary: boundary)
+        }.value
+        defer { try? FileManager.default.removeItem(at: bodyFileURL) }
+
+        return try await sendResolvingAuth(requiresAuth: requiresAuth, uploadingFile: bodyFileURL) {
+            var request = try makeRequest(method: method, path: path, query: [:], requiresAuth: requiresAuth)
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
             request.timeoutInterval = timeout
             return request
         }
@@ -129,10 +136,11 @@ struct SpatiumAPIClient {
     /// 재발급 자체가 거부되면(세션 만료) 토큰을 비워 로그인 화면으로 돌아가게 합니다.
     private func sendResolvingAuth<ResponseData: Decodable>(
         requiresAuth: Bool,
+        uploadingFile bodyFileURL: URL? = nil,
         makeRequest: () throws -> URLRequest
     ) async throws -> SpatiumAPIEnvelope<ResponseData> {
         do {
-            return try await perform(try makeRequest())
+            return try await perform(try makeRequest(), uploadingFile: bodyFileURL)
         } catch let error as SpatiumAPIError {
             guard requiresAuth, case .unauthorized = error,
                   let refreshToken = tokenStore.refreshToken, !refreshToken.hasPrefix("mock_") else {
@@ -149,7 +157,7 @@ struct SpatiumAPIClient {
                 throw SpatiumAPIError.unauthorized
             }
             // 새 액세스 토큰으로 요청을 다시 만들어 한 번만 재시도.
-            return try await perform(try makeRequest())
+            return try await perform(try makeRequest(), uploadingFile: bodyFileURL)
         }
     }
 
@@ -180,11 +188,18 @@ struct SpatiumAPIClient {
         return request
     }
 
-    private func perform<ResponseData: Decodable>(_ request: URLRequest) async throws -> SpatiumAPIEnvelope<ResponseData> {
+    private func perform<ResponseData: Decodable>(
+        _ request: URLRequest,
+        uploadingFile bodyFileURL: URL? = nil
+    ) async throws -> SpatiumAPIEnvelope<ResponseData> {
         let data: Foundation.Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            if let bodyFileURL {
+                (data, response) = try await URLSession.shared.upload(for: request, fromFile: bodyFileURL)
+            } else {
+                (data, response) = try await URLSession.shared.data(for: request)
+            }
         } catch {
             throw SpatiumAPIError.network(error)
         }
@@ -193,21 +208,22 @@ struct SpatiumAPIClient {
             throw SpatiumAPIError.network(URLError(.badServerResponse))
         }
 
-        if httpResponse.statusCode == 204 || data.isEmpty {
-            return SpatiumAPIEnvelope(statusCode: httpResponse.statusCode, message: "", data: nil)
-        }
-
-        // 에러 상태 코드는 {statusCode, code, message, errors} 형태이므로 먼저 처리합니다.
+        // 상태 코드 검사가 빈 바디 처리보다 먼저다. 순서가 반대면 바디 없는 401/5xx가
+        // 성공 엔벨로프로 둔갑해 토큰 재발급·낙관적 업데이트 롤백이 전부 건너뛰어진다.
         guard (200..<300).contains(httpResponse.statusCode) else {
-            let errorBody = try? JSONDecoder.spatiumAPI.decode(SpatiumAPIErrorBody.self, from: data)
             if httpResponse.statusCode == 401 {
                 throw SpatiumAPIError.unauthorized
             }
+            let errorBody = try? JSONDecoder.spatiumAPI.decode(SpatiumAPIErrorBody.self, from: data)
             throw SpatiumAPIError.server(
                 statusCode: httpResponse.statusCode,
                 code: errorBody?.code,
                 message: errorBody?.message ?? "요청을 처리하지 못했습니다."
             )
+        }
+
+        if httpResponse.statusCode == 204 || data.isEmpty {
+            return SpatiumAPIEnvelope(statusCode: httpResponse.statusCode, message: "", data: nil)
         }
 
         guard let envelope = try? JSONDecoder.spatiumAPI.decode(SpatiumAPIEnvelope<ResponseData>.self, from: data) else {
