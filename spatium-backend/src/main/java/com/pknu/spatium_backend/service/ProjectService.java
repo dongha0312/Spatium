@@ -32,6 +32,9 @@ public class ProjectService {
     private final RoomRepository roomRepository;
 
     public List<ResponseProjectListDTO> getProjectList(String memId) {
+        /*
+         * 기존 방식은 프로젝트마다 countByRoomProj()를 호출해 N+1 쿼리가 발생했다.
+         * 비교와 롤백이 쉽도록 기존 구현은 삭제하지 않고 주석으로 보존한다.
         return projectRepository.getProjectList(memId).stream()
                 .map(project -> new ResponseProjectListDTO(
                         project.getProj_code(),
@@ -39,6 +42,16 @@ public class ProjectService {
                         roomRepository.countByRoomProj(project.getProj_code()),
                         0,
                         project.getProj_date() != null ? project.getProj_date().toString() : null))
+                .toList();
+         */
+
+        return projectRepository.findProjectSummaries(memId).stream()
+                .map(project -> new ResponseProjectListDTO(
+                        project.getProjectId(),
+                        project.getProjectName(),
+                        project.getRoomCount().intValue(),
+                        0,
+                        project.getCreatedAt() != null ? project.getCreatedAt().toString() : null))
                 .toList();
     }
 

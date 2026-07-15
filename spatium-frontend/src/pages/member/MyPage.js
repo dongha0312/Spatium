@@ -64,6 +64,9 @@ function normalizeRoom(room) {
   };
 }
 
+/*
+ * 기존에는 대시보드 진입 시 모든 프로젝트의 룸을 먼저 받아 정규화했다.
+ * N개의 룸 목록 요청이 발생하므로 기존 구현은 주석으로 보존한다.
 function normalizeProject(project, rooms = []) {
   const normalizedRooms = rooms.map(normalizeRoom);
   // 프로젝트의 "최근 활동" = 프로젝트 생성일과 소속 룸 수정일 중 가장 최근 값
@@ -79,6 +82,19 @@ function normalizeProject(project, rooms = []) {
     furnitureCount: project.furnitureCount || 0,
     rooms: normalizedRooms,
     lastActivity,
+  };
+}
+*/
+
+function normalizeProject(project) {
+  return {
+    id: project.projectId,
+    name: project.projectName || "Untitled project",
+    furnitureCount: project.furnitureCount || 0,
+    roomCount: Number(project.roomCount || 0),
+    rooms: [],
+    roomsLoaded: false,
+    roomsLoading: false,
   };
 }
 
@@ -131,6 +147,10 @@ function MyPage() {
         getProjectList(),
       ]);
       const projectItems = projectPage?.items || [];
+
+      /*
+       * 기존에는 프로젝트 수만큼 getRoomList()를 즉시 호출했다.
+       * 프로젝트를 펼칠 때 조회하도록 변경하고 기존 구현은 주석으로 보존한다.
       const projectsWithRooms = await Promise.all(
         projectItems.map(async (project) => {
           const roomPage = await getRoomList(project.projectId);
@@ -142,9 +162,15 @@ function MyPage() {
       projectsWithRooms.sort((a, b) =>
         (b.lastActivity || "").localeCompare(a.lastActivity || ""),
       );
+      */
+
+      const normalizedProjects = projectItems.map(normalizeProject);
 
       setUser(normalizeUser(me));
+      /*
       setProjects(projectsWithRooms);
+      */
+      setProjects(normalizedProjects);
     } catch (err) {
       setApiError(err.message || "데이터를 불러오지 못했습니다.");
     } finally {
@@ -199,12 +225,22 @@ function MyPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, projects]);
 
+  /*
   const totalRoomCount = projects.reduce((sum, p) => sum + p.rooms.length, 0);
+  */
+  const totalRoomCount = projects.reduce(
+    (sum, project) => sum + project.roomCount,
+    0,
+  );
   const modalTargetProject = projects.find(
     (p) => p.id === modalTargetProjectId,
   );
   const togglePanel = () => setPanelOpen((prev) => !prev);
 
+  /*
+   * 기존 토글은 화면만 펼치고 접었으며 룸 데이터는 진입 시 이미 모두 조회했다.
+   * 기존 구현은 삭제하지 않고 주석으로 보존한다.
+   *
   const toggleProjectRooms = (projectId) => {
     setExpandedProjectIds((previous) => {
       const next = new Set(previous);
@@ -217,6 +253,62 @@ function MyPage() {
 
       return next;
     });
+  };
+  */
+
+  const toggleProjectRooms = async (projectId) => {
+    const isExpanded = expandedProjectIds.has(projectId);
+
+    setExpandedProjectIds((previous) => {
+      const next = new Set(previous);
+
+      if (isExpanded) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+
+      return next;
+    });
+
+    if (isExpanded) return;
+
+    const project = projects.find((item) => item.id === projectId);
+    if (!project || project.roomsLoaded || project.roomsLoading) return;
+
+    setProjects((previous) =>
+      previous.map((item) =>
+        item.id === projectId ? { ...item, roomsLoading: true } : item,
+      ),
+    );
+    setApiError("");
+
+    try {
+      const roomPage = await getRoomList(projectId);
+      const rooms = (roomPage?.items || []).map(normalizeRoom);
+
+      setProjects((previous) =>
+        previous.map((item) =>
+          item.id === projectId
+            ? {
+                ...item,
+                rooms,
+                // roomCount: rooms.length,
+                roomCount: Number(roomPage?.totalElements ?? rooms.length),
+                roomsLoaded: true,
+                roomsLoading: false,
+              }
+            : item,
+        ),
+      );
+    } catch (err) {
+      setProjects((previous) =>
+        previous.map((item) =>
+          item.id === projectId ? { ...item, roomsLoading: false } : item,
+        ),
+      );
+      setApiError(err.message || "룸 목록을 불러오지 못했습니다.");
+    }
   };
 
   const handleGoAccount = () => {
@@ -339,6 +431,7 @@ function MyPage() {
             : {
                 ...p,
                 rooms: p.rooms.filter((r) => r.id !== room.id),
+                roomCount: Math.max(0, p.roomCount - 1),
               },
         ),
       );
@@ -729,7 +822,10 @@ function MyPage() {
                               룸
                             </span>
                             <span className="mp-project-collapse-count">
+                              {/*
                               {project.rooms.length}
+                              */}
+                              {project.roomCount}
                             </span>
                             <svg
                               className="mp-project-collapse-icon"
@@ -780,7 +876,21 @@ function MyPage() {
                         inert={!isExpanded ? "" : undefined}
                       >
                         <div className="mp-project-rooms-inner">
+                          {/*
+                           * 기존에는 아직 조회하지 않은 상태도 빈 룸으로 표시했다.
+                           * 기존 렌더링 조건은 삭제하지 않고 주석으로 보존한다.
                           {project.rooms.length === 0 && (
+                            <div className="mp-empty-rooms">
+                              아직 생성된 룸이 없습니다.
+                            </div>
+                          )}
+                          */}
+                          {project.roomsLoading && (
+                            <div className="mp-empty-rooms">
+                              룸 목록을 불러오는 중...
+                            </div>
+                          )}
+                          {project.roomsLoaded && project.rooms.length === 0 && (
                             <div className="mp-empty-rooms">
                               아직 생성된 룸이 없습니다.
                             </div>
