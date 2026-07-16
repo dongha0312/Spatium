@@ -23,7 +23,10 @@ struct ContentView: View {
         let testScan = TestRoomData.scans.first(where: { $0.id == requestedScanID })
             ?? TestRoomData.scans.first
 
-        if arguments.contains("-UITestEditor"),
+        if arguments.contains("-UITestOnboarding") {
+            // 가로모드·큰 글씨 검증용: 저장된 첫 실행 여부와 무관하게 온보딩을 바로 연다.
+            OnboardingView(onFinished: {})
+        } else if arguments.contains("-UITestEditor"),
            let scan = testScan,
            let test = scan.load() {
             // 스크린샷 검증용: 로그인 없이 내장 테스트 스캔으로 3D 에디터를 바로 연다.
@@ -81,6 +84,7 @@ struct ContentView: View {
 struct MainTabView: View {
     @StateObject private var projectStore = ProjectStore()
     @EnvironmentObject private var userFurnitureStore: UserFurnitureStore
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @ObservedObject private var tokenStore = AuthTokenStore.shared
     @State private var selectedTab: AppTab = .home
     /// 스크롤 컨테이너가 보여줄 탭. 가구 만들기(고정 레이아웃) 탭으로 가 있는 동안에는
@@ -104,6 +108,10 @@ struct MainTabView: View {
     @State private var exportError: String?
     @State private var uploadMessage: String?
 
+    private var usesCompactHeight: Bool {
+        verticalSizeClass == .compact
+    }
+
     var body: some View {
         ZStack {
             ModernBackground().ignoresSafeArea()
@@ -123,9 +131,9 @@ struct MainTabView: View {
                     .id("main-screen-top")
                     .frame(maxWidth: 520)
                     .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 18)
-                    .padding(.top, 18)
-                    .padding(.bottom, 28)
+                    .padding(.horizontal, usesCompactHeight ? 14 : 18)
+                    .padding(.top, usesCompactHeight ? 10 : 18)
+                    .padding(.bottom, usesCompactHeight ? 16 : 28)
                 }
                 .scrollIndicators(.hidden)
                 .refreshable {
@@ -139,10 +147,13 @@ struct MainTabView: View {
                     selectedProjectID = nil
                     selectedTab = .rooms
                 }
-                    .frame(maxWidth: 520, maxHeight: .infinity)
+                    .frame(
+                        maxWidth: usesCompactHeight ? .infinity : 520,
+                        maxHeight: .infinity
+                    )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, usesCompactHeight ? 10 : 12)
+                    .padding(.vertical, usesCompactHeight ? 5 : 8)
                     .opacity(selectedTab == .imgTo3D ? 1 : 0)
                     .scaleEffect(selectedTab == .imgTo3D ? 1 : 0.97)
                     .allowsHitTesting(selectedTab == .imgTo3D)

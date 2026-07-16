@@ -11,6 +11,7 @@ struct ImgTo3DView: View {
     private let initialCategory: ImgTo3DCategory
 
     @EnvironmentObject private var userFurnitureStore: UserFurnitureStore
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var step: ImgTo3DStep = .upload
     @State private var photoItem: PhotosPickerItem?
     @State private var image: UIImage?
@@ -75,13 +76,17 @@ struct ImgTo3DView: View {
         ["이미지 전처리", "\(generationProvider.title) 메시 생성", "텍스처 베이킹", "GLB 내보내기"]
     }
 
+    private var usesCompactHeight: Bool {
+        verticalSizeClass == .compact
+    }
+
     var body: some View {
         VStack(spacing: 8) {
             progressHeader
 
             Card {
-                VStack(spacing: 12) {
-                    stepContent
+                VStack(spacing: usesCompactHeight ? 7 : 12) {
+                    responsiveStepContent
                         .id(step)
                         .transition(.opacity.combined(with: .move(edge: .trailing)))
                         .frame(maxHeight: .infinity)
@@ -183,6 +188,19 @@ struct ImgTo3DView: View {
         #endif
     }
 
+    @ViewBuilder
+    private var responsiveStepContent: some View {
+        if usesCompactHeight, step != .correction, step != .name {
+            ScrollView {
+                stepContent
+                    .frame(maxWidth: .infinity)
+            }
+            .scrollIndicators(.hidden)
+        } else {
+            stepContent
+        }
+    }
+
     private var progressHeader: some View {
         HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 1) {
@@ -226,8 +244,8 @@ struct ImgTo3DView: View {
             }
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: step)
         }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 9)
+        .padding(.horizontal, usesCompactHeight ? 10 : 13)
+        .padding(.vertical, usesCompactHeight ? 5 : 9)
         .background(SpatiumTheme.surface)
         .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border, lineWidth: 1))
@@ -543,13 +561,32 @@ struct ImgTo3DView: View {
             title: "가구를 자연스럽게 다듬어주세요",
             description: "기본 보정은 이미 적용했어요. 아래 모드를 고른 뒤 모델을 직접 드래그하면 됩니다."
         ) {
-            VStack(spacing: 8) {
-                correctionTopBar
-                modelCorrectionCanvas
-                correctionModeBar
-                contextualCorrectionControls
-                    .id(viewerMode)
-                    .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            if usesCompactHeight {
+                HStack(alignment: .top, spacing: 10) {
+                    modelCorrectionCanvas
+                        .frame(minWidth: 280)
+
+                    ScrollView {
+                        VStack(spacing: 7) {
+                            correctionTopBar
+                            correctionModeBar
+                            contextualCorrectionControls
+                                .id(viewerMode)
+                                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                        }
+                    }
+                    .scrollIndicators(.hidden)
+                    .frame(minWidth: 270, idealWidth: 320, maxWidth: 360)
+                }
+            } else {
+                VStack(spacing: 8) {
+                    correctionTopBar
+                    modelCorrectionCanvas
+                    correctionModeBar
+                    contextualCorrectionControls
+                        .id(viewerMode)
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
+                }
             }
         }
     }
@@ -626,7 +663,7 @@ struct ImgTo3DView: View {
             }
         )
         .frame(maxHeight: .infinity)
-        .frame(minHeight: 185)
+        .frame(minHeight: usesCompactHeight ? 118 : 185)
         .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
         .overlay(alignment: .bottom) {
@@ -659,6 +696,7 @@ struct ImgTo3DView: View {
             .padding(8)
             .accessibilityLabel("뷰포트 시점 선택")
         }
+        .accessibilityIdentifier("img-to-3d-model-canvas")
     }
 
     private var correctionModeBar: some View {
@@ -882,7 +920,7 @@ struct ImgTo3DView: View {
                     }
                         .font(.system(size: 16, weight: .bold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
+                        .padding(.vertical, usesCompactHeight ? 8 : 12)
                         .background(SpatiumTheme.warmPanel)
                         .foregroundStyle(SpatiumTheme.accent)
                         .overlay(Capsule().stroke(SpatiumTheme.border, lineWidth: 1))
@@ -905,7 +943,7 @@ struct ImgTo3DView: View {
                     }
                     .font(.system(size: 16, weight: .bold))
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, usesCompactHeight ? 8 : 12)
                     .background(SpatiumTheme.ctaFill)
                     .foregroundStyle(SpatiumTheme.onCta)
                     .clipShape(Capsule())
@@ -1312,24 +1350,29 @@ private struct StepShell<Content: View>: View {
     let title: String
     let description: String
     @ViewBuilder let content: Content
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    private var usesCompactHeight: Bool {
+        verticalSizeClass == .compact
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 9) {
+        VStack(alignment: .leading, spacing: usesCompactHeight ? 6 : 10) {
+            HStack(alignment: .top, spacing: usesCompactHeight ? 7 : 9) {
                 Image(systemName: systemImage)
-                    .font(.subheadline.weight(.bold))
+                    .font((usesCompactHeight ? Font.caption : Font.subheadline).weight(.bold))
                     .foregroundStyle(.white)
-                    .frame(width: 34, height: 34)
+                    .frame(width: usesCompactHeight ? 28 : 34, height: usesCompactHeight ? 28 : 34)
                     .background(LinearGradient(colors: [SpatiumTheme.accentLight, SpatiumTheme.accent], startPoint: .topLeading, endPoint: .bottomTrailing))
                     .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.headline.weight(.black))
+                        .font((usesCompactHeight ? Font.subheadline : Font.headline).weight(.black))
                         .foregroundStyle(SpatiumTheme.text)
                     Text(description)
-                        .font(.caption)
+                        .font(usesCompactHeight ? .caption2 : .caption)
                         .foregroundStyle(SpatiumTheme.soft)
-                        .lineLimit(2)
+                        .lineLimit(usesCompactHeight ? 1 : 2)
                 }
             }
             content

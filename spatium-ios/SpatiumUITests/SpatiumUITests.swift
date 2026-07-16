@@ -312,6 +312,117 @@ final class SpatiumUITests: XCTestCase {
     }
 
     @MainActor
+    func testLandscapeAppShellUsesCompactHeaderAndFooter() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestHome"]
+        app.launch()
+
+        let header = app.otherElements["app-header"]
+        let footer = app.otherElements["app-footer"]
+        XCTAssertTrue(header.waitForExistence(timeout: 8))
+        XCTAssertTrue(footer.waitForExistence(timeout: 5))
+
+        let windowFrame = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(windowFrame.width, windowFrame.height)
+        XCTAssertLessThanOrEqual(header.frame.height, 50)
+        // iPhone 가로모드의 홈 인디케이터 안전영역까지 포함한 전체 푸터 높이입니다.
+        XCTAssertLessThanOrEqual(footer.frame.height, 60)
+        XCTAssertGreaterThanOrEqual(header.frame.minY, windowFrame.minY)
+        XCTAssertLessThanOrEqual(footer.frame.maxY, windowFrame.maxY)
+        XCTAssertLessThan(header.frame.maxY, footer.frame.minY)
+        XCTAssertTrue(app.buttons["프로젝트"].isHittable)
+    }
+
+    @MainActor
+    func testLandscapeOnboardingKeepsContentAndActionsVisible() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestOnboarding", "-UITestOnboardingPage", "0"]
+        app.launch()
+
+        let screen = app.descendants(matching: .any)["onboarding-screen"]
+        let nextButton = app.buttons["다음"]
+        let skipButton = app.buttons["건너뛰기"]
+        XCTAssertTrue(screen.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["내 방을 3D로 스캔"].waitForExistence(timeout: 5))
+        XCTAssertTrue(nextButton.exists)
+        XCTAssertTrue(skipButton.exists)
+
+        let windowFrame = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(windowFrame.width, windowFrame.height)
+        XCTAssertLessThanOrEqual(nextButton.frame.maxY, windowFrame.maxY)
+        XCTAssertLessThanOrEqual(skipButton.frame.maxY, windowFrame.maxY)
+        XCTAssertTrue(nextButton.isHittable)
+        XCTAssertTrue(skipButton.isHittable)
+
+        nextButton.tap()
+        XCTAssertTrue(app.staticTexts["가구를 자유롭게 배치"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testLandscapeNewProjectKeyboardKeepsCreateActionReachable() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestHome"]
+        app.launch()
+
+        let projectsTab = app.buttons["프로젝트"]
+        XCTAssertTrue(projectsTab.waitForExistence(timeout: 8))
+        projectsTab.tap()
+
+        let newProjectButton = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH %@", "새 프로젝트")
+        ).firstMatch
+        XCTAssertTrue(newProjectButton.waitForExistence(timeout: 8))
+        newProjectButton.tap()
+
+        let nameField = app.textFields["프로젝트 이름을 입력하세요"]
+        let keyboard = app.keyboards.firstMatch
+        let createButton = app.buttons["프로젝트 만들고 스캔 시작"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+        XCTAssertTrue(createButton.waitForExistence(timeout: 5))
+
+        nameField.typeText("가로모드 프로젝트")
+        XCTAssertTrue(createButton.isEnabled)
+        XCTAssertTrue(createButton.isHittable)
+        XCTAssertLessThanOrEqual(createButton.frame.maxY, keyboard.frame.minY + 1)
+    }
+
+    @MainActor
+    func testLandscapeImgTo3DCorrectionKeepsViewerAndControlsVisible() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestImgTo3D", "-UITestImgTo3DGLB", "modern_chair.glb"]
+        app.launch()
+
+        let canvas = app.otherElements["img-to-3d-model-canvas"]
+        let footer = app.otherElements["app-footer"]
+        let nextButton = app.buttons["다음"]
+        XCTAssertTrue(canvas.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["자동 보정"].waitForExistence(timeout: 5))
+        XCTAssertTrue(nextButton.exists)
+        XCTAssertTrue(footer.exists)
+
+        let windowFrame = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(windowFrame.width, windowFrame.height)
+        XCTAssertGreaterThan(canvas.frame.width, canvas.frame.height)
+        XCTAssertLessThanOrEqual(canvas.frame.maxY, footer.frame.minY)
+        XCTAssertLessThanOrEqual(nextButton.frame.maxY, footer.frame.minY)
+        XCTAssertTrue(app.buttons["자동 보정"].isHittable)
+        XCTAssertTrue(nextButton.isHittable)
+    }
+
+    @MainActor
     func testPersonViewHidesFurnitureAddition() throws {
         let app = XCUIApplication()
         app.launchArguments = [

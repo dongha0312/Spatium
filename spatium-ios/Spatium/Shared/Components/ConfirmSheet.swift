@@ -10,61 +10,70 @@ struct ConfirmSheet: View {
     var onConfirm: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var needsExpandedSheet: Bool {
+        verticalSizeClass == .compact || dynamicTypeSize.isAccessibilitySize
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.title3)
-                    .foregroundStyle(SpatiumTheme.coral)
-                    .frame(width: 44, height: 44)
-                    .background(SpatiumTheme.coral.opacity(0.10), in: Circle())
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.headline.weight(.black))
-                        .foregroundStyle(SpatiumTheme.text)
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(SpatiumTheme.soft)
-                        .fixedSize(horizontal: false, vertical: true)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.title3)
+                        .foregroundStyle(SpatiumTheme.coral)
+                        .frame(width: 44, height: 44)
+                        .background(SpatiumTheme.coral.opacity(0.10), in: Circle())
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(.headline.weight(.black))
+                            .foregroundStyle(SpatiumTheme.text)
+                        Text(message)
+                            .font(.caption)
+                            .foregroundStyle(SpatiumTheme.soft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
                 }
-                Spacer(minLength: 0)
-            }
 
-            HStack(spacing: 8) {
-                Button {
-                    dismiss()
-                } label: {
-                    Text("취소")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(SpatiumTheme.muted)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(SpatiumTheme.warmPanel)
-                        .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
-                }
-                .buttonStyle(.pressable)
+                HStack(spacing: 8) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Text("취소")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(SpatiumTheme.muted)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(SpatiumTheme.warmPanel)
+                            .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                    }
+                    .buttonStyle(.pressable)
 
-                Button {
-                    dismiss()
-                    onConfirm()
-                } label: {
-                    Label(confirmTitle, systemImage: confirmSystemImage)
-                        .font(.subheadline.weight(.black))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 13)
-                        .background(SpatiumTheme.coral)
-                        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                    Button {
+                        dismiss()
+                        onConfirm()
+                    } label: {
+                        Label(confirmTitle, systemImage: confirmSystemImage)
+                            .font(.subheadline.weight(.black))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(SpatiumTheme.coral)
+                            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                    }
+                    .buttonStyle(.pressable)
                 }
-                .buttonStyle(.pressable)
             }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SpatiumTheme.background.ignoresSafeArea())
-        .presentationDetents([.height(200)])
+        .presentationDetents(needsExpandedSheet ? [.large] : [.height(200)])
         .presentationDragIndicator(.visible)
         .presentationBackground(SpatiumTheme.background)
     }
