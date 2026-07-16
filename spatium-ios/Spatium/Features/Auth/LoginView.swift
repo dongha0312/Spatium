@@ -310,7 +310,8 @@ struct LoginView: View {
 
     private static func randomNonce(length: Int = 32) -> String {
         let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-._")
-        return String((0..<length).map { _ in charset.randomElement()! })
+        guard length > 0, !charset.isEmpty else { return "" }
+        return String((0..<length).map { _ in charset[Int.random(in: charset.indices)] })
     }
 
     private static func sha256Hex(_ input: String) -> String {

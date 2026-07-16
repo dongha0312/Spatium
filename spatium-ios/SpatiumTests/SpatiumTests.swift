@@ -17,6 +17,20 @@ import UniformTypeIdentifiers
 @MainActor
 struct SpatiumTests {
 
+    @Test func googleSignInWithoutActiveWindowReturnsRecoverableError() {
+        let service = GoogleSignInService(presentationAnchorProvider: { nil })
+
+        do {
+            _ = try service.presentationAnchorForAuthentication()
+            Issue.record("활성 윈도우가 없으면 로그인 오류를 반환해야 합니다.")
+        } catch let error as GoogleSignInError {
+            #expect(error == .presentationUnavailable)
+            #expect(error.errorDescription?.isEmpty == false)
+        } catch {
+            Issue.record("예상하지 못한 오류가 반환되었습니다: \(error)")
+        }
+    }
+
     @Test func roomCaptureCannotStopBeforeFirstScanUpdate() {
         var lifecycle = RoomCaptureSessionLifecycle()
 
