@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from io import BytesIO
 from threading import Lock
@@ -10,6 +11,9 @@ from fastapi import HTTPException
 from PIL import Image, ImageOps
 
 from app.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -62,7 +66,15 @@ class YoloSegmentationService:
         image_bytes: bytes,
         target_class: str | None,
     ) -> SegmentationResult:
-        image = ImageOps.exif_transpose(Image.open(BytesIO(image_bytes))).convert("RGB")
+        try:
+            with Image.open(BytesIO(image_bytes)) as opened:
+                image = ImageOps.exif_transpose(opened).convert("RGB")
+        except (OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail="YOLO input is not a readable image.",
+            ) from exc
+
         source = np.asarray(image)
         device = self._device()
 
@@ -74,12 +86,15 @@ class YoloSegmentationService:
                 retina_masks=True,
                 verbose=False,
             )[0]
+        except HTTPException:
+            raise
         except Exception as exc:
+            logger.exception("YOLO segmentation inference failed")
             raise HTTPException(
                 status_code=502,
                 detail={
                     "provider": "local-yolo-segmentation",
-                    "message": f"YOLO segmentation failed: {exc}",
+                    "message": "YOLO segmentation failed.",
                 },
             ) from exc
 
@@ -116,11 +131,12 @@ class YoloSegmentationService:
 
                         cls._model = YOLO(settings.yolo_segmentation_model)
                     except Exception as exc:
+                        logger.exception("Could not load YOLO model")
                         raise HTTPException(
                             status_code=503,
                             detail={
                                 "provider": "local-yolo-segmentation",
-                                "message": f"Could not load YOLO model: {exc}",
+                                "message": "Could not load YOLO model.",
                             },
                         ) from exc
         return cls._model
@@ -190,7 +206,9 @@ class YoloSegmentationService:
         left, top, right, bottom = box
         area = max(right - left, 0.0) * max(bottom - top, 0.0) / (width * height)
         box_centre_x, box_centre_y = (left + right) / 2, (top + bottom) / 2
-        centre_distance = ((box_centre_x - centre_x) / width) ** 2 + ((box_centre_y - centre_y) / height) ** 2
+        centre_distance = ((box_centre_x - centre_x) / width) ** 2 + (
+            (box_centre_y - centre_y) / height
+        ) ** 2
         return confidence * area * (1.0 - min(centre_distance, 0.8))
 
     @staticmethod
