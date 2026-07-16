@@ -215,22 +215,29 @@ struct MainTabView: View {
             await userFurnitureStore.refreshFromBackend()
         }
         .alert(
-            "요청을 완료하지 못했습니다",
+            activeErrorTitle,
             isPresented: Binding(
-                get: { flowErrorMessage != nil || projectStore.lastErrorMessage != nil },
+                get: { activeErrorMessage != nil },
                 set: { isPresented in
                     guard !isPresented else { return }
-                    flowErrorMessage = nil
-                    projectStore.lastErrorMessage = nil
+                    dismissActiveError()
                 }
             )
         ) {
-            Button("확인", role: .cancel) {
-                flowErrorMessage = nil
-                projectStore.lastErrorMessage = nil
+            if isShowingLocalPersistenceError {
+                Button("다시 시도") {
+                    // Alert가 먼저 닫힌 다음 재시도 결과를 반영해야, 다시 실패했을 때
+                    // 동일한 경고와 재시도 버튼이 정상적으로 다시 나타난다.
+                    Task { @MainActor in
+                        await Task.yield()
+                        projectStore.retryLocalPersistence()
+                    }
+                }
             }
+            // 실제 상태 정리는 alert binding의 dismiss 경로에서 한 번만 수행한다.
+            Button(isShowingLocalPersistenceError ? "나중에" : "확인", role: .cancel) {}
         } message: {
-            Text(flowErrorMessage ?? projectStore.lastErrorMessage ?? "알 수 없는 오류가 발생했습니다.")
+            Text(activeErrorMessage ?? "알 수 없는 오류가 발생했습니다.")
         }
         #if DEBUG
         .onAppear {
@@ -261,6 +268,33 @@ struct MainTabView: View {
             }
         }
         #endif
+    }
+
+    private var activeErrorMessage: String? {
+        flowErrorMessage
+            ?? projectStore.localPersistenceErrorMessage
+            ?? projectStore.lastErrorMessage
+    }
+
+    private var isShowingLocalPersistenceError: Bool {
+        flowErrorMessage == nil && projectStore.localPersistenceErrorMessage != nil
+    }
+
+    private var activeErrorTitle: String {
+        isShowingLocalPersistenceError
+            ? "기기에 저장하지 못했습니다"
+            : "요청을 완료하지 못했습니다"
+    }
+
+    /// 동시에 여러 오류가 발생해도 현재 표시 중인 오류만 닫아 다음 오류가 이어서 보이게 한다.
+    private func dismissActiveError() {
+        if flowErrorMessage != nil {
+            flowErrorMessage = nil
+        } else if projectStore.localPersistenceErrorMessage != nil {
+            projectStore.dismissLocalPersistenceError()
+        } else {
+            projectStore.lastErrorMessage = nil
+        }
     }
 
     @ViewBuilder

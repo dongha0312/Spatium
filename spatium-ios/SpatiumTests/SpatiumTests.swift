@@ -806,6 +806,44 @@ struct FurnitureModelLoaderTests {
 }
 
 @MainActor
+struct ProjectStorePersistenceTests {
+    @Test func projectCacheWriteFailureIsVisibleAndCanBeRetried() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-project-cache-\(UUID().uuidString)", isDirectory: true)
+        let blockedDirectory = testRoot.appendingPathComponent("not-a-directory")
+        let cacheFileURL = blockedDirectory.appendingPathComponent("projects.json")
+        try FileManager.default.createDirectory(at: testRoot, withIntermediateDirectories: true)
+        try Data("file blocks cache directory creation".utf8).write(to: blockedDirectory)
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let store = ProjectStore(
+            cacheFileURL: cacheFileURL,
+            authenticationStateProvider: { false }
+        )
+        let firstProject = try await store.createProject(name: "로컬 저장 복구 테스트")
+
+        #expect(store.projects.first?.id == firstProject.id)
+        #expect(store.localPersistenceErrorMessage != nil)
+        #expect(!FileManager.default.fileExists(atPath: cacheFileURL.path))
+
+        // 디스크 오류가 해결되기 전 계속 작업해도 재시도 시점의 최신 메모리 상태를 저장한다.
+        let secondProject = try await store.createProject(name: "실패 후 추가한 프로젝트")
+        try FileManager.default.removeItem(at: blockedDirectory)
+        let didRetry = store.retryLocalPersistence()
+
+        #expect(didRetry)
+        #expect(store.localPersistenceErrorMessage == nil)
+        let savedData = try Data(contentsOf: cacheFileURL)
+        let savedProjects = try JSONDecoder.spatiumAPI.decode(
+            [SpatiumProject].self,
+            from: savedData
+        )
+        #expect(savedProjects.map(\.id) == [secondProject.id, firstProject.id])
+        #expect(savedProjects.map(\.name) == ["실패 후 추가한 프로젝트", "로컬 저장 복구 테스트"])
+    }
+}
+
+@MainActor
 struct UserFurnitureStoreTests {
     @Test func legacyCentimeterDimensionsMigrateToMetersBeforeRoomPlacement() throws {
         let directory = FileManager.default.temporaryDirectory

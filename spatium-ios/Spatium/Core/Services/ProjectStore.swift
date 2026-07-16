@@ -2,20 +2,40 @@ import Combine
 import Foundation
 import SwiftUI
 
+enum ProjectCachePersistenceState: Equatable {
+    case idle
+    case saved(Date)
+    case failed(message: String)
+
+    var failureMessage: String? {
+        if case let .failed(message) = self { return message }
+        return nil
+    }
+}
+
 @MainActor
 final class ProjectStore: ObservableObject {
     @Published private(set) var projects: [SpatiumProject] = []
     @Published var lastErrorMessage: String?
+    @Published private(set) var cachePersistenceState: ProjectCachePersistenceState = .idle
 
     private let service = ProjectService()
     private let cacheFileURL: URL
+    private let authenticationStateProvider: () -> Bool
     private var cancellables: Set<AnyCancellable> = []
     private var isRefreshing = false
 
-    init(cacheFileURL: URL? = nil) {
+    init(
+        cacheFileURL: URL? = nil,
+        authenticationStateProvider: (() -> Bool)? = nil
+    ) {
         self.cacheFileURL = cacheFileURL ?? Self.defaultCacheFileURL()
+        let resolvedAuthenticationStateProvider = authenticationStateProvider ?? {
+            AuthTokenStore.shared.isLoggedIn
+        }
+        self.authenticationStateProvider = resolvedAuthenticationStateProvider
         // 캐시는 로그인 세션 전용: 게스트/비로그인에게 이전 계정의 프로젝트를 보여주지 않는다.
-        projects = AuthTokenStore.shared.isLoggedIn ? loadCache() : []
+        projects = resolvedAuthenticationStateProvider() ? loadCache() : []
 
         // 로그아웃하면 이전 계정 데이터가 다음 사용자에게 남지 않도록 캐시를 비운다.
         AuthTokenStore.shared.$isLoggedIn
@@ -38,7 +58,16 @@ final class ProjectStore: ObservableObject {
     private func clearLocalData() {
         projects = []
         lastErrorMessage = nil
-        try? FileManager.default.removeItem(at: cacheFileURL)
+        guard FileManager.default.fileExists(atPath: cacheFileURL.path) else {
+            cachePersistenceState = .idle
+            return
+        }
+        do {
+            try FileManager.default.removeItem(at: cacheFileURL)
+            cachePersistenceState = .idle
+        } catch {
+            recordCachePersistenceFailure(error)
+        }
     }
 
     private static func defaultCacheFileURL() -> URL {
@@ -59,7 +88,7 @@ final class ProjectStore: ObservableObject {
 
     /// 서버에서 최신 프로젝트 목록을 받아옵니다. 실패 시 기존(캐시/로컬)을 유지합니다.
     func refresh(silently: Bool = false) async {
-        guard AuthTokenStore.shared.isLoggedIn, !isRefreshing else { return }
+        guard authenticationStateProvider(), !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
 
@@ -96,7 +125,7 @@ final class ProjectStore: ObservableObject {
             throw ProjectStoreError.emptyProjectName
         }
 
-        if !AuthTokenStore.shared.isLoggedIn {
+        if !authenticationStateProvider() {
             let local = SpatiumProject(id: Self.newLocalID(), name: trimmed)
             projects.insert(local, at: 0)
             saveCache()
@@ -414,9 +443,44 @@ final class ProjectStore: ObservableObject {
         return (try? JSONDecoder.spatiumAPI.decode([SpatiumProject].self, from: data)) ?? []
     }
 
-    private func saveCache() {
-        guard let data = try? JSONEncoder.spatiumAPI.encode(projects) else { return }
-        try? data.write(to: cacheFileURL, options: .atomic)
+    var localPersistenceErrorMessage: String? {
+        cachePersistenceState.failureMessage
+    }
+
+    /// 저장 공간·권한 문제를 해결한 뒤 현재 메모리의 최신 프로젝트 목록을 다시 기록한다.
+    /// 실패한 시점의 오래된 스냅샷이 아니라 사용자가 계속 작업한 결과 전체를 저장한다.
+    @discardableResult
+    func retryLocalPersistence() -> Bool {
+        cachePersistenceState = .idle
+        return saveCache()
+    }
+
+    func dismissLocalPersistenceError() {
+        guard cachePersistenceState.failureMessage != nil else { return }
+        cachePersistenceState = .idle
+    }
+
+    @discardableResult
+    private func saveCache() -> Bool {
+        do {
+            try FileManager.default.createDirectory(
+                at: cacheFileURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONEncoder.spatiumAPI.encode(projects)
+            try data.write(to: cacheFileURL, options: .atomic)
+            cachePersistenceState = .saved(Date())
+            return true
+        } catch {
+            recordCachePersistenceFailure(error)
+            return false
+        }
+    }
+
+    private func recordCachePersistenceFailure(_ error: Error) {
+        cachePersistenceState = .failed(
+            message: "프로젝트 변경 사항을 이 기기에 저장하지 못했어요. 앱을 종료하면 변경 내용이 사라질 수 있습니다. 저장 공간을 확인한 후 다시 시도해 주세요. (\(error.localizedDescription))"
+        )
     }
 }
 
