@@ -6,6 +6,7 @@ import {
   normalizeModelKey,
 } from "./sceneConfig";
 import { saveRoomMetadataJson } from "../../../springApi/RoomSpringBootApi";
+import { springApi } from "../../../config/axiosInstance";
 
 // Keep parsed GLTF promises at module scope so a scene rebuild (for example
 // structural undo/redo) reuses the already downloaded and parsed asset.
@@ -37,9 +38,17 @@ export function loadGltfModel(url, label) {
   const cachedPromise = gltfPromiseCache.get(url);
   if (cachedPromise) return cachedPromise;
 
-  const request = new Promise((resolve, reject) => {
-    new GLTFLoader().load(url, resolve, undefined, reject);
-  });
+  const isProtectedFurnitureModel = /^\/api\/furniture\/[^/]+\/model(?:\?|$)/.test(
+    url,
+  );
+  const request = isProtectedFurnitureModel
+    ? springApi
+        .get(url, { responseType: "blob" })
+        .then((response) => response.data.arrayBuffer())
+        .then((buffer) => new GLTFLoader().parseAsync(buffer, ""))
+    : new Promise((resolve, reject) => {
+        new GLTFLoader().load(url, resolve, undefined, reject);
+      });
   const cachedRequest = request.catch((error) => {
     if (gltfPromiseCache.get(url) === cachedRequest) {
       gltfPromiseCache.delete(url);

@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
+from typing import Any
 
 import anyio
 from fastapi import HTTPException
@@ -41,6 +43,14 @@ class SegmentationOptions:
     object_query: str | None
 
 
+@dataclass(frozen=True)
+class GeneratedArtifact:
+    path: Path
+    media_type: str
+    download_name: str
+    metadata: dict[str, Any]
+
+
 class ImageTo3DPipeline:
     def __init__(
         self,
@@ -61,7 +71,7 @@ class ImageTo3DPipeline:
 
     async def generate(
         self, image: ValidatedImage, options: GenerationOptions
-    ) -> dict[str, str]:
+    ) -> GeneratedArtifact:
         provider_name = options.provider.strip().lower()
         provider = self.providers.get(provider_name)
         if provider is None:
@@ -130,7 +140,7 @@ class ImageTo3DPipeline:
                 ) from exc
 
         try:
-            asset_id, output_path = await anyio.to_thread.run_sync(
+            _asset_id, output_path = await anyio.to_thread.run_sync(
                 self.storage.save_glb, output_bytes
             )
         except (OSError, ValueError) as exc:
@@ -140,19 +150,21 @@ class ImageTo3DPipeline:
                 detail="The generated GLB file could not be stored.",
             ) from exc
 
-        response = {
-            "id": asset_id,
+        metadata: dict[str, Any] = {
             "provider": provider_name,
-            "format": "glb",
-            "download_url": f"/v1/assets/{output_path.name}",
         }
         if segmented_object:
-            response["segmented_object"] = segmented_object
+            metadata["segmented_object"] = segmented_object
         if segmentation_name:
-            response["segmentation_provider"] = segmentation_name
+            metadata["segmentation_provider"] = segmentation_name
         if translated_query:
-            response["translated_query"] = translated_query
-        return response
+            metadata["translated_query"] = translated_query
+        return GeneratedArtifact(
+            path=output_path,
+            media_type="model/gltf-binary",
+            download_name="generated-model.glb",
+            metadata=metadata,
+        )
 
     @staticmethod
     def _selected_segmentation(options: GenerationOptions) -> str | None:
@@ -178,7 +190,7 @@ class RemoveBackgroundPipeline:
 
     async def run(
         self, image: ValidatedImage, options: SegmentationOptions
-    ) -> dict[str, str]:
+    ) -> GeneratedArtifact:
         provider_name = options.provider.strip().lower()
         async with self.gpu_limiter.slot():
             result = await self.segmentation.remove_background(
@@ -189,7 +201,7 @@ class RemoveBackgroundPipeline:
             )
 
         try:
-            image_id, output_path = await anyio.to_thread.run_sync(
+            _image_id, output_path = await anyio.to_thread.run_sync(
                 self.storage.save_png, result.image_bytes
             )
         except (OSError, ValueError) as exc:
@@ -199,18 +211,20 @@ class RemoveBackgroundPipeline:
                 detail="The processed image could not be stored.",
             ) from exc
 
-        response = {
-            "id": image_id,
-            "format": "png",
+        metadata: dict[str, Any] = {
             "segmentation_provider": provider_name,
             "segmented_object": result.detected_label,
             "device": result.device,
-            "download_url": f"/v1/images/{output_path.name}",
         }
         translated_query = getattr(result, "translated_query", None)
         confidence = getattr(result, "confidence", None)
         if translated_query:
-            response["translated_query"] = translated_query
+            metadata["translated_query"] = translated_query
         if confidence is not None:
-            response["confidence"] = str(round(float(confidence), 4))
-        return response
+            metadata["confidence"] = round(float(confidence), 4)
+        return GeneratedArtifact(
+            path=output_path,
+            media_type="image/png",
+            download_name="segmented.png",
+            metadata=metadata,
+        )

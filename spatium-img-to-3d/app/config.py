@@ -75,6 +75,7 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 class Settings:
+    internal_api_key: str = os.getenv("AI_INTERNAL_API_KEY", "").strip()
     image_to_3d_provider: str = os.getenv("IMAGE_TO_3D_PROVIDER", "local_triposr")
     local_triposr_repo_dir: Path = _env_path("LOCAL_TRIPOSR_REPO_DIR", DEFAULT_TRIPOSR_REPO)
     local_triposr_python: Path = _env_path("LOCAL_TRIPOSR_PYTHON", DEFAULT_TRIPOSR_PYTHON)
@@ -109,7 +110,7 @@ class Settings:
     grounded_sam2_timeout_seconds: int = _env_int("GROUNDED_SAM2_TIMEOUT_SECONDS", 600)
     auto_orient_glb_for_threejs: bool = _env_bool("AUTO_ORIENT_GLB_FOR_THREEJS", True)
     glb_rotation_x_degrees: float = _env_float("GLB_ROTATION_X_DEGREES", -90.0)
-    max_upload_bytes: int = _env_int("MAX_UPLOAD_BYTES", 30 * 1024 * 1024)
+    max_upload_bytes: int = _env_int("MAX_UPLOAD_BYTES", 10 * 1024 * 1024)
     max_image_pixels: int = _env_int("MAX_IMAGE_PIXELS", 40_000_000)
     gpu_max_concurrency: int = _env_int("GPU_MAX_CONCURRENCY", 1)
 

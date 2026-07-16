@@ -40,7 +40,7 @@ class StorageServiceTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.root_context.cleanup()
 
-    def test_final_glb_and_png_are_retained(self) -> None:
+    def test_response_glb_and_png_can_be_deleted_after_streaming(self) -> None:
         asset_id, asset_path = self.service.save_glb(make_glb())
         image_id, image_path = self.service.save_png(make_png())
 
@@ -50,6 +50,19 @@ class StorageServiceTests(unittest.TestCase):
         self.assertEqual(self.service.get_processed_image(f"{image_id}.png"), image_path)
         self.assertEqual(list(self.service.output_dir.glob("*.tmp")), [])
         self.assertEqual(list(self.service.processed_dir.glob("*.tmp")), [])
+
+        self.service.delete_artifact(asset_path)
+        self.service.delete_artifact(image_path)
+        self.assertFalse(asset_path.exists())
+        self.assertFalse(image_path.exists())
+
+    def test_artifact_cleanup_refuses_unmanaged_paths(self) -> None:
+        outside = Path(self.root_context.name) / "outside.glb"
+        outside.write_bytes(make_glb())
+
+        self.service.delete_artifact(outside)
+
+        self.assertTrue(outside.exists())
 
     def test_request_scoped_paths_are_removed_immediately(self) -> None:
         with self.service.temporary_file(suffix=".png") as path:
