@@ -1,16 +1,17 @@
 # Image to 3D FastAPI
 
-Single-image to 3D backend. The default provider is the public Hugging Face Space `frogleo/Image-to-3D`, which returns a `.glb` model through the Gradio API.
+Single-image to 3D backend. The active providers are local TripoSR and local
+Stable Fast 3D, with YOLO or GroundingDINO+SAM2 segmentation.
 
 ## Setup
 
-```powershell
-$env:UV_CACHE_DIR=".uv-cache"
+```bash
 uv sync
-Copy-Item .env.example .env
-notepad .env
-uv run uvicorn app.main:app --reload --port 8000 --env-file .env
+cp .env.example .env
+uv run python run.py
 ```
+
+`RELOAD` defaults to `false` so the GPU worker is not duplicated in production.
 
 Open the UI:
 
@@ -102,11 +103,14 @@ The response contains a `download_url`, for example:
 
 ## Notes
 
-- Hugging Face public Spaces are free to try, but they can sleep, queue, rate limit, or change availability.
-- The bundled default does not require `STABILITY_API_KEY`.
+- GPU work is limited to one concurrent request per API worker by default.
+  Keep a single Uvicorn worker when using one GPU; process-local semaphores do
+  not coordinate across multiple workers.
 - Best input: a single centered object, plain background, no heavy crop, PNG/JPEG/WebP.
 - Output quality depends heavily on the source image. Product/object images work better than scenes.
-- Keep generated files out of git; they are written to `storage/outputs/`.
+- Request-scoped files are removed immediately from `storage/tmp/`.
+- Final GLB and processed PNG files are retained in `storage/outputs/` and
+  `storage/processed/`; no automatic deletion policy is enabled.
 
 ## Providers
 

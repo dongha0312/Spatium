@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from PIL import Image
+from PIL import Image, ImageOps
 from transformers import (
     AutoModelForSeq2SeqLM,
     AutoModelForZeroShotObjectDetection,
@@ -112,7 +112,8 @@ def main() -> None:
     # float32, release it, and then run SAM2 in float16 on CUDA.
     dino_dtype = torch.float32
     sam_dtype = torch.float16 if device.type == "cuda" else torch.float32
-    image = Image.open(args.image).convert("RGB")
+    with Image.open(args.image) as opened:
+        image = ImageOps.exif_transpose(opened).convert("RGB")
     translated_query = translate_query(args.query, args.translation_model)
     prompt = translated_query.strip().rstrip(".") + "."
 
