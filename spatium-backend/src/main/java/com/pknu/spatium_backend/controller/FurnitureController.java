@@ -1,9 +1,13 @@
 package com.pknu.spatium_backend.controller;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
+import org.springframework.core.io.Resource;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -19,6 +23,7 @@ import com.pknu.spatium_backend.auth.AuthenticatedMemId;
 import com.pknu.spatium_backend.dto.FurnitureDTO.RequestCreateDTO;
 import com.pknu.spatium_backend.exception.ApiException;
 import com.pknu.spatium_backend.service.FurnitureService;
+import com.pknu.spatium_backend.service.FurnitureService.FurnitureModelResource;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +51,23 @@ public class FurnitureController {
                 "statusCode", 200,
                 "message", "사용자 가구 목록 조회에 성공했습니다.",
                 "data", furnitureService.getUserCatalog(memId)));
+    }
+
+    @GetMapping("/{furCode}/model")
+    public ResponseEntity<Resource> getUserFurnitureModel(
+            @AuthenticatedMemId String memId,
+            @PathVariable String furCode) {
+        FurnitureModelResource model = furnitureService.getUserFurnitureModel(memId, furCode);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("model/gltf-binary"))
+                .contentLength(model.contentLength())
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.inline()
+                                .filename(model.fileName(), StandardCharsets.UTF_8)
+                                .build()
+                                .toString())
+                .body(model.resource());
     }
 
     // 로그인한 회원이 생성한 가구 삭제 (soft delete)

@@ -33,6 +33,12 @@ const STEP_LABELS = [
   "저장",
 ];
 
+const revokeObjectUrl = (url) => {
+  if (typeof url === "string" && url.startsWith("blob:")) {
+    URL.revokeObjectURL(url);
+  }
+};
+
 function ImgTo3dPage() {
   const navigate = useNavigate();
 
@@ -60,6 +66,8 @@ function ImgTo3dPage() {
   const [correctedModel, setCorrectedModel] = useState(null);
 
   const imageRef = useRef(null);
+  const segmentationResultRef = useRef(null);
+  const generatedAssetRef = useRef(null);
   const segmentationRequestRef = useRef(null);
   const generationRequestRef = useRef(null);
 
@@ -77,6 +85,8 @@ function ImgTo3dPage() {
 
   const resetGenerationResult = useCallback(() => {
     cancelGeneration();
+    revokeObjectUrl(generatedAssetRef.current?.modelUrl);
+    generatedAssetRef.current = null;
     setGeneratedAsset(null);
     setGenerationStatus("idle");
     setGenerationError("");
@@ -85,6 +95,8 @@ function ImgTo3dPage() {
 
   const resetPipelineResults = useCallback(() => {
     cancelSegmentation();
+    revokeObjectUrl(segmentationResultRef.current?.imageUrl);
+    segmentationResultRef.current = null;
     setSegmentationResult(null);
     setSegmentationStatus("idle");
     setSegmentationError("");
@@ -154,6 +166,8 @@ function ImgTo3dPage() {
       cancelSegmentation();
       cancelGeneration();
       if (imageRef.current?.url) URL.revokeObjectURL(imageRef.current.url);
+      revokeObjectUrl(segmentationResultRef.current?.imageUrl);
+      revokeObjectUrl(generatedAssetRef.current?.modelUrl);
     };
   }, [cancelGeneration, cancelSegmentation]);
 
@@ -215,7 +229,12 @@ function ImgTo3dPage() {
         segmentationProvider,
         signal: controller.signal,
       });
-      if (segmentationRequestRef.current !== controller) return;
+      if (segmentationRequestRef.current !== controller) {
+        revokeObjectUrl(result.imageUrl);
+        return;
+      }
+      revokeObjectUrl(segmentationResultRef.current?.imageUrl);
+      segmentationResultRef.current = result;
       setSegmentationResult(result);
       setSegmentationStatus("success");
     } catch (error) {
@@ -254,7 +273,12 @@ function ImgTo3dPage() {
         remesh,
         signal: controller.signal,
       });
-      if (generationRequestRef.current !== controller) return;
+      if (generationRequestRef.current !== controller) {
+        revokeObjectUrl(result.modelUrl);
+        return;
+      }
+      revokeObjectUrl(generatedAssetRef.current?.modelUrl);
+      generatedAssetRef.current = result;
       setGeneratedAsset(result);
       setGenerationStatus("success");
     } catch (error) {

@@ -1,21 +1,66 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
+import base64
+import json
+from secrets import compare_digest
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
 from app.config import settings
 from app.pipelines.image_to_3d import (
     GenerationOptions,
+    GeneratedArtifact,
     ImageTo3DPipeline,
     RemoveBackgroundPipeline,
     SegmentationOptions,
 )
 from app.services.image_validation import ImageUploadValidator
 from app.services.storage import StorageService
-from app.ui import INDEX_HTML
 
 
 router = APIRouter()
+INTERNAL_API_KEY_HEADER = "X-Internal-Api-Key"
+AI_METADATA_HEADER = "X-Spatium-AI-Metadata"
+
+
+def require_internal_api_key(
+    supplied_key: Annotated[
+        str | None,
+        Header(alias=INTERNAL_API_KEY_HEADER),
+    ] = None,
+) -> None:
+    expected_key = settings.internal_api_key
+    if not expected_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Internal AI authentication is not configured.",
+        )
+    if supplied_key is None or not compare_digest(
+        supplied_key.encode("utf-8"), expected_key.encode("utf-8")
+    ):
+        raise HTTPException(status_code=401, detail="Invalid internal API key.")
+
+
+def artifact_response(
+    artifact: GeneratedArtifact,
+    storage: StorageService,
+) -> FileResponse:
+    metadata_json = json.dumps(
+        artifact.metadata,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    metadata_header = base64.urlsafe_b64encode(metadata_json).decode("ascii").rstrip("=")
+    return FileResponse(
+        artifact.path,
+        media_type=artifact.media_type,
+        filename=artifact.download_name,
+        headers={AI_METADATA_HEADER: metadata_header},
+        background=BackgroundTask(storage.delete_artifact, artifact.path),
+    )
 
 
 def get_validator(request: Request) -> ImageUploadValidator:
@@ -34,18 +79,15 @@ def get_storage(request: Request) -> StorageService:
     return request.app.state.storage
 
 
-@router.get("/", response_class=HTMLResponse)
-async def index() -> str:
-    return INDEX_HTML
-
-
 @router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
 @router.get("/v1/providers")
-async def providers() -> list[dict[str, str]]:
+async def providers(
+    _internal_api_key: None = Depends(require_internal_api_key),
+) -> list[dict[str, str]]:
     return [
         {
             "id": "local_triposr",
@@ -61,7 +103,9 @@ async def providers() -> list[dict[str, str]]:
 
 
 @router.get("/v1/segmentation-providers")
-async def segmentation_providers() -> list[dict[str, str]]:
+async def segmentation_providers(
+    _internal_api_key: None = Depends(require_internal_api_key),
+) -> list[dict[str, str]]:
     return [
         {"id": "yolo", "name": "YOLO segmentation", "query": "class"},
         {
@@ -85,11 +129,13 @@ async def image_to_3d(
     provider: str = Form(settings.image_to_3d_provider),
     texture_resolution: int = Form(1024),
     remesh: str = Form("none"),
+    _internal_api_key: None = Depends(require_internal_api_key),
     validator: ImageUploadValidator = Depends(get_validator),
     pipeline: ImageTo3DPipeline = Depends(get_image_to_3d_pipeline),
-) -> dict[str, str]:
+    storage: StorageService = Depends(get_storage),
+) -> FileResponse:
     validated = await validator.validate(image)
-    return await pipeline.generate(
+    artifact = await pipeline.generate(
         validated,
         GenerationOptions(
             foreground_ratio=foreground_ratio,
@@ -104,6 +150,7 @@ async def image_to_3d(
             remesh=remesh,
         ),
     )
+    return artifact_response(artifact, storage)
 
 
 @router.post("/v1/remove-background")
@@ -112,11 +159,13 @@ async def remove_background(
     segmentation_provider: str = Form("yolo"),
     target_class: str | None = Form(None),
     object_query: str | None = Form(None),
+    _internal_api_key: None = Depends(require_internal_api_key),
     validator: ImageUploadValidator = Depends(get_validator),
     pipeline: RemoveBackgroundPipeline = Depends(get_remove_background_pipeline),
-) -> dict[str, str]:
+    storage: StorageService = Depends(get_storage),
+) -> FileResponse:
     validated = await validator.validate(image)
-    return await pipeline.run(
+    artifact = await pipeline.run(
         validated,
         SegmentationOptions(
             provider=segmentation_provider,
@@ -124,23 +173,4 @@ async def remove_background(
             object_query=object_query,
         ),
     )
-
-
-@router.get("/v1/assets/{filename}")
-async def download_asset(
-    filename: str, storage: StorageService = Depends(get_storage)
-) -> FileResponse:
-    path = storage.get_asset(filename)
-    return FileResponse(
-        path,
-        media_type="model/gltf-binary",
-        filename=filename,
-    )
-
-
-@router.get("/v1/images/{filename}")
-async def download_processed_image(
-    filename: str, storage: StorageService = Depends(get_storage)
-) -> FileResponse:
-    path = storage.get_processed_image(filename)
-    return FileResponse(path, media_type="image/png", filename=filename)
+    return artifact_response(artifact, storage)

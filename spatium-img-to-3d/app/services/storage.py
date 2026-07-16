@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import struct
 from contextlib import contextmanager
@@ -16,12 +17,11 @@ from PIL import Image, UnidentifiedImageError
 from app.config import OUTPUT_DIR, PROCESSED_DIR, TEMP_DIR
 
 
-class StorageService:
-    """Own final artifact writes and request-scoped temporary paths.
+logger = logging.getLogger(__name__)
 
-    Final GLB and PNG files are intentionally retained. Only request-scoped
-    temporary files and run directories are removed automatically.
-    """
+
+class StorageService:
+    """Own response artifacts and request-scoped temporary paths."""
 
     def __init__(
         self,
@@ -57,6 +57,21 @@ class StorageService:
 
     def get_processed_image(self, filename: str) -> Path:
         return self._resolve_final_file(self.processed_dir, filename, ".png", "image")
+
+    def delete_artifact(self, path: Path) -> None:
+        """Best-effort cleanup executed after the HTTP response is sent."""
+        candidate = path.resolve(strict=False)
+        allowed_roots = (
+            self.output_dir.resolve(strict=False),
+            self.processed_dir.resolve(strict=False),
+        )
+        if not any(candidate.is_relative_to(root) for root in allowed_roots):
+            logger.error("Refusing to delete artifact outside managed storage")
+            return
+        try:
+            candidate.unlink(missing_ok=True)
+        except OSError:
+            logger.exception("Response artifact cleanup failed path=%s", candidate)
 
     @contextmanager
     def temporary_file(self, *, suffix: str) -> Iterator[Path]:

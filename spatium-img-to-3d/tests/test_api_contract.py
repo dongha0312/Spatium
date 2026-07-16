@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import base64
 import json
 import struct
 import unittest
 from io import BytesIO
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app.config import OUTPUT_DIR, PROCESSED_DIR
+from app.api.routes import AI_METADATA_HEADER, INTERNAL_API_KEY_HEADER
+from app.config import OUTPUT_DIR, PROCESSED_DIR, settings
 from app.main import app
 from app.providers.local_triposr import LocalTripoSRProvider
 from app.services.yolo_segmentation import SegmentationResult, YoloSegmentationService
@@ -37,18 +39,22 @@ def make_minimal_glb() -> bytes:
 
 class ApiContractTests(unittest.TestCase):
     def setUp(self) -> None:
+        self.original_api_key = settings.internal_api_key
+        self.api_key = uuid4().hex
+        settings.internal_api_key = self.api_key
+        self.auth_headers = {INTERNAL_API_KEY_HEADER: self.api_key}
         self.client_context = TestClient(app)
         self.client = self.client_context.__enter__()
 
     def tearDown(self) -> None:
         self.client_context.__exit__(None, None, None)
+        settings.internal_api_key = self.original_api_key
 
-    def _cleanup_download(self, download_url: str) -> None:
-        filename = Path(download_url).name
-        if download_url.startswith("/v1/assets/"):
-            (OUTPUT_DIR / filename).unlink(missing_ok=True)
-        elif download_url.startswith("/v1/images/"):
-            (PROCESSED_DIR / filename).unlink(missing_ok=True)
+    @staticmethod
+    def _decode_metadata(response) -> dict[str, object]:
+        encoded = response.headers[AI_METADATA_HEADER]
+        padded = encoded + "=" * (-len(encoded) % 4)
+        return json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
 
     def test_route_paths_and_methods_are_stable(self) -> None:
         routes = {
@@ -56,17 +62,13 @@ class ApiContractTests(unittest.TestCase):
             for path, operations in app.openapi()["paths"].items()
         }
         expected = {
-            "/": {"GET"},
             "/health": {"GET"},
             "/v1/providers": {"GET"},
             "/v1/segmentation-providers": {"GET"},
             "/v1/image-to-3d": {"POST"},
             "/v1/remove-background": {"POST"},
-            "/v1/assets/{filename}": {"GET"},
-            "/v1/images/{filename}": {"GET"},
         }
-        for path, methods in expected.items():
-            self.assertEqual(routes.get(path), methods)
+        self.assertEqual(routes, expected)
 
     def test_health_response_contract(self) -> None:
         response = self.client.get("/health")
@@ -74,7 +76,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual(response.json(), {"status": "ok"})
 
     def test_provider_response_contracts(self) -> None:
-        providers = self.client.get("/v1/providers")
+        providers = self.client.get("/v1/providers", headers=self.auth_headers)
         self.assertEqual(providers.status_code, 200)
         self.assertEqual(
             providers.json(),
@@ -91,7 +93,9 @@ class ApiContractTests(unittest.TestCase):
                 },
             ],
         )
-        segmentation = self.client.get("/v1/segmentation-providers")
+        segmentation = self.client.get(
+            "/v1/segmentation-providers", headers=self.auth_headers
+        )
         self.assertEqual(segmentation.status_code, 200)
         self.assertEqual(
             segmentation.json(),
@@ -106,10 +110,12 @@ class ApiContractTests(unittest.TestCase):
         )
 
     def test_image_to_3d_success_response_contract(self) -> None:
+        existing_outputs = set(OUTPUT_DIR.glob("*.glb"))
         generate = AsyncMock(return_value=make_minimal_glb())
         with patch.object(LocalTripoSRProvider, "generate", generate):
             response = self.client.post(
                 "/v1/image-to-3d",
+                headers=self.auth_headers,
                 files={"image": ("chair.png", make_png(), "image/png")},
                 data={
                     "provider": "local_triposr",
@@ -119,16 +125,16 @@ class ApiContractTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200, response.text)
-        payload = response.json()
-        self.addCleanup(self._cleanup_download, payload["download_url"])
+        self.assertEqual(response.headers["content-type"], "model/gltf-binary")
+        self.assertIn("generated-model.glb", response.headers["content-disposition"])
+        self.assertEqual(response.content[:4], b"glTF")
         self.assertEqual(
-            set(payload), {"id", "provider", "format", "download_url"}
+            self._decode_metadata(response), {"provider": "local_triposr"}
         )
-        self.assertEqual(payload["provider"], "local_triposr")
-        self.assertEqual(payload["format"], "glb")
-        self.assertEqual(payload["download_url"], f"/v1/assets/{payload['id']}.glb")
+        self.assertEqual(set(OUTPUT_DIR.glob("*.glb")), existing_outputs)
 
     def test_remove_background_success_response_contract(self) -> None:
+        existing_images = set(PROCESSED_DIR.glob("*.png"))
         result = SegmentationResult(
             image_bytes=make_png(), detected_label="chair", device="cpu"
         )
@@ -136,30 +142,36 @@ class ApiContractTests(unittest.TestCase):
         with patch.object(YoloSegmentationService, "remove_background", remove):
             response = self.client.post(
                 "/v1/remove-background",
+                headers=self.auth_headers,
                 files={"image": ("chair.png", make_png(), "image/png")},
                 data={"segmentation_provider": "yolo", "target_class": "auto"},
             )
 
         self.assertEqual(response.status_code, 200, response.text)
-        payload = response.json()
-        self.addCleanup(self._cleanup_download, payload["download_url"])
-        self.assertEqual(
-            set(payload),
-            {
-                "id",
-                "format",
-                "segmentation_provider",
-                "segmented_object",
-                "device",
-                "download_url",
-            },
+        self.assertEqual(response.headers["content-type"], "image/png")
+        self.assertTrue(response.content.startswith(b"\x89PNG\r\n\x1a\n"))
+        metadata = self._decode_metadata(response)
+        self.assertEqual(metadata["segmented_object"], "chair")
+        self.assertEqual(metadata["segmentation_provider"], "yolo")
+        self.assertEqual(metadata["device"], "cpu")
+        self.assertEqual(set(PROCESSED_DIR.glob("*.png")), existing_images)
+
+    def test_ai_routes_require_the_internal_api_key(self) -> None:
+        files = {"image": ("chair.png", make_png(), "image/png")}
+        missing = self.client.post("/v1/remove-background", files=files)
+        self.assertEqual(missing.status_code, 401)
+
+        wrong = self.client.post(
+            "/v1/remove-background",
+            headers={INTERNAL_API_KEY_HEADER: "wrong"},
+            files=files,
         )
-        self.assertEqual(payload["segmented_object"], "chair")
-        self.assertEqual(payload["download_url"], f"/v1/images/{payload['id']}.png")
+        self.assertEqual(wrong.status_code, 401)
 
     def test_unsupported_media_type_contract(self) -> None:
         response = self.client.post(
             "/v1/remove-background",
+            headers=self.auth_headers,
             files={"image": ("not-image.txt", b"not an image", "text/plain")},
         )
         self.assertEqual(response.status_code, 415)
@@ -171,6 +183,7 @@ class ApiContractTests(unittest.TestCase):
     def test_invalid_generation_provider_contract(self) -> None:
         response = self.client.post(
             "/v1/image-to-3d",
+            headers=self.auth_headers,
             files={"image": ("chair.png", make_png(), "image/png")},
             data={"provider": "unknown", "remove_background": "false"},
         )
