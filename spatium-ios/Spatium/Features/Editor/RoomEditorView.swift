@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 private enum SurfaceColorPicker: Equatable {
     case wall
@@ -43,6 +44,42 @@ private enum FurnitureAdjustment: String, CaseIterable, Identifiable {
     }
 }
 
+private enum DecorNudgeDirection: String, CaseIterable, Identifiable {
+    case left
+    case right
+    case forward
+    case backward
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .left: "왼쪽"
+        case .right: "오른쪽"
+        case .forward: "앞쪽"
+        case .backward: "뒤쪽"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .left: "arrow.left"
+        case .right: "arrow.right"
+        case .forward: "arrow.up"
+        case .backward: "arrow.down"
+        }
+    }
+
+    var delta: (x: Double, z: Double) {
+        switch self {
+        case .left: (-RoomEditorViewModel.decorNudgeStep, 0)
+        case .right: (RoomEditorViewModel.decorNudgeStep, 0)
+        case .forward: (0, RoomEditorViewModel.decorNudgeStep)
+        case .backward: (0, -RoomEditorViewModel.decorNudgeStep)
+        }
+    }
+}
+
 /// 3D 모델링 에디터 페이지. 프런트엔드 `3dEditor.js`의 화면 구성을 그대로 옮겼습니다.
 /// 상단 내비 + 툴바, 좌측(폰=상단) 가구 카탈로그 패널, 3D 캔버스 + 하단 뷰바,
 /// 하단 액션바(취소/미리보기/저장), 선택 시 치수·회전·교체·제거 컨트롤.
@@ -50,6 +87,8 @@ struct RoomEditorView: View {
     @StateObject private var viewModel: RoomEditorViewModel
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var userFurnitureStore: UserFurnitureStore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
 
     /// 같은 프로젝트의 다른 방들. 2개 이상이면 툴바의 방 이름이 드롭다운으로 바뀝니다.
     private let availableRooms: [RoomRecord]
@@ -1306,6 +1345,25 @@ struct RoomEditorView: View {
     }
 
     private var decorControls: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                ScrollView(.vertical, showsIndicators: true) {
+                    decorControlsContent
+                }
+                .frame(maxHeight: verticalSizeClass == .compact ? 280 : 420)
+                .scrollBounceBehavior(.basedOnSize)
+                .accessibilityIdentifier("decor-controls-scroll")
+            } else {
+                decorControlsContent
+                    // 수평 ScrollView가 남은 세로 공간을 전부 차지하지 않도록 콘텐츠 높이에 고정한다.
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .animation(.spring(response: 0.34, dampingFraction: 0.88), value: viewModel.pendingFigure?.id)
+        .animation(.spring(response: 0.34, dampingFraction: 0.88), value: viewModel.selectedDecorID)
+    }
+
+    private var decorControlsContent: some View {
         VStack(spacing: 8) {
             decorModeBanner
 
@@ -1319,122 +1377,165 @@ struct RoomEditorView: View {
 
             decorCatalog
         }
-        // 수평 ScrollView가 남은 세로 공간을 전부 차지하지 않도록 콘텐츠 높이에 고정한다.
-        .fixedSize(horizontal: false, vertical: true)
-        .animation(.spring(response: 0.34, dampingFraction: 0.88), value: viewModel.pendingFigure?.id)
-        .animation(.spring(response: 0.34, dampingFraction: 0.88), value: viewModel.selectedDecorID)
     }
 
     private var decorModeBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "sparkles")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(SpatiumTheme.accentLight)
-            Text("책장 꾸미기")
-                .font(.caption.weight(.black))
-                .foregroundStyle(.white)
-            Text("소품을 고르고 선반을 탭하세요")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.64))
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            Button("완료") {
-                Haptics.selection()
-                isReplacingDecor = false
-                viewModel.endDecorating()
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        decorModeTitle
+                        Spacer(minLength: 8)
+                        decorDoneButton
+                    }
+                    Text("소품을 고른 뒤 3D 선반을 탭하거나 선반 선택 메뉴를 사용하세요")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.72))
+                }
+            } else {
+                HStack(spacing: 8) {
+                    decorModeTitle
+                    Text("소품을 고르고 선반을 탭하세요")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.64))
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    decorDoneButton
+                }
             }
-            .font(.caption.weight(.black))
-            .foregroundStyle(SpatiumTheme.accent)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(.white, in: Capsule())
-            .buttonStyle(.pressable)
         }
-        .padding(.leading, 12)
-        .padding(.trailing, 6)
-        .padding(.vertical, 6)
-        .background(SpatiumTheme.editorToolbar.opacity(0.95), in: Capsule())
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            SpatiumTheme.editorToolbar.opacity(0.95),
+            in: RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous)
+        )
         .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("decor-mode-banner")
     }
 
+    private var decorModeTitle: some View {
+        Label("책장 꾸미기", systemImage: "sparkles")
+            .font(.caption.weight(.black))
+            .foregroundStyle(.white)
+    }
+
+    private var decorDoneButton: some View {
+        Button("완료") {
+            Haptics.selection()
+            isReplacingDecor = false
+            viewModel.endDecorating()
+        }
+        .font(.caption.weight(.black))
+        .foregroundStyle(SpatiumTheme.accent)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(.white, in: Capsule())
+        .buttonStyle(.pressable)
+    }
+
     private func decorPlacementBanner(_ item: FurnitureCatalogItem) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: "hand.tap.fill")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(SpatiumTheme.accent)
-            Text("‘\(item.name)’ 소품을 놓을 선반을 탭하세요")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(SpatiumTheme.text)
-                .lineLimit(1)
-            Spacer(minLength: 6)
-            Button("취소") {
-                Haptics.selection()
-                viewModel.pendingFigure = nil
-                viewModel.statusMessage = nil
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("‘\(item.name)’ 소품을 놓을 선반을 선택하세요", systemImage: "hand.tap.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(SpatiumTheme.text)
+                    HStack(spacing: 10) {
+                        decorShelfMenu(title: "선반 선택") { shelf in
+                            viewModel.placePendingFigure(on: shelf)
+                            announceSelectedDecorPosition()
+                        }
+                        Spacer(minLength: 8)
+                        decorPlacementCancelButton
+                    }
+                }
+            } else {
+                HStack(spacing: 8) {
+                    Image(systemName: "hand.tap.fill")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(SpatiumTheme.accent)
+                    Text("‘\(item.name)’ 소품을 놓을 선반을 탭하세요")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(SpatiumTheme.text)
+                        .lineLimit(1)
+                    Spacer(minLength: 6)
+                    decorShelfMenu(title: "선반 선택") { shelf in
+                        viewModel.placePendingFigure(on: shelf)
+                        announceSelectedDecorPosition()
+                    }
+                    decorPlacementCancelButton
+                }
             }
-            .font(.caption2.weight(.black))
-            .foregroundStyle(SpatiumTheme.accent)
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
-        .background(SpatiumTheme.warmPanel, in: Capsule())
-        .overlay(Capsule().stroke(SpatiumTheme.border.opacity(0.75), lineWidth: 1))
+        .background(
+            SpatiumTheme.warmPanel,
+            in: RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous)
+                .stroke(SpatiumTheme.border.opacity(0.75), lineWidth: 1)
+        )
         .shadow(color: SpatiumTheme.shadow.opacity(0.15), radius: 8, y: 3)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("decor-placement-banner")
     }
 
-    private func decorSelectionControls(_ decoration: PlacedDecoration) -> some View {
-        VStack(spacing: 7) {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(decoration.name)
-                        .font(.caption.weight(.black))
-                        .foregroundStyle(SpatiumTheme.text)
-                        .lineLimit(1)
-                    Text("드래그해서 다른 위치로 옮기세요")
-                        .font(.caption2)
-                        .foregroundStyle(SpatiumTheme.soft)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 6)
+    private var decorPlacementCancelButton: some View {
+        Button("취소") {
+            Haptics.selection()
+            viewModel.pendingFigure = nil
+            viewModel.statusMessage = nil
+        }
+        .font(.caption2.weight(.black))
+        .foregroundStyle(SpatiumTheme.accent)
+        .buttonStyle(.plain)
+    }
+
+    private func decorShelfMenu(
+        title: String,
+        onSelect: @escaping (DecorShelfLevel) -> Void
+    ) -> some View {
+        Menu {
+            ForEach(viewModel.decorShelfLevels) { shelf in
                 Button {
                     Haptics.selection()
-                    isReplacingDecor.toggle()
-                    viewModel.pendingFigure = nil
+                    onSelect(shelf)
                 } label: {
-                    Label("교체", systemImage: "arrow.triangle.2.circlepath")
-                        .font(.caption2.weight(.black))
-                        .foregroundStyle(isReplacingDecor ? .white : SpatiumTheme.accent)
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 6)
-                        .background(isReplacingDecor ? SpatiumTheme.accent : SpatiumTheme.warmPanel, in: Capsule())
+                    Label(shelf.title, systemImage: "rectangle.stack")
                 }
-                .buttonStyle(.pressable)
-
-                Button {
-                    Haptics.impact(.rigid)
-                    isReplacingDecor = false
-                    viewModel.deleteSelectedDecor()
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(SpatiumTheme.coral)
-                        .frame(width: 30, height: 30)
-                        .background(SpatiumTheme.coral.opacity(0.10), in: Circle())
-                }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("소품 제거")
+                .accessibilityIdentifier("decor-shelf-\(shelf.id)")
             }
+        } label: {
+            Label(title, systemImage: "rectangle.stack")
+                .font(.caption2.weight(.black))
+                .foregroundStyle(SpatiumTheme.accent)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(SpatiumTheme.elevatedSurface, in: Capsule())
+                .overlay(Capsule().stroke(SpatiumTheme.accent.opacity(0.28), lineWidth: 1))
+        }
+        .disabled(viewModel.decorShelfLevels.isEmpty)
+        .accessibilityIdentifier("decor-shelf-menu")
+        .accessibilityHint("3D 화면을 직접 탭하지 않고 선반을 선택합니다")
+    }
+
+    private func decorSelectionControls(_ decoration: PlacedDecoration) -> some View {
+        VStack(spacing: 7) {
+            decorSelectionHeader(decoration)
+
+            decorPositionControls
 
             RotationSlider(
                 degrees: viewModel.selectedDecorRotationDegrees,
                 onChange: { viewModel.setSelectedDecorRotation(degrees: $0) },
                 onEditingChanged: handleHistoryEditingChanged
             )
+            .accessibilityLabel("피규어 회전")
+            .accessibilityValue("\(Int(viewModel.selectedDecorRotationDegrees))도")
 
             HStack(spacing: 8) {
                 Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -1450,10 +1551,12 @@ struct RoomEditorView: View {
                     onEditingChanged: handleHistoryEditingChanged
                 )
                 .tint(SpatiumTheme.accent)
+                .accessibilityLabel("피규어 크기")
+                .accessibilityValue("\(Int(viewModel.selectedDecorSizeCm))센티미터")
                 Text("\(Int(viewModel.selectedDecorSizeCm))cm")
                     .font(.caption2.weight(.black).monospacedDigit())
                     .foregroundStyle(SpatiumTheme.accent)
-                    .frame(width: 44, alignment: .trailing)
+                    .frame(minWidth: 44, alignment: .trailing)
             }
         }
         .padding(10)
@@ -1464,6 +1567,128 @@ struct RoomEditorView: View {
         .accessibilityIdentifier("decor-selection-controls")
     }
 
+    @ViewBuilder
+    private func decorSelectionHeader(_ decoration: PlacedDecoration) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 7) {
+                decorSelectionDescription(decoration)
+                HStack(spacing: 8) {
+                    decorReplaceButton
+                    decorDeleteButton
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(spacing: 8) {
+                decorSelectionDescription(decoration)
+                Spacer(minLength: 6)
+                decorReplaceButton
+                decorDeleteButton
+            }
+        }
+    }
+
+    private func decorSelectionDescription(_ decoration: PlacedDecoration) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(decoration.name)
+                .font(.caption.weight(.black))
+                .foregroundStyle(SpatiumTheme.text)
+            Text(viewModel.selectedDecorAccessibilitySummary)
+                .font(.caption2)
+                .foregroundStyle(SpatiumTheme.soft)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 4 : 2)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("선택한 피규어 \(decoration.name)")
+        .accessibilityValue(viewModel.selectedDecorAccessibilitySummary)
+    }
+
+    private var decorReplaceButton: some View {
+        Button {
+            Haptics.selection()
+            isReplacingDecor.toggle()
+            viewModel.pendingFigure = nil
+        } label: {
+            Label("교체", systemImage: "arrow.triangle.2.circlepath")
+                .font(.caption2.weight(.black))
+                .foregroundStyle(isReplacingDecor ? .white : SpatiumTheme.accent)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(isReplacingDecor ? SpatiumTheme.accent : SpatiumTheme.warmPanel, in: Capsule())
+        }
+        .buttonStyle(.pressable)
+    }
+
+    private var decorDeleteButton: some View {
+        Button {
+            Haptics.impact(.rigid)
+            isReplacingDecor = false
+            viewModel.deleteSelectedDecor()
+        } label: {
+            Label("제거", systemImage: "trash")
+                .font(.caption2.weight(.black))
+                .foregroundStyle(SpatiumTheme.coral)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(SpatiumTheme.coral.opacity(0.10), in: Capsule())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("소품 제거")
+    }
+
+    private var decorPositionControls: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text("위치 조절")
+                    .font(.caption2.weight(.black))
+                    .foregroundStyle(SpatiumTheme.soft)
+                Spacer(minLength: 6)
+                decorShelfMenu(title: "선반 이동") { shelf in
+                    viewModel.moveSelectedDecor(to: shelf)
+                    announceSelectedDecorPosition()
+                }
+            }
+
+            LazyVGrid(columns: decorMovementColumns, spacing: 6) {
+                ForEach(DecorNudgeDirection.allCases) { direction in
+                    Button {
+                        Haptics.selection()
+                        viewModel.nudgeSelectedDecor(
+                            deltaX: direction.delta.x,
+                            deltaZ: direction.delta.z
+                        )
+                        announceSelectedDecorPosition()
+                    } label: {
+                        Label(direction.title, systemImage: direction.systemImage)
+                            .font(.caption2.weight(.bold))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 7)
+                            .foregroundStyle(SpatiumTheme.accent)
+                            .background(SpatiumTheme.warmPanel, in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("decor-move-\(direction.rawValue)")
+                    .accessibilityHint("5센티미터 이동합니다")
+                }
+            }
+        }
+        .padding(8)
+        .background(SpatiumTheme.background.opacity(0.65), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private var decorMovementColumns: [GridItem] {
+        let count = dynamicTypeSize.isAccessibilitySize ? 2 : 4
+        return Array(repeating: GridItem(.flexible(), spacing: 6), count: count)
+    }
+
+    private func announceSelectedDecorPosition() {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: viewModel.selectedDecorAccessibilitySummary
+        )
+    }
+
     private var decorCatalog: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
@@ -1472,7 +1697,7 @@ struct RoomEditorView: View {
                     .foregroundStyle(isReplacingDecor ? SpatiumTheme.accent : SpatiumTheme.soft)
                 if !isReplacingDecor, viewModel.selectedDecoration != nil {
                     Text("선택하면 새 소품을 추가해요")
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.caption2.weight(.medium))
                         .foregroundStyle(SpatiumTheme.soft.opacity(0.78))
                 }
             }
@@ -1486,7 +1711,7 @@ struct RoomEditorView: View {
                 }
                 .padding(.horizontal, 1)
             }
-            .frame(height: 50)
+            .frame(minHeight: 50)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
@@ -1519,16 +1744,16 @@ struct RoomEditorView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(item.name)
                         .font(.caption2.weight(.black))
-                        .lineLimit(1)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
                     Text(item.group)
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.caption2.weight(.medium))
                         .opacity(0.7)
                         .lineLimit(1)
                 }
             }
             .foregroundStyle(isPending ? .white : SpatiumTheme.text)
             .padding(.horizontal, 9)
-            .frame(height: 44)
+            .frame(minHeight: 44)
             .background(isPending ? SpatiumTheme.accent : SpatiumTheme.warmPanel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -1549,7 +1774,7 @@ struct RoomEditorView: View {
                 .font(.caption2.weight(.black))
                 .foregroundStyle(SpatiumTheme.accent)
                 .padding(.horizontal, 10)
-                .frame(height: 44)
+                .frame(minHeight: 44)
                 .background(SpatiumTheme.elevatedSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(SpatiumTheme.accent.opacity(0.32), lineWidth: 1))
         }

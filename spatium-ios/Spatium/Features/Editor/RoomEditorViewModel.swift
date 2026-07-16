@@ -19,6 +19,13 @@ enum EditorDraftSaveState: Equatable {
     }
 }
 
+/// VoiceOver 등 3D 캔버스를 직접 탭하기 어려운 사용자가 선택할 수 있는 책장 지지면.
+struct DecorShelfLevel: Identifiable, Equatable {
+    let id: Int
+    let title: String
+    let height: Double
+}
+
 @MainActor
 final class RoomEditorViewModel: ObservableObject {
     @Published var layout: RoomLayout
@@ -47,10 +54,14 @@ final class RoomEditorViewModel: ObservableObject {
     @Published var pendingFigure: FurnitureCatalogItem?
     /// 꾸미기 중인 책장 위에서 선택된 피규어의 decorId.
     @Published var selectedDecorID: Int?
+    /// 3D 책장 모델에서 찾은 선반 높이. 모델 분석 전에는 책장 높이 기반 기본 3단을 제공한다.
+    @Published private(set) var decorShelfLevels: [DecorShelfLevel] = []
     private var nextDecorID = 1
 
     /// 회전 슬라이더가 스냅되는 각도 스톱(도).
     static let rotationStops: [Double] = [-180, -90, 0, 90, 180]
+    /// 접근성 이동 버튼 한 번에 움직이는 거리(m).
+    static let decorNudgeStep = 0.05
 
     /// Bumped whenever furniture geometry needs a full scene rebuild
     /// (add/remove/replace) — transform-only edits mutate nodes in place.
@@ -306,6 +317,7 @@ final class RoomEditorViewModel: ObservableObject {
         decoratingItemID = snapshot.decoratingItemID.flatMap { id in
             layout.furnitures.contains(where: { $0.itemId == id }) ? id : nil
         }
+        decorShelfLevels = decoratingFurniture.map(Self.fallbackDecorShelfLevels) ?? []
         selectedDecorID = snapshot.selectedDecorID
         isMovingSelectedFurniture = selectedItemID != nil && snapshot.isMovingSelectedFurniture
         pendingFigure = nil
@@ -768,6 +780,7 @@ final class RoomEditorViewModel: ObservableObject {
     func beginDecorating() {
         guard let item = selectedFurniture, Self.isDecoratable(item) else { return }
         decoratingItemID = item.itemId
+        decorShelfLevels = Self.fallbackDecorShelfLevels(for: item)
         selectedItemID = nil
         isMovingSelectedFurniture = false
         isMeasuring = false
@@ -778,6 +791,7 @@ final class RoomEditorViewModel: ObservableObject {
 
     func endDecorating() {
         decoratingItemID = nil
+        decorShelfLevels = []
         pendingFigure = nil
         selectedDecorID = nil
         statusMessage = nil
@@ -853,6 +867,12 @@ final class RoomEditorViewModel: ObservableObject {
         Haptics.impact(.light)
     }
 
+    /// 3D 선반 탭 대신 메뉴에서 선택한 선반 중앙에 대기 중인 피규어를 배치한다.
+    func placePendingFigure(on shelf: DecorShelfLevel) {
+        guard decorShelfLevels.contains(where: { $0.id == shelf.id }) else { return }
+        placePendingFigure(atLocal: .init(x: 0, y: shelf.height, z: 0))
+    }
+
     /// 선택된 피규어를 다른 선반 지점(부모 로컬 좌표)으로 옮긴다.
     func moveSelectedDecor(toLocal position: FurnitureTransform.Vector3) {
         guard let indices = selectedDecorIndices() else { return }
@@ -870,6 +890,75 @@ final class RoomEditorViewModel: ObservableObject {
         markLayoutChanged()
         statusMessage = nil
         sceneRevision += 1
+    }
+
+    /// 선택한 피규어를 책장 로컬 좌표 기준으로 조금씩 이동한다.
+    func nudgeSelectedDecor(deltaX: Double, deltaZ: Double) {
+        guard deltaX.isFinite, deltaZ.isFinite,
+              let decoration = selectedDecoration else { return }
+        moveSelectedDecor(
+            toLocal: .init(
+                x: decoration.position.x + deltaX,
+                y: decoration.position.y,
+                z: decoration.position.z + deltaZ
+            )
+        )
+    }
+
+    /// 현재 가로·앞뒤 위치를 유지한 채 메뉴에서 고른 다른 선반으로 이동한다.
+    func moveSelectedDecor(to shelf: DecorShelfLevel) {
+        guard decorShelfLevels.contains(where: { $0.id == shelf.id }),
+              let decoration = selectedDecoration else { return }
+        moveSelectedDecor(
+            toLocal: .init(
+                x: decoration.position.x,
+                y: shelf.height,
+                z: decoration.position.z
+            )
+        )
+    }
+
+    /// SceneKit이 실제 위쪽 면을 찾은 뒤 기본 3단 목록을 모델의 실제 선반 높이로 교체한다.
+    func updateDecorShelfHeights(_ heights: [Double]) {
+        guard isDecorating else { return }
+        let resolved = Self.makeDecorShelfLevels(from: heights)
+        guard !resolved.isEmpty, resolved != decorShelfLevels else { return }
+        decorShelfLevels = resolved
+    }
+
+    static func makeDecorShelfLevels(from heights: [Double]) -> [DecorShelfLevel] {
+        let sorted = heights
+            .filter { $0.isFinite && $0 >= 0 }
+            .sorted()
+        var unique: [Double] = []
+        for height in sorted where unique.last.map({ height - $0 >= 0.12 }) ?? true {
+            unique.append(height)
+        }
+
+        return unique.enumerated().map { index, height in
+            DecorShelfLevel(
+                id: index,
+                title: decorShelfTitle(index: index, count: unique.count),
+                height: height
+            )
+        }
+    }
+
+    private static func fallbackDecorShelfLevels(for furniture: PlacedFurniture) -> [DecorShelfLevel] {
+        let height = max((furniture.height ?? 1.8) * max(furniture.scale.y, 0.001), 0.3)
+        return makeDecorShelfLevels(from: [height / 3, height * 2 / 3, height])
+    }
+
+    private static func decorShelfTitle(index: Int, count: Int) -> String {
+        switch (count, index) {
+        case (1, _): "선반"
+        case (2, 0): "아래 선반"
+        case (2, _): "위 선반"
+        case (3, 0): "아래 선반"
+        case (3, 1): "가운데 선반"
+        case (3, _): "위 선반"
+        default: "\(index + 1)단 선반"
+        }
     }
 
     /// 드래그 중인 소품의 후보 위치를 책장 안쪽으로 제한한다. SceneKit 노드는 손가락을
@@ -966,6 +1055,37 @@ final class RoomEditorViewModel: ObservableObject {
         guard let decoration = selectedDecoration else { return 0 }
         let maxSide = max(decoration.width, decoration.height, decoration.depth)
         return (maxSide * decoration.scale * 100).rounded()
+    }
+
+    /// 선택 카드와 VoiceOver가 함께 사용하는 현재 선반·위치·크기 설명.
+    var selectedDecorAccessibilitySummary: String {
+        guard let decoration = selectedDecoration else { return "선택된 피규어가 없습니다" }
+        let shelf = decorShelfLevels.min(by: {
+            abs($0.height - decoration.position.y) < abs($1.height - decoration.position.y)
+        })?.title ?? "높이 \(centimeters(decoration.position.y))센티미터"
+        return [
+            shelf,
+            horizontalPositionDescription(decoration.position.x),
+            depthPositionDescription(decoration.position.z),
+            "크기 \(Int(selectedDecorSizeCm))센티미터"
+        ].joined(separator: ", ")
+    }
+
+    private func horizontalPositionDescription(_ x: Double) -> String {
+        let value = centimeters(abs(x))
+        if value < 1 { return "가로 중앙" }
+        return x < 0 ? "왼쪽 \(value)센티미터" : "오른쪽 \(value)센티미터"
+    }
+
+    private func depthPositionDescription(_ z: Double) -> String {
+        let value = centimeters(abs(z))
+        if value < 1 { return "앞뒤 중앙" }
+        // 꾸미기 전용 책장의 열린 정면은 로컬 +Z 방향이다.
+        return z > 0 ? "앞쪽 \(value)센티미터" : "뒤쪽 \(value)센티미터"
+    }
+
+    private func centimeters(_ meters: Double) -> Int {
+        Int((meters * 100).rounded())
     }
 
     func setSelectedDecorSize(cm: Double) {

@@ -755,10 +755,69 @@ struct RoomEditorSceneView: UIViewRepresentable {
                let node = furnitureContainer.childNode(withName: "furniture-\(target)", recursively: false) {
                 decorCameraItemID = target
                 applyDecorCamera(to: node)
+                let container = furnitureContainer.childNode(
+                    withName: "decorbox-\(target)",
+                    recursively: false
+                ) ?? makeDecorContainerIfMissing(for: target)
+                if let container {
+                    let heights = detectedDecorShelfHeights(in: node, container: container)
+                    if !heights.isEmpty {
+                        // SwiftUI updateUIView 안에서 @Published를 바로 변경하지 않고 다음 run loop에 반영한다.
+                        DispatchQueue.main.async { [weak viewModel] in
+                            guard viewModel?.decoratingItemID == target else { return }
+                            viewModel?.updateDecorShelfHeights(heights)
+                        }
+                    }
+                }
             } else {
                 decorCameraItemID = nil
                 applyCamera(mode: viewModel.viewMode, animated: true)
             }
+        }
+
+        /// 책장 모델 안쪽을 위에서 아래로 탐색해 실제 위쪽 면의 로컬 높이를 수집한다.
+        /// 결과는 피규어 컨테이너 좌표계의 m 단위라 탭 배치와 동일한 위치에 놓을 수 있다.
+        private func detectedDecorShelfHeights(
+            in furnitureNode: SCNNode,
+            container: SCNNode
+        ) -> [Double] {
+            guard let bounds = Self.localHierarchyBounds(of: furnitureNode) else { return [] }
+            let centerX = (bounds.min.x + bounds.max.x) / 2
+            let centerZ = (bounds.min.z + bounds.max.z) / 2
+            let width = bounds.max.x - bounds.min.x
+            let depth = bounds.max.z - bounds.min.z
+            let xOffsets: [Float] = [-0.28, 0, 0.28]
+            let zOffsets: [Float] = [-0.22, 0, 0.22]
+            var heights: [Double] = []
+
+            for xOffset in xOffsets {
+                for zOffset in zOffsets {
+                    let start = SCNVector3(
+                        centerX + width * xOffset,
+                        bounds.max.y + 0.1,
+                        centerZ + depth * zOffset
+                    )
+                    let end = SCNVector3(
+                        centerX + width * xOffset,
+                        bounds.min.y - 0.1,
+                        centerZ + depth * zOffset
+                    )
+                    let hits = furnitureNode.hitTestWithSegment(
+                        from: start,
+                        to: end,
+                        options: [
+                            SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.all.rawValue,
+                            SCNHitTestOption.ignoreHiddenNodes.rawValue: true
+                        ]
+                    )
+                    for hit in hits where RoomEditorSceneView.isDecorSupportNormal(hit.worldNormal) {
+                        let local = container.convertPosition(hit.worldCoordinates, from: nil)
+                        guard local.y.isFinite, local.y >= -0.01 else { continue }
+                        heights.append(Double(local.y))
+                    }
+                }
+            }
+            return heights
         }
 
         /// 웹 computeDecorView 대응: 책장의 열린 선반 정면에서 25도 위로 내려다보는

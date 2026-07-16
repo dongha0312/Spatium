@@ -143,7 +143,7 @@ final class SpatiumUITests: XCTestCase {
         XCTAssertTrue(catalog.waitForExistence(timeout: 3))
         XCTAssertLessThan(catalog.frame.height, 100)
         XCTAssertTrue(app.staticTexts["‘모던 피규어’ 소품을 놓을 선반을 탭하세요"].exists)
-        XCTAssertFalse(app.buttons["decor-shelf-1"].exists)
+        XCTAssertTrue(app.buttons["decor-shelf-menu"].exists)
 
         let beforePlacement = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         beforePlacement.name = "Frontend-style compact decor controls"
@@ -158,6 +158,11 @@ final class SpatiumUITests: XCTestCase {
         let selectionControls = app.descendants(matching: .any)["decor-selection-controls"]
         XCTAssertTrue(selectionControls.waitForExistence(timeout: 5))
         XCTAssertFalse(placementBanner.exists)
+        XCTAssertTrue(app.buttons["decor-shelf-menu"].exists)
+        XCTAssertTrue(app.buttons["decor-move-left"].exists)
+        XCTAssertTrue(app.buttons["decor-move-right"].exists)
+        XCTAssertTrue(app.buttons["decor-move-forward"].exists)
+        XCTAssertTrue(app.buttons["decor-move-backward"].exists)
 
         let afterPlacement = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         afterPlacement.name = "Decor placed by direct shelf tap"
@@ -178,6 +183,26 @@ final class SpatiumUITests: XCTestCase {
         afterDrag.name = "Decor moved by direct drag"
         afterDrag.lifetime = .keepAlways
         add(afterDrag)
+    }
+
+    @MainActor
+    func testDecorControlsBecomeScrollableAtAccessibilityTextSize() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestEditor", "-UITestDecorQuickPlacement", "-UITestClearEditorDrafts",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        app.launchEnvironment["UIPreferredContentSizeCategoryName"] = "UICTContentSizeCategoryAccessibilityXXXL"
+        app.launch()
+
+        let scrollableControls = app.scrollViews["decor-controls-scroll"]
+        XCTAssertTrue(scrollableControls.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["decor-shelf-menu"].waitForExistence(timeout: 3))
+
+        let windowFrame = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(scrollableControls.frame.height, 0)
+        XCTAssertGreaterThanOrEqual(scrollableControls.frame.minY, windowFrame.minY)
+        XCTAssertLessThanOrEqual(scrollableControls.frame.maxY, windowFrame.maxY)
     }
 
     @MainActor

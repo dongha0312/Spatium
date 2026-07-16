@@ -211,6 +211,61 @@ struct SpatiumTests {
         viewModel.discardCurrentDraft()
     }
 
+    @Test func decorAccessibilityControlsPlaceMoveAndDescribeFigure() throws {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let viewModel = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "꾸미기 접근성 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory
+        )
+        let bookcase = try #require(
+            FurnitureCatalog.items.first { $0.modelFileName == "editable_bookcase" }
+        )
+        let figure = FurnitureCatalogItem(
+            id: "accessible_figure",
+            name: "접근성 피규어",
+            group: "피규어",
+            category: "figure",
+            width: 0.08,
+            height: 0.10,
+            depth: 0.08,
+            modelFileName: "chair"
+        )
+
+        viewModel.place(catalogItem: bookcase)
+        viewModel.isMovingSelectedFurniture = false
+        viewModel.beginDecorating()
+        #expect(viewModel.decorShelfLevels.map(\.title) == ["아래 선반", "가운데 선반", "위 선반"])
+
+        viewModel.prepareDecorPlacement(figure)
+        let middleShelf = try #require(viewModel.decorShelfLevels.first { $0.title == "가운데 선반" })
+        viewModel.placePendingFigure(on: middleShelf)
+        #expect(viewModel.selectedDecoration?.position.y == middleShelf.height)
+
+        viewModel.nudgeSelectedDecor(deltaX: 0.05, deltaZ: 0)
+        viewModel.nudgeSelectedDecor(deltaX: 0, deltaZ: 0.05)
+        let moved = try #require(viewModel.selectedDecoration)
+        #expect(abs(moved.position.x - 0.05) < 0.0001)
+        #expect(abs(moved.position.z - 0.05) < 0.0001)
+        #expect(viewModel.selectedDecorAccessibilitySummary.contains("오른쪽 5센티미터"))
+        #expect(viewModel.selectedDecorAccessibilitySummary.contains("앞쪽 5센티미터"))
+        #expect(viewModel.selectedDecorAccessibilitySummary.contains("크기 10센티미터"))
+
+        viewModel.updateDecorShelfHeights([0.02, 0.03, 0.62, 0.64, 1.20])
+        #expect(viewModel.decorShelfLevels.map(\.title) == ["아래 선반", "가운데 선반", "위 선반"])
+        let topShelf = try #require(viewModel.decorShelfLevels.last)
+        viewModel.moveSelectedDecor(to: topShelf)
+        #expect(viewModel.selectedDecoration?.position.y == topShelf.height)
+        #expect(viewModel.selectedDecorAccessibilitySummary.contains("위 선반"))
+        viewModel.discardCurrentDraft()
+    }
+
     @Test func decorRejectsNonFigureItemsAndPersonViewRejectsFurniturePlacement() throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
