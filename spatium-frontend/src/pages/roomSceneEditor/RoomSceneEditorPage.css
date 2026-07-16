@@ -334,12 +334,14 @@
 .room-scene-editor-room-area {
   position: absolute;
   right: 16px;
-  top: 68px;
-  z-index: 8;
+  /* Place the area badge below the undo and redo controls. */
+  top: 108px;
+  /* Keep the area badge above the dynamic CSS2D measurement labels. */
+  z-index: 2147483647;
   padding: 9px 11px;
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.94);
+  background: #fff;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
   color: #1f2933;
   font: 800 13px Arial, Helvetica, sans-serif;
