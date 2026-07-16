@@ -311,6 +311,40 @@ struct SpatiumTests {
         reopened.discardCurrentDraft()
     }
 
+    @Test func editorDraftSaveFailureIsVisibleAndCanBeRetried() throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let blockedDraftDirectory = testRoot.appendingPathComponent("not-a-directory")
+        try FileManager.default.createDirectory(at: testRoot, withIntermediateDirectories: true)
+        try Data("file blocks directory creation".utf8).write(to: blockedDraftDirectory)
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let viewModel = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "임시 저장 실패 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: blockedDraftDirectory
+        )
+        let chair = try #require(FurnitureCatalog.items.first)
+        viewModel.place(catalogItem: chair)
+        viewModel.persistDraftImmediately()
+
+        #expect(viewModel.hasUnsavedChanges)
+        #expect(
+            viewModel.draftSaveState
+                == .failed(message: RoomEditorViewModel.draftSaveFailureMessage)
+        )
+
+        try FileManager.default.removeItem(at: blockedDraftDirectory)
+        viewModel.retryDraftSave()
+
+        #expect(viewModel.draftSavedAt != nil)
+        #expect(viewModel.draftSaveState.failureMessage == nil)
+        viewModel.discardCurrentDraft()
+    }
+
     @Test func otherRoomTwoIncludesBundledUserGeneratedFurniture() throws {
         let scan = try #require(TestRoomData.scans.first { $0.id == "other-room-2" })
         let loaded = try #require(scan.load())

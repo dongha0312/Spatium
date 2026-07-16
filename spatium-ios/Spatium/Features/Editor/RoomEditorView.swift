@@ -78,6 +78,8 @@ struct RoomEditorView: View {
     @State private var selectedFurnitureAdjustment: FurnitureAdjustment = .rotation
     /// 프런트엔드의 `isReplacingSelected`에 대응하는 꾸미기 전용 교체 상태.
     @State private var isReplacingDecor = false
+    /// 로컬 복구본 저장에 실패한 상태에서 에디터를 닫아 작업이 사라지는 것을 방지한다.
+    @State private var showDraftSaveExitWarning = false
 
     private static let wallColors = ["#F5F0EA", "#E8DCC8", "#C4956A", "#3A3A3A"]
     private static let floorColors = ["#D8C4A0", "#B08968", "#6B4A34", "#C9C9C9"]
@@ -287,6 +289,22 @@ struct RoomEditorView: View {
         } message: {
             Text("이 기기에 자동으로 저장된 편집 내용이 있습니다. 복구하면 마지막 작업 상태부터 이어갈 수 있어요.")
         }
+        .alert("임시 저장에 실패했어요", isPresented: $showDraftSaveExitWarning) {
+            Button("다시 시도") {
+                Haptics.selection()
+                viewModel.retryDraftSave()
+                if viewModel.draftSaveState.failureMessage == nil {
+                    dismiss()
+                }
+            }
+            Button("저장하지 않고 나가기", role: .destructive) {
+                viewModel.discardCurrentDraft()
+                dismiss()
+            }
+            Button("계속 편집", role: .cancel) {}
+        } message: {
+            Text(viewModel.draftSaveState.failureMessage ?? RoomEditorViewModel.draftSaveFailureMessage)
+        }
     }
 
     // MARK: - 상단 내비게이션
@@ -294,7 +312,7 @@ struct RoomEditorView: View {
     private var navBar: some View {
         HStack(spacing: 0) {
             Button {
-                dismiss()
+                closeEditor()
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.subheadline.weight(.bold))
@@ -346,6 +364,16 @@ struct RoomEditorView: View {
                 endPoint: .bottom
             )
             .frame(height: 6)
+        }
+    }
+
+    private func closeEditor() {
+        // 화면이 사라진 뒤가 아니라 닫기 전에 즉시 쓰기를 완료해야 실패 안내를 보여줄 수 있다.
+        viewModel.persistDraftImmediately()
+        if viewModel.hasUnsavedChanges, viewModel.draftSaveState.failureMessage != nil {
+            showDraftSaveExitWarning = true
+        } else {
+            dismiss()
         }
     }
 
@@ -1537,61 +1565,48 @@ struct RoomEditorView: View {
     }
 
     private var footer: some View {
-        HStack(spacing: 8) {
-            if viewModel.hasUnsavedChanges {
-                Label(
-                    viewModel.draftSavedAt == nil ? "이 기기에 임시 저장 중..." : "이 기기에 임시 저장됨",
-                    systemImage: viewModel.draftSavedAt == nil ? "clock" : "checkmark.circle.fill"
-                )
-                .font(.caption2)
-                .foregroundStyle(.white.opacity(0.58))
-                .lineLimit(2)
-            } else if viewModel.isGuestLocalProject {
-                // 게스트 프로젝트는 서버에 없어 업로드가 불가능하다. 기술 에러 대신 안내를 보여준다.
-                Text("게스트 프로젝트 — 로그인하면 서버에 저장할 수 있어요")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.55))
-                    .lineLimit(2)
-            } else if viewModel.isOffline {
-                // 로컬 편집 방은 서버 저장은 할 수 없지만, 편집 후에는 위의 로컬 임시 저장 상태를 보여준다.
-                Text("편집 내용이 서버에 저장되지 않아요 — 이 기기에만 보관돼요")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.55))
-                    .lineLimit(2)
+        VStack(spacing: 8) {
+            if viewModel.hasUnsavedChanges,
+               let failureMessage = viewModel.draftSaveState.failureMessage {
+                draftSaveFailureRow(message: failureMessage)
             }
 
-            Spacer()
-            Button {
-                viewModel.discardCurrentDraft()
-                dismiss()
-            } label: {
-                Text("취소하기")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.white.opacity(0.4))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.12), lineWidth: 1))
-            }
-            .buttonStyle(.pressable)
+            HStack(spacing: 8) {
+                footerStatus
 
-            Button {
-                Task { await viewModel.save() }
-            } label: {
-                Group {
-                    if viewModel.isSaving {
-                        ProgressView().tint(.white)
-                    } else {
-                        Text("저장하기").font(.caption.weight(.black))
-                    }
+                Spacer()
+                Button {
+                    viewModel.discardCurrentDraft()
+                    dismiss()
+                } label: {
+                    Text("취소하기")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white.opacity(0.4))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.white.opacity(0.12), lineWidth: 1))
                 }
-                .foregroundStyle(.white.opacity(isSaveUnavailable ? 0.5 : 1))
-                .padding(.horizontal, 18)
-                .padding(.vertical, 8)
-                .background(SpatiumTheme.accent.opacity(isSaveUnavailable ? 0.45 : 1))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .buttonStyle(.pressable)
+
+                Button {
+                    Task { await viewModel.save() }
+                } label: {
+                    Group {
+                        if viewModel.isSaving {
+                            ProgressView().tint(.white)
+                        } else {
+                            Text("저장하기").font(.caption.weight(.black))
+                        }
+                    }
+                    .foregroundStyle(.white.opacity(isSaveUnavailable ? 0.5 : 1))
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 8)
+                    .background(SpatiumTheme.accent.opacity(isSaveUnavailable ? 0.45 : 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+                .disabled(viewModel.isSaving || isSaveUnavailable)
             }
-            .buttonStyle(.pressable)
-            .disabled(viewModel.isSaving || isSaveUnavailable)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -1606,6 +1621,79 @@ struct RoomEditorView: View {
             )
         )
         .shadow(color: .black.opacity(0.18), radius: 14, y: -5)
+    }
+
+    @ViewBuilder
+    private var footerStatus: some View {
+        if viewModel.hasUnsavedChanges {
+            switch viewModel.draftSaveState {
+            case .idle, .saving:
+                Label("이 기기에 임시 저장 중...", systemImage: "clock")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.58))
+                    .lineLimit(2)
+            case .saved:
+                Label("이 기기에 임시 저장됨", systemImage: "checkmark.circle.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.58))
+                    .lineLimit(2)
+            case .failed:
+                EmptyView()
+            }
+        } else if viewModel.isGuestLocalProject {
+            // 게스트 프로젝트는 서버에 없어 업로드가 불가능하다. 기술 에러 대신 안내를 보여준다.
+            Text("게스트 프로젝트 — 로그인하면 서버에 저장할 수 있어요")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(2)
+        } else if viewModel.isOffline {
+            // 로컬 편집 방은 서버 저장은 할 수 없지만, 편집 후에는 위의 로컬 임시 저장 상태를 보여준다.
+            Text("편집 내용이 서버에 저장되지 않아요 — 이 기기에만 보관돼요")
+                .font(.caption2)
+                .foregroundStyle(.white.opacity(0.55))
+                .lineLimit(2)
+        }
+    }
+
+    private func draftSaveFailureRow(message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(SpatiumTheme.coral)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("임시 저장 실패")
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.white)
+                Text(message)
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.65))
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 4)
+
+            Button("다시 시도") {
+                Haptics.selection()
+                viewModel.retryDraftSave()
+            }
+            .font(.caption.weight(.black))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 7)
+            .background(SpatiumTheme.coral, in: Capsule())
+            .buttonStyle(.pressable)
+            .accessibilityLabel("임시 저장 다시 시도")
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
+        .background(SpatiumTheme.coral.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(SpatiumTheme.coral.opacity(0.28), lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("editor-draft-save-failure")
     }
 }
 

@@ -2,6 +2,23 @@ import Combine
 import Foundation
 import UIKit
 
+enum EditorDraftSaveState: Equatable {
+    case idle
+    case saving
+    case saved(Date)
+    case failed(message: String)
+
+    var savedAt: Date? {
+        if case let .saved(date) = self { return date }
+        return nil
+    }
+
+    var failureMessage: String? {
+        if case let .failed(message) = self { return message }
+        return nil
+    }
+}
+
 @MainActor
 final class RoomEditorViewModel: ObservableObject {
     @Published var layout: RoomLayout
@@ -16,7 +33,7 @@ final class RoomEditorViewModel: ObservableObject {
     @Published private(set) var canRedo = false
     @Published private(set) var hasRecoverableDraft = false
     @Published private(set) var recoverableDraftSavedAt: Date?
-    @Published private(set) var draftSavedAt: Date?
+    @Published private(set) var draftSaveState: EditorDraftSaveState = .idle
     /// 하단 뷰바의 "측정" 모드 on/off (프런트엔드와 동일하게 배지/치수 표시 전환).
     @Published var isMeasuring = false
     /// 선택한 가구를 드래그로 이동하는 편집 상태. 측정 모드와 분리합니다.
@@ -80,6 +97,7 @@ final class RoomEditorViewModel: ObservableObject {
     }
 
     private static let historyLimit = 30
+    static let draftSaveFailureMessage = "이 기기에 임시 저장하지 못했어요. 저장 공간을 확인한 후 다시 시도해 주세요."
     private var undoHistory: [EditorSnapshot] = []
     private var redoHistory: [EditorSnapshot] = []
     private var historyTransactionStart: EditorSnapshot?
@@ -92,6 +110,10 @@ final class RoomEditorViewModel: ObservableObject {
     var selectedFurniture: PlacedFurniture? {
         guard let selectedItemID else { return nil }
         return layout.furnitures.first { $0.itemId == selectedItemID }
+    }
+
+    var draftSavedAt: Date? {
+        draftSaveState.savedAt
     }
 
     init(
@@ -345,7 +367,6 @@ final class RoomEditorViewModel: ObservableObject {
 
     private func markLayoutChanged() {
         hasUnsavedChanges = true
-        draftSavedAt = nil
         scheduleDraftSave()
     }
 
@@ -360,10 +381,12 @@ final class RoomEditorViewModel: ObservableObject {
 
     private func scheduleDraftSave() {
         draftSaveTask?.cancel()
+        draftSaveState = .saving
         draftSaveTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .milliseconds(650))
             guard !Task.isCancelled, let self, self.hasUnsavedChanges else { return }
             self.writeDraft(layout: self.layout)
+            self.draftSaveTask = nil
         }
     }
 
@@ -372,6 +395,15 @@ final class RoomEditorViewModel: ObservableObject {
         draftSaveTask?.cancel()
         draftSaveTask = nil
         guard hasUnsavedChanges else { return }
+        writeDraft(layout: layout)
+    }
+
+    /// 디스크 권한·용량 문제를 해결한 뒤 현재 편집 상태를 즉시 다시 저장한다.
+    func retryDraftSave() {
+        guard hasUnsavedChanges, draftSaveState.failureMessage != nil else { return }
+        draftSaveTask?.cancel()
+        draftSaveTask = nil
+        draftSaveState = .saving
         writeDraft(layout: layout)
     }
 
@@ -390,10 +422,10 @@ final class RoomEditorViewModel: ObservableObject {
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(draft)
             try data.write(to: draftFileURL, options: .atomic)
-            draftSavedAt = draft.savedAt
+            draftSaveState = .saved(draft.savedAt)
         } catch {
-            // 임시 저장 실패가 편집을 막아서는 안 된다. 명시적 서버 저장 실패는 save()에서 별도로 알린다.
-            draftSavedAt = nil
+            // 서버 저장과 별개로 로컬 복구본이 없다는 사실을 하단 바에 명확히 노출한다.
+            draftSaveState = .failed(message: Self.draftSaveFailureMessage)
         }
     }
 
@@ -431,7 +463,7 @@ final class RoomEditorViewModel: ObservableObject {
         rebuildLocalIdentifiers()
         sceneRevision += 1
         markLayoutChanged()
-        draftSavedAt = draft.savedAt
+        draftSaveState = .saved(draft.savedAt)
         statusMessage = "임시 저장된 편집을 복구했어요."
     }
 
@@ -453,7 +485,7 @@ final class RoomEditorViewModel: ObservableObject {
 
     private func removeDraftFile() {
         try? FileManager.default.removeItem(at: draftFileURL)
-        draftSavedAt = nil
+        draftSaveState = .idle
     }
 
     private func markCurrentLayoutSaved() {
