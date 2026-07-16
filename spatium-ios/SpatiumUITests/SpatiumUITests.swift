@@ -65,6 +65,25 @@ final class SpatiumUITests: XCTestCase {
     }
 
     @MainActor
+    func testImgTo3DNameStepBindingsRemainInteractiveAfterViewExtraction() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestImgTo3D", "-UITestImgTo3DName"]
+        app.launch()
+
+        let nameField = app.textFields["예) 침대 옆 협탁"]
+        let nextButton = app.buttons["다음"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["객체 분리 설정"].exists)
+        XCTAssertTrue(app.staticTexts["3D 생성 설정"].exists)
+        XCTAssertTrue(nextButton.exists)
+        XCTAssertFalse(nextButton.isEnabled)
+
+        nameField.tap()
+        nameField.typeText("회색 사무용 의자")
+        XCTAssertTrue(nextButton.isEnabled)
+    }
+
+    @MainActor
     func testRoomCatalogShowsUserFurnitureAndOtherCategories() throws {
         let app = XCUIApplication()
         app.launchArguments = [
