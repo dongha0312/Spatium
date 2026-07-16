@@ -128,6 +128,26 @@ final class SpatiumUITests: XCTestCase {
     }
 
     @MainActor
+    func testEditorHelpSheetAndFooterRemainAvailableAfterViewExtraction() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestEditor", "-UITestScan", "other-room-2", "-UITestViewHelp",
+            "-UITestClearEditorDrafts"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.navigationBars["사용법 안내"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["가구 편집 (모든 뷰 공통)"].exists)
+
+        let closeButton = app.buttons["닫기"]
+        XCTAssertTrue(closeButton.exists)
+        closeButton.tap()
+
+        XCTAssertTrue(app.buttons["취소하기"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["저장하기"].exists)
+    }
+
+    @MainActor
     func testDecorCatalogStaysCompactAndPromptsForDirectShelfPlacement() throws {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -203,6 +223,92 @@ final class SpatiumUITests: XCTestCase {
         XCTAssertGreaterThan(scrollableControls.frame.height, 0)
         XCTAssertGreaterThanOrEqual(scrollableControls.frame.minY, windowFrame.minY)
         XCTAssertLessThanOrEqual(scrollableControls.frame.maxY, windowFrame.maxY)
+    }
+
+    @MainActor
+    func testLandscapeFurnitureControlsAndFooterStayInsideWindow() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestEditor", "-UITestScan", "other-room-2", "-UITestSelectFurniture",
+            "-UITestClearEditorDrafts"
+        ]
+        app.launch()
+
+        let controls = app.scrollViews["furniture-selection-controls-scroll"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["취소하기"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["저장하기"].exists)
+        XCTAssertTrue(app.buttons["가구 추가"].exists)
+
+        let windowFrame = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(windowFrame.width, windowFrame.height)
+        XCTAssertGreaterThanOrEqual(controls.frame.minY, windowFrame.minY)
+        XCTAssertLessThanOrEqual(controls.frame.maxY, app.buttons["취소하기"].frame.minY)
+    }
+
+    @MainActor
+    func testLandscapeDecorControlsScrollAtAccessibilityTextSize() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestEditor", "-UITestDecorQuickPlacement", "-UITestClearEditorDrafts",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        app.launchEnvironment["UIPreferredContentSizeCategoryName"] = "UICTContentSizeCategoryAccessibilityXXXL"
+        app.launch()
+
+        let controls = app.scrollViews["decor-controls-scroll"]
+        XCTAssertTrue(controls.waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["decor-shelf-menu"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["취소하기"].exists)
+
+        let windowFrame = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(windowFrame.width, windowFrame.height)
+        XCTAssertLessThanOrEqual(controls.frame.height, 180.5)
+        XCTAssertLessThanOrEqual(controls.frame.maxY, app.buttons["취소하기"].frame.minY)
+
+        app.buttons["decor-shelf-menu"].tap()
+        let middleShelf = app.buttons["decor-shelf-1"]
+        XCTAssertTrue(middleShelf.waitForExistence(timeout: 3))
+        middleShelf.tap()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["decor-selection-controls"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.buttons["decor-move-left"].exists)
+        controls.swipeUp()
+        XCTAssertTrue(app.buttons["소품 만들기"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testLandscapeCatalogAndHelpRemainUsable() throws {
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestEditor", "-UITestScan", "other-room-2", "-UITestCatalog",
+            "-UITestClearEditorDrafts"
+        ]
+        app.launch()
+
+        XCTAssertTrue(app.textFields["가구 검색하기"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.buttons["기본 침대 추가"].exists)
+        app.buttons["가구 목록 닫기"].tap()
+
+        let helpButton = app.buttons["뷰 사용법 안내"]
+        XCTAssertTrue(helpButton.waitForExistence(timeout: 5))
+        helpButton.tap()
+
+        XCTAssertTrue(app.navigationBars["사용법 안내"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["가구 편집 (모든 뷰 공통)"].exists)
+        XCTAssertTrue(app.buttons["닫기"].exists)
     }
 
     @MainActor
