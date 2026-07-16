@@ -17,6 +17,20 @@ import UniformTypeIdentifiers
 @MainActor
 struct SpatiumTests {
 
+    @Test func googleSignInWithoutActiveWindowReturnsRecoverableError() {
+        let service = GoogleSignInService(presentationAnchorProvider: { nil })
+
+        do {
+            _ = try service.presentationAnchorForAuthentication()
+            Issue.record("활성 윈도우가 없으면 로그인 오류를 반환해야 합니다.")
+        } catch let error as GoogleSignInError {
+            #expect(error == .presentationUnavailable)
+            #expect(error.errorDescription?.isEmpty == false)
+        } catch {
+            Issue.record("예상하지 못한 오류가 반환되었습니다: \(error)")
+        }
+    }
+
     @Test func roomCaptureCannotStopBeforeFirstScanUpdate() {
         var lifecycle = RoomCaptureSessionLifecycle()
 
@@ -55,6 +69,33 @@ struct SpatiumTests {
         #expect(!lifecycle.canFinish)
         let didRestart = lifecycle.requestStart()
         #expect(didRestart)
+    }
+
+    @Test func scanEditorPreparationOnlyBecomesReadyAfterSuccessfulExport() async {
+        let expectedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scan-editor-test.usdz")
+
+        let outcome = await ScanEditorPreparation.run {
+            expectedURL
+        }
+
+        #expect(outcome == .ready(expectedURL))
+    }
+
+    @Test func scanEditorPreparationShowsRetryStateInsteadOfOpeningAfterFailure() async {
+        let outcome = await ScanEditorPreparation.run {
+            throw CocoaError(.fileWriteOutOfSpace)
+        }
+
+        #expect(outcome == .failed(message: ScanEditorPreparation.failureMessage))
+    }
+
+    @Test func cancelledScanEditorPreparationDoesNotShowAnError() async {
+        let outcome = await ScanEditorPreparation.run {
+            throw CancellationError()
+        }
+
+        #expect(outcome == .cancelled)
     }
 
     @Test func editorCatalogAlwaysIncludesUserFurnitureAndOtherFilters() {
@@ -105,6 +146,35 @@ struct SpatiumTests {
             RoomEditorSceneView.decorFrontDirection(from: SCNVector3(0, 1, 0))
                 == SIMD2<Float>(0, 1)
         )
+    }
+
+    @Test func shelfDetectorFindsSeparateHorizontalSupportLevels() {
+        let scene = SCNScene()
+        let bookcase = SCNNode()
+        for height: Float in [0.35, 0.85, 1.35] {
+            let shelf = SCNNode(
+                geometry: SCNBox(width: 1, height: 0.04, length: 0.4, chamferRadius: 0)
+            )
+            shelf.position = SCNVector3(0, height, 0)
+            bookcase.addChildNode(shelf)
+        }
+        let decorContainer = SCNNode()
+        // 월드 좌표의 hit 결과를 피규어 컨테이너 좌표로 바꾸므로 실제 편집 씬과
+        // 동일하게 두 노드를 같은 scene graph에 연결한 상태에서 검증한다.
+        scene.rootNode.addChildNode(bookcase)
+        scene.rootNode.addChildNode(decorContainer)
+
+        let detected = RoomEditorShelfDetector.detectHeights(
+            in: bookcase,
+            relativeTo: decorContainer
+        )
+        let levels = RoomEditorViewModel.makeDecorShelfLevels(from: detected)
+
+        #expect(levels.count == 3)
+        guard levels.count == 3 else { return }
+        #expect(abs(levels[0].height - 0.37) < 0.02)
+        #expect(abs(levels[1].height - 0.87) < 0.02)
+        #expect(abs(levels[2].height - 1.37) < 0.02)
     }
 
     @Test func replacingDecorKeepsItsSupportPointRotationAndIdentity() throws {
@@ -167,6 +237,61 @@ struct SpatiumTests {
         )
         #expect(abs(constrained.x) < bookcase.width / 2)
         #expect(abs(constrained.z) < bookcase.depth / 2)
+        viewModel.discardCurrentDraft()
+    }
+
+    @Test func decorAccessibilityControlsPlaceMoveAndDescribeFigure() throws {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let viewModel = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "꾸미기 접근성 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory
+        )
+        let bookcase = try #require(
+            FurnitureCatalog.items.first { $0.modelFileName == "editable_bookcase" }
+        )
+        let figure = FurnitureCatalogItem(
+            id: "accessible_figure",
+            name: "접근성 피규어",
+            group: "피규어",
+            category: "figure",
+            width: 0.08,
+            height: 0.10,
+            depth: 0.08,
+            modelFileName: "chair"
+        )
+
+        viewModel.place(catalogItem: bookcase)
+        viewModel.isMovingSelectedFurniture = false
+        viewModel.beginDecorating()
+        #expect(viewModel.decorShelfLevels.map(\.title) == ["아래 선반", "가운데 선반", "위 선반"])
+
+        viewModel.prepareDecorPlacement(figure)
+        let middleShelf = try #require(viewModel.decorShelfLevels.first { $0.title == "가운데 선반" })
+        viewModel.placePendingFigure(on: middleShelf)
+        #expect(viewModel.selectedDecoration?.position.y == middleShelf.height)
+
+        viewModel.nudgeSelectedDecor(deltaX: 0.05, deltaZ: 0)
+        viewModel.nudgeSelectedDecor(deltaX: 0, deltaZ: 0.05)
+        let moved = try #require(viewModel.selectedDecoration)
+        #expect(abs(moved.position.x - 0.05) < 0.0001)
+        #expect(abs(moved.position.z - 0.05) < 0.0001)
+        #expect(viewModel.selectedDecorAccessibilitySummary.contains("오른쪽 5센티미터"))
+        #expect(viewModel.selectedDecorAccessibilitySummary.contains("앞쪽 5센티미터"))
+        #expect(viewModel.selectedDecorAccessibilitySummary.contains("크기 10센티미터"))
+
+        viewModel.updateDecorShelfHeights([0.02, 0.03, 0.62, 0.64, 1.20])
+        #expect(viewModel.decorShelfLevels.map(\.title) == ["아래 선반", "가운데 선반", "위 선반"])
+        let topShelf = try #require(viewModel.decorShelfLevels.last)
+        viewModel.moveSelectedDecor(to: topShelf)
+        #expect(viewModel.selectedDecoration?.position.y == topShelf.height)
+        #expect(viewModel.selectedDecorAccessibilitySummary.contains("위 선반"))
         viewModel.discardCurrentDraft()
     }
 
@@ -282,6 +407,40 @@ struct SpatiumTests {
         #expect(reopened.layout.furnitures.count == 1)
         #expect(reopened.hasUnsavedChanges)
         reopened.discardCurrentDraft()
+    }
+
+    @Test func editorDraftSaveFailureIsVisibleAndCanBeRetried() throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let blockedDraftDirectory = testRoot.appendingPathComponent("not-a-directory")
+        try FileManager.default.createDirectory(at: testRoot, withIntermediateDirectories: true)
+        try Data("file blocks directory creation".utf8).write(to: blockedDraftDirectory)
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let viewModel = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "임시 저장 실패 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: blockedDraftDirectory
+        )
+        let chair = try #require(FurnitureCatalog.items.first)
+        viewModel.place(catalogItem: chair)
+        viewModel.persistDraftImmediately()
+
+        #expect(viewModel.hasUnsavedChanges)
+        #expect(
+            viewModel.draftSaveState
+                == .failed(message: RoomEditorViewModel.draftSaveFailureMessage)
+        )
+
+        try FileManager.default.removeItem(at: blockedDraftDirectory)
+        viewModel.retryDraftSave()
+
+        #expect(viewModel.draftSavedAt != nil)
+        #expect(viewModel.draftSaveState.failureMessage == nil)
+        viewModel.discardCurrentDraft()
     }
 
     @Test func otherRoomTwoIncludesBundledUserGeneratedFurniture() throws {
@@ -643,6 +802,44 @@ struct FurnitureModelLoaderTests {
         guard found else { return nil }
         let size = maximum - minimum
         return SCNVector3(size.x, size.y, size.z)
+    }
+}
+
+@MainActor
+struct ProjectStorePersistenceTests {
+    @Test func projectCacheWriteFailureIsVisibleAndCanBeRetried() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-project-cache-\(UUID().uuidString)", isDirectory: true)
+        let blockedDirectory = testRoot.appendingPathComponent("not-a-directory")
+        let cacheFileURL = blockedDirectory.appendingPathComponent("projects.json")
+        try FileManager.default.createDirectory(at: testRoot, withIntermediateDirectories: true)
+        try Data("file blocks cache directory creation".utf8).write(to: blockedDirectory)
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let store = ProjectStore(
+            cacheFileURL: cacheFileURL,
+            authenticationStateProvider: { false }
+        )
+        let firstProject = try await store.createProject(name: "로컬 저장 복구 테스트")
+
+        #expect(store.projects.first?.id == firstProject.id)
+        #expect(store.localPersistenceErrorMessage != nil)
+        #expect(!FileManager.default.fileExists(atPath: cacheFileURL.path))
+
+        // 디스크 오류가 해결되기 전 계속 작업해도 재시도 시점의 최신 메모리 상태를 저장한다.
+        let secondProject = try await store.createProject(name: "실패 후 추가한 프로젝트")
+        try FileManager.default.removeItem(at: blockedDirectory)
+        let didRetry = store.retryLocalPersistence()
+
+        #expect(didRetry)
+        #expect(store.localPersistenceErrorMessage == nil)
+        let savedData = try Data(contentsOf: cacheFileURL)
+        let savedProjects = try JSONDecoder.spatiumAPI.decode(
+            [SpatiumProject].self,
+            from: savedData
+        )
+        #expect(savedProjects.map(\.id) == [secondProject.id, firstProject.id])
+        #expect(savedProjects.map(\.name) == ["실패 후 추가한 프로젝트", "로컬 저장 복구 테스트"])
     }
 }
 

@@ -12,6 +12,8 @@ struct NameEditSheet: View {
     @State private var name: String
     @FocusState private var isFocused: Bool
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(
         title: String,
@@ -33,47 +35,55 @@ struct NameEditSheet: View {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private var needsExpandedSheet: Bool {
+        verticalSizeClass == .compact || dynamicTypeSize.isAccessibilitySize
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.headline.weight(.black))
-                        .foregroundStyle(SpatiumTheme.text)
-                    Text(hint)
-                        .font(.caption2)
-                        .foregroundStyle(SpatiumTheme.soft)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title)
+                            .font(.headline.weight(.black))
+                            .foregroundStyle(SpatiumTheme.text)
+                        Text(hint)
+                            .font(.caption2)
+                            .foregroundStyle(SpatiumTheme.soft)
+                    }
+                    Spacer()
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(SpatiumTheme.soft)
+                            .frame(width: 30, height: 30)
+                            .background(SpatiumTheme.warmPanel, in: Circle())
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel("닫기")
                 }
-                Spacer()
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(SpatiumTheme.soft)
-                        .frame(width: 30, height: 30)
-                        .background(SpatiumTheme.warmPanel, in: Circle())
-                }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("닫기")
+
+                TextField(placeholder, text: $name)
+                    .focused($isFocused)
+                    .submitLabel(.done)
+                    .padding(12)
+                    .background(SpatiumTheme.surface)
+                    .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
+                    .onSubmit(save)
+
+                PrimaryButton(title: confirmTitle, systemImage: "checkmark", action: save)
+                    .disabled(trimmedName.isEmpty)
             }
-
-            TextField(placeholder, text: $name)
-                .focused($isFocused)
-                .submitLabel(.done)
-                .padding(12)
-                .background(SpatiumTheme.surface)
-                .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
-                .onSubmit(save)
-
-            PrimaryButton(title: confirmTitle, systemImage: "checkmark", action: save)
-                .disabled(trimmedName.isEmpty)
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(16)
+        .scrollDismissesKeyboard(.interactively)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(SpatiumTheme.background.ignoresSafeArea())
-        .presentationDetents([.height(210)])
+        .presentationDetents(needsExpandedSheet ? [.large] : [.height(210)])
         .presentationDragIndicator(.visible)
         .presentationBackground(SpatiumTheme.background)
         .onAppear { isFocused = true }
