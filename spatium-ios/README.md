@@ -1,8 +1,16 @@
-# Spatium (iOS)
+<div align="center">
+  <img src="Spatium/Assets.xcassets/SpatiumLogo.imageset/spatium-logo.svg" width="112" alt="Spatium 로고">
+  <h1>Spatium for iOS</h1>
+  <p><strong>현실의 공간을 스캔하고, 원하는 인테리어를 3D로 미리 그려보세요.</strong></p>
+  <p>
+    <img src="https://img.shields.io/badge/iOS-17.0%2B-000000?logo=apple" alt="iOS 17.0 이상">
+    <img src="https://img.shields.io/badge/Swift-5.0-F05138?logo=swift&logoColor=white" alt="Swift 5.0">
+    <img src="https://img.shields.io/badge/UI-SwiftUI-0D96F6?logo=swift&logoColor=white" alt="SwiftUI">
+    <img src="https://img.shields.io/badge/3D-SceneKit-5C3D2E" alt="SceneKit">
+  </p>
+</div>
 
-**방을 스캔하고, 3D 공간에 가구를 배치하고, 사진 한 장으로 3D 가구를 만드는 공간 인테리어 앱**
-
-LiDAR로 실제 방을 스캔해 3D 공간으로 만들고, 그 안에서 가구를 자유롭게 배치·편집하며 인테리어를 시뮬레이션합니다. 가구는 기본 카탈로그뿐 아니라 사진으로 직접 생성한 3D 모델도 사용할 수 있습니다.
+Spatium은 LiDAR로 실제 방을 스캔해 3D 공간으로 만들고, 그 안에 가구를 배치·편집해 인테리어를 시뮬레이션하는 iOS 앱입니다. 기본 카탈로그는 물론, 사진 한 장으로 직접 생성한 3D 가구도 공간에 배치할 수 있습니다.
 
 | | |
 |---|---|
@@ -15,14 +23,26 @@ LiDAR로 실제 방을 스캔해 3D 공간으로 만들고, 그 안에서 가구
 
 ---
 
+## 📸 미리보기
+
+<p align="center">
+  <img src="Spatium/Assets.xcassets/OnboardingHome.imageset/onboarding-home.png" width="22%" alt="Spatium 홈 화면">
+  <img src="Spatium/Assets.xcassets/OnboardingCatalog.imageset/onboarding-catalog.png" width="22%" alt="Spatium 가구 카탈로그">
+  <img src="Spatium/Assets.xcassets/OnboardingEditor.imageset/onboarding-editor.png" width="22%" alt="Spatium 3D 룸 에디터">
+  <img src="Spatium/Assets.xcassets/OnboardingImgTo3D.imageset/onboarding-imgto3d.png" width="22%" alt="Spatium 사진 기반 3D 가구 생성">
+</p>
+
+---
+
 ## ✨ 주요 기능
 
 - 📷 **방 스캔** — RoomPlan(LiDAR)으로 방을 스캔해 USDZ + 메타데이터로 저장
-- 🪑 **3D 룸 에디터** — 가구 배치/이동/편집, undo·redo, 1인칭 시점, 임시 저장, 접근성(VoiceOver·큰 글씨) 대응
-- 🖼️ **사진 → 3D 가구 생성** — 가구 사진을 3D 모델로 변환해 내 가구로 추가
+- 🪑 **3D 룸 에디터** — 가구 배치/이동/편집(벽 충돌 처리), undo·redo, 3D·스카이뷰·1인칭 시점, 치수 측정, 책장 꾸미기, 임시 저장·복구
+- 🖼️ **사진 → 3D 가구 생성** — 6단계 위저드(업로드→이름→객체 분리→3D 생성→보정→저장)로 가구 사진을 3D 모델로 변환해 내 가구로 추가
 - 📁 **프로젝트/룸 관리** — 프로젝트·룸 생성·이름 변경·삭제, 당겨서 새로고침
 - 🔐 **인증** — 이메일 로그인 + Google·Apple 소셜 로그인 + 게스트 모드
 - 👋 **온보딩** — 첫 실행 시 기능 소개
+- 🔄 **가로모드·접근성** — 전 화면 가로모드(compact-height) 레이아웃, VoiceOver·큰 글씨 대응
 
 ---
 
@@ -45,23 +65,32 @@ LiDAR로 실제 방을 스캔해 3D 공간으로 만들고, 그 안에서 가구
 ## 🚀 시작하기
 
 ### 요구 사항
-- Xcode 15 이상
+
+- Xcode 16 이상
 - iOS 17.0 이상 (방 스캔은 **LiDAR 탑재 기기** 필요)
 - Swift Package는 Xcode가 자동으로 해결합니다 (GLTFKit2)
 
 ### 빌드 & 실행
+
 ```bash
-git clone https://github.com/dongha0312/Spatium
-cd Spatium   # (이 앱은 spatium-ios 디렉터리)
+git clone https://github.com/dongha0312/Spatium.git
+cd Spatium/spatium-ios
 open Spatium.xcodeproj
 ```
+
 Xcode에서 **Spatium** 스킴을 선택하고 실기기/시뮬레이터로 실행합니다.
 
 > ⚠️ RoomPlan 방 스캔은 시뮬레이터에서 동작하지 않습니다. LiDAR가 있는 실기기에서 테스트하세요.
 
 명령줄 빌드:
+
 ```bash
-xcodebuild -project Spatium.xcodeproj -scheme Spatium -configuration Debug build
+xcodebuild \
+  -project Spatium.xcodeproj \
+  -scheme Spatium \
+  -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' \
+  build
 ```
 
 ---
@@ -97,9 +126,12 @@ Spatium/
 │  ├─ Extensions/          # JWT, Haptics, 유틸
 │  └─ Services/            # Auth/Project/ImgTo3D/Furniture 스토어·서비스
 ├─ Features/               # 화면 단위 모듈
-│  ├─ Auth/  Home/  Rooms/  Scan/
-│  ├─ Editor/  ImgTo3D/  Settings/  Onboarding/
+│  ├─ Auth/  Home/  Rooms/  Scan/  Settings/  Onboarding/
+│  ├─ Editor/              # 3D 에디터 — 뷰모델(+History/Draft/Furniture/Decor 확장),
+│  │                       #   씬 컨트롤러(카메라·제스처·노드·배치), 편집 UI 컴포넌트
+│  └─ ImgTo3D/             # 사진→3D — 단계별 전용 뷰(입력/처리/보정/저장) + 위저드 크롬
 ├─ Shared/                 # 재사용 UIKit 브리지·컴포넌트
+├─ PrivacyInfo.xcprivacy   # 개인정보 매니페스트
 ├─ Assets.xcassets/        # 아이콘·이미지·컬러
 └─ testdata/               # 내장 3D 모델·테스트 스캔
 ```
@@ -110,16 +142,23 @@ Spatium/
 
 ## 🧪 테스트
 
-- **SpatiumTests** — 유닛 테스트
-- **SpatiumUITests** — UI / 런치 테스트
+- **SpatiumTests** — 유닛 테스트 50개 (Swift Testing): 백엔드 API 계약(요청/응답 스키마 고정), 에디터 undo·redo/draft, 스캔 생명주기, 가구 치수·이미지 변환, 로컬 캐시 저장 실패 복구
+- **SpatiumUITests** — UI 테스트 22개 + 런치 테스트 1개 (XCUITest): 에디터·꾸미기·카탈로그 회귀, 가로모드 레이아웃 스위트, 접근성 큰 글씨, 런치 성능
 
-DEBUG 빌드는 로그인 없이 특정 화면으로 바로 진입하는 실행 인자를 지원합니다(스크린샷 검증용): `-UITestEditor`, `-UITestSettings`, `-UITestHome`, `-UITestImgTo3D`, `-UITestGuestCreate`, `-UITestTabToggle`.
+DEBUG 빌드는 로그인 없이 특정 화면·상태로 바로 진입하는 `-UITest…` 실행 인자를 20여 개 지원합니다(스크린샷·UI 테스트용). 대표적으로 `-UITestEditor`(3D 에디터 직행), `-UITestImgTo3D`, `-UITestOnboarding`, `-UITestGuestCreate` 등 — 전체 목록은 `ContentView.swift`와 각 Feature 뷰에서 확인할 수 있습니다.
+
+---
+
+## 📚 문서
+
+앱 전체 아키텍처·데이터 흐름·함정 노트는 [이번 앱 프로젝트 정리본.md](이번%20앱%20프로젝트%20정리본.md)에 상세히 정리돼 있습니다.
 
 ---
 
 ## 🔗 관련 저장소
 
-이 리포는 iOS 앱 전용입니다. 함께 구성되는 별도 저장소:
-- `spatium-backend` — 서버
-- `spatium-frontend` — 웹 프론트엔드
-- `spatium-img-to-3d` — 사진→3D 변환 서버
+이 디렉터리는 Spatium 모노레포의 iOS 앱입니다. 함께 구성되는 프로젝트:
+
+- [`spatium-backend`](../spatium-backend) — API 서버
+- [`spatium-frontend`](../spatium-frontend) — 웹 프론트엔드
+- [`spatium-img-to-3d`](../spatium-img-to-3d) — 사진 → 3D 변환 서버
