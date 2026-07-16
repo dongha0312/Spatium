@@ -331,6 +331,42 @@ final class SpatiumUITests: XCTestCase {
     }
 
     @MainActor
+    func testEditorCameraModesRemainInteractiveAfterSceneControllerExtraction() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestEditor", "-UITestScan", "other-room-2", "-UITestClearEditorDrafts"
+        ]
+        app.launch()
+
+        let skyView = app.buttons["Skyview 보기"]
+        let personView = app.buttons["1인칭으로 방 안 둘러보기"]
+        let addFurniture = app.buttons["가구 추가"]
+        XCTAssertTrue(skyView.waitForExistence(timeout: 8))
+        XCTAssertTrue(personView.waitForExistence(timeout: 3))
+        XCTAssertTrue(addFurniture.exists)
+
+        skyView.tap()
+        XCTAssertTrue(app.staticTexts["Skyview 모드"].waitForExistence(timeout: 5))
+        XCTAssertTrue(addFurniture.exists)
+
+        skyView.tap()
+        XCTAssertTrue(app.staticTexts["Skyview 모드"].waitForNonExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["측정 옵션 표시"].exists)
+
+        personView.tap()
+        XCTAssertTrue(
+            app.staticTexts["1인칭 · 드래그로 둘러보기 · 탭해서 이동"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(addFurniture.exists)
+        XCTAssertFalse(app.buttons["측정 옵션 표시"].exists)
+
+        personView.tap()
+        XCTAssertTrue(addFurniture.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["측정 옵션 표시"].exists)
+    }
+
+    @MainActor
     func testNewProjectKeyboardUsesFullScreenCover() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-UITestHome"]

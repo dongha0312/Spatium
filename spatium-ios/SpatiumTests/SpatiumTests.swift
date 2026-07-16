@@ -148,6 +148,35 @@ struct SpatiumTests {
         )
     }
 
+    @Test func shelfDetectorFindsSeparateHorizontalSupportLevels() {
+        let scene = SCNScene()
+        let bookcase = SCNNode()
+        for height: Float in [0.35, 0.85, 1.35] {
+            let shelf = SCNNode(
+                geometry: SCNBox(width: 1, height: 0.04, length: 0.4, chamferRadius: 0)
+            )
+            shelf.position = SCNVector3(0, height, 0)
+            bookcase.addChildNode(shelf)
+        }
+        let decorContainer = SCNNode()
+        // 월드 좌표의 hit 결과를 피규어 컨테이너 좌표로 바꾸므로 실제 편집 씬과
+        // 동일하게 두 노드를 같은 scene graph에 연결한 상태에서 검증한다.
+        scene.rootNode.addChildNode(bookcase)
+        scene.rootNode.addChildNode(decorContainer)
+
+        let detected = RoomEditorShelfDetector.detectHeights(
+            in: bookcase,
+            relativeTo: decorContainer
+        )
+        let levels = RoomEditorViewModel.makeDecorShelfLevels(from: detected)
+
+        #expect(levels.count == 3)
+        guard levels.count == 3 else { return }
+        #expect(abs(levels[0].height - 0.37) < 0.02)
+        #expect(abs(levels[1].height - 0.87) < 0.02)
+        #expect(abs(levels[2].height - 1.37) < 0.02)
+    }
+
     @Test func replacingDecorKeepsItsSupportPointRotationAndIdentity() throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)

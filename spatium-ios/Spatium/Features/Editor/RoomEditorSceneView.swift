@@ -162,91 +162,91 @@ struct RoomEditorSceneView: UIViewRepresentable {
         var movePanGesture: UIPanGestureRecognizer?
         /// 드래그 시작 시 "손가락이 짚은 바닥 지점 → 가구 중심" 오프셋.
         /// 이걸 유지해야 가구의 잡은 부분이 손가락에 붙어 따라온다. (없으면 중심이 손가락으로 점프)
-        private var dragGrabOffset = SIMD2<Float>(0, 0)
+        var dragGrabOffset = SIMD2<Float>(0, 0)
         /// 프런트엔드의 figure-move interaction 대응. 소품 노드는 드래그 중 직접 움직이고,
         /// 종료 시점에만 ViewModel에 최종 위치를 커밋해 히스토리/씬 재생성을 한 번으로 제한한다.
-        private var draggingDecorID: Int?
-        private var decorDragStartPosition: SCNVector3?
+        var draggingDecorID: Int?
+        var decorDragStartPosition: SCNVector3?
         /// 벽/가구에 새로 막히는 순간(엣지)에만 햅틱을 한 번 주기 위한 상태.
-        private var isSnapEngaged = false
+        var isSnapEngaged = false
         /// require(toFail:)를 이미 걸어둔 카메라 제스처들. (중복 설정 방지)
-        private var cameraGestureRequirementConfigured = Set<ObjectIdentifier>()
+        var cameraGestureRequirementConfigured = Set<ObjectIdentifier>()
 
         // MARK: 사람 뷰 상태
         var personLookGesture: UIPanGestureRecognizer?
         var personWalkGesture: UIPanGestureRecognizer?
         var personPinchGesture: UIPinchGestureRecognizer?
         /// 시선 방향(라디안). yaw 0 = -Z, pitch + = 위.
-        private var personYaw: Float = 0
-        private var personPitch: Float = 0
+        var personYaw: Float = 0
+        var personPitch: Float = 0
         /// 사용자가 요청한 시선/위치. 실제 카메라는 display link가 여기로 부드럽게 따라간다.
         /// 입력 이벤트마다 카메라를 즉시 움직이면 손가락 샘플링의 들쭉날쭉함이 그대로 눈에
         /// 전달돼 멀미가 나므로, 사람뷰에서만 목표와 실제 위치를 분리한다.
-        private var personTargetYaw: Float = 0
-        private var personTargetPitch: Float = 0
-        private var personTargetPosition: SIMD2<Float>?
-        private var personWalkVelocity = SIMD2<Float>(0, 0)
-        private var personMotionDisplayLink: CADisplayLink?
-        private var lastPersonMotionTimestamp: CFTimeInterval?
-        private var lastLookTranslation = CGPoint.zero
-        private var lastWalkTranslation = CGPoint.zero
+        var personTargetYaw: Float = 0
+        var personTargetPitch: Float = 0
+        var personTargetPosition: SIMD2<Float>?
+        var personWalkVelocity = SIMD2<Float>(0, 0)
+        var personMotionDisplayLink: CADisplayLink?
+        var lastPersonMotionTimestamp: CFTimeInterval?
+        var lastLookTranslation = CGPoint.zero
+        var lastWalkTranslation = CGPoint.zero
         /// 카메라(사람 몸통)의 수평 충돌 반경(m).
-        private static let personBodyRadius: Float = 0.25
+        static let personBodyRadius: Float = 0.25
         /// 멀미를 줄이기 위한 보행/시선 파라미터. 실제 걷는 속도에 가깝게 제한해 장거리
         /// 탭이 화면을 훅 끌고 가는 느낌을 막고, 시선은 아주 짧은 시간만 보간해 조작 지연은 없다.
-        private static let personMaxTapTravel: Float = 2.8
-        private static let personWalkMaxSpeed: Float = 1.90
-        private static let personWalkAcceleration: Float = 7.5
-        private static let personLookResponse: Float = 0.055
+        static let personMaxTapTravel: Float = 2.8
+        static let personWalkMaxSpeed: Float = 1.90
+        static let personWalkAcceleration: Float = 7.5
+        static let personLookResponse: Float = 0.055
         var renderedRevision = 0
         var renderedViewMode: RoomViewMode?
         var cameraLayoutSize = CGSize.zero
 
         let cameraNode = SCNNode()
-        private let furnitureContainer = SCNNode()
+        let furnitureContainer = SCNNode()
         /// item ID별 마지막 GLB 렌더 형태. SceneKit의 SCNNode는 userData를 제공하지 않아
         /// coordinator가 별도로 보관한다.
-        private var furnitureRenderSignatures: [Int: String] = [:]
+        var furnitureRenderSignatures: [Int: String] = [:]
         /// item ID별 마지막 피규어(꾸미기) 렌더 형태. 바뀐 책장의 피규어들만 다시 만든다.
-        private var decorRenderSignatures: [Int: String] = [:]
+        var decorRenderSignatures: [Int: String] = [:]
         /// 노드 생성 시점의 (표시 치수, 노드 스케일). 크기 슬라이더가 GLB를 다시 만들지 않고
         /// "기준 대비 비율"로 스케일만 조정할 수 있게 한다. (맞춤 스케일이 축별 선형이라
         /// 비율 스케일 결과는 리빌드 결과와 정확히 같다)
-        private var renderedBaseStates: [Int: (width: Double, depth: Double, height: Double, scale: SCNVector3)] = [:]
+        var renderedBaseStates: [Int: (width: Double, depth: Double, height: Double, scale: SCNVector3)] = [:]
         /// 꾸미기 카메라가 적용된 책장 itemId. viewModel.decoratingItemID와 비교해 전환을 감지한다.
-        private var decorCameraItemID: Int?
-        private let floorNode = SCNNode()
-        private let measurementContainer = SCNNode()
-        private let selectionHighlightName = "__selection_highlight"
-        private var floorSide: CGFloat = 4
+        var decorCameraItemID: Int?
+        let floorNode = SCNNode()
+        let measurementContainer = SCNNode()
+        let selectionHighlightName = "__selection_highlight"
+        var floorSide: CGFloat = 4
         /// 카메라가 바라볼 방/가구의 중심(수평). 방이 원점에서 벗어나 있어도 화면 중앙에 오게 합니다.
-        private var sceneCenter = SCNVector3(0, 0.4, 0)
+        var sceneCenter = SCNVector3(0, 0.4, 0)
         /// 중심에서 방을 감싸는 반경(m). 카메라 거리 산정에 사용합니다.
-        private var sceneRadius: Float = 3
+        var sceneRadius: Float = 3
         /// 방/가구를 모두 포함하는 수평 경계. Skyview 배율과 드래그 한계에 사용합니다.
-        private var sceneBounds = HorizontalBounds(minX: -2, maxX: 2, minZ: -2, maxZ: 2)
+        var sceneBounds = HorizontalBounds(minX: -2, maxX: 2, minZ: -2, maxZ: 2)
         /// 실제 방 셸만의 수평 경계. 가구가 밖으로 튀어나와도 이 값은 넓히지 않습니다.
-        private var roomBounds = HorizontalBounds(minX: -2, maxX: 2, minZ: -2, maxZ: 2)
-        private var wallColliders: [WallCollider] = []
+        var roomBounds = HorizontalBounds(minX: -2, maxX: 2, minZ: -2, maxZ: 2)
+        var wallColliders: [WallCollider] = []
         /// 벽 메우기 패널의 충돌 면. 셸 벽 콜라이더는 개구부 자리가 비어 있으므로,
         /// 메운 자리는 패널 박스로 콜라이더를 만들어 실제 벽처럼 가구 이동을 막는다.
-        private var infillColliders: [WallCollider] = []
-        private var shellViewFacingSurfaces: [WallFacingUpdater.Wall] = []
-        private var measurementSegments: [MeasurementSegment] = []
-        private var roomHeight: Float = 2.4
+        var infillColliders: [WallCollider] = []
+        var shellViewFacingSurfaces: [WallFacingUpdater.Wall] = []
+        var measurementSegments: [MeasurementSegment] = []
+        var roomHeight: Float = 2.4
         /// 방 바닥의 월드 Y. 스캔 메시는 AR 좌표계라 0이 아닐 수 있고,
         /// 측정 치수선을 이 높이에 붙여야 바닥에 깔린 도면처럼 보인다.
-        private var floorLevel: Float = 0
-        private var isScannedRoom = false
-        private let wallMeasurementInset: Float = 0.16
-        private let overallMeasurementOffset: Float = 0.8
-        private let measurementCameraPadding: Float = 1.25
+        var floorLevel: Float = 0
+        var isScannedRoom = false
+        let wallMeasurementInset: Float = 0.16
+        let overallMeasurementOffset: Float = 0.8
+        let measurementCameraPadding: Float = 1.25
         /// 파싱한 USDZ 방 셸(가구 제거 완료)을 캐시. 재생성 때 매번 디스크에서 다시 파싱하지 않도록.
-        private var shellCache: [String: SCNNode] = [:]
+        var shellCache: [String: SCNNode] = [:]
         /// 현재 씬에 올라간 방 셸(벽 색 재적용용) 및 마지막으로 반영한 벽 색.
-        private weak var shellNode: SCNNode?
-        private var renderedWallColor = ""
-        private var renderedFloorColor: String?
+        weak var shellNode: SCNNode?
+        var renderedWallColor = ""
+        var renderedFloorColor: String?
         /// 카메라를 향한(시야를 가리는) 벽을 반투명 처리하는 렌더 델리게이트. (프런트 updateViewFacingWalls 대응)
         let wallFacingUpdater = WallFacingUpdater()
 
@@ -306,7 +306,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
         }
 
         /// 면적 기반의 단순 박스 방(벽 2면 + 바닥). 서버/저장된 방 편집용.
-        private func buildBoxRoom(into scene: SCNScene, layout: RoomLayout) {
+        func buildBoxRoom(into scene: SCNScene, layout: RoomLayout) {
             isScannedRoom = false
             wallColliders = []
             shellViewFacingSurfaces = []
@@ -355,7 +355,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
         /// 실제 스캔 방 메시(USDZ)에서 벽/바닥(Arch_grp)만 남기고 가구(Object_grp)는 제거,
         /// 그 위에서 실물 GLB 가구를 편집합니다. 드래그 이동용 투명 바닥판을 함께 깝니다.
-        private func buildScannedShell(into scene: SCNScene, usdzURL: URL, layout: RoomLayout) {
+        func buildScannedShell(into scene: SCNScene, usdzURL: URL, layout: RoomLayout) {
             isScannedRoom = true
             shellViewFacingSurfaces = []
             roomHeight = Float(layout.space?.ceilingHeight ?? 2.4)
@@ -433,7 +433,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
         /// 스캔 셸에서 실제 바닥 높이(월드 Y)를 찾는다. Floor/Ground/Slab mesh의 윗면을
         /// 우선 쓰고, 없으면 셸 전체의 최저점으로 근사한다. (RoomPlan 좌표계는 바닥이
         /// y=0이 아닐 수 있어, 가구 최저 Y 추정만으로는 띄운 가구가 바닥을 끌어올린다)
-        private static func shellFloorY(of root: SCNNode) -> Float? {
+        static func shellFloorY(of root: SCNNode) -> Float? {
             var floorTop: Float?
             var overallMin: Float?
 
@@ -465,7 +465,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
         }
 
         /// 가구(Object_grp)를 제거한 방 셸 템플릿. 처음 한 번만 파싱하고 캐시합니다.
-        private func shellTemplate(for usdzURL: URL) -> SCNNode? {
+        func shellTemplate(for usdzURL: URL) -> SCNNode? {
             let key = usdzURL.path
             if let cached = shellCache[key] { return cached }
             guard let roomScene = try? SCNScene(url: usdzURL) else { return nil }
@@ -500,698 +500,20 @@ struct RoomEditorSceneView: UIViewRepresentable {
         }
 
         /// 스캔 벽 메시(이름에 "Wall" 포함)의 diffuse를 선택한 벽 색으로 덮습니다.
-        private func tintWalls(in node: SCNNode, color: UIColor) {
+        func tintWalls(in node: SCNNode, color: UIColor) {
             if let name = node.name, name.localizedCaseInsensitiveContains("wall"), let geometry = node.geometry {
                 geometry.materials.forEach { $0.diffuse.contents = color }
             }
             node.childNodes.forEach { tintWalls(in: $0, color: color) }
         }
 
-        private func tintFloors(in node: SCNNode, color: UIColor) {
+        func tintFloors(in node: SCNNode, color: UIColor) {
             if Self.isFloorGeometryNode(node), let geometry = node.geometry {
                 geometry.materials.forEach { $0.diffuse.contents = color }
             }
             node.childNodes.forEach { tintFloors(in: $0, color: color) }
         }
 
-        func rebuildFurnitureNodes(for layout: RoomLayout) {
-            let roomCenter = SCNVector3(roomBounds.centerX, 0, roomBounds.centerZ)
-            let requestedIDs = Set(layout.furnitures.map(\.itemId))
-            // 프런트엔드처럼 기존 GLB 인스턴스를 유지한다. 추가/삭제/교체된 모델만 다시
-            // 만들므로 벽 색상 변경이나 다른 가구의 회전 때문에 전체 모델을 복제하지 않는다.
-            furnitureContainer.childNodes
-                .filter { node in
-                    if let itemID = Self.furnitureID(fromNodeOrAncestors: node) {
-                        return !requestedIDs.contains(itemID)
-                    }
-                    if let itemID = Self.decorContainerItemID(node) {
-                        return !requestedIDs.contains(itemID)
-                    }
-                    return true
-                }
-                .forEach { $0.removeFromParentNode() }
-            furnitureRenderSignatures = furnitureRenderSignatures.filter { requestedIDs.contains($0.key) }
-            decorRenderSignatures = decorRenderSignatures.filter { requestedIDs.contains($0.key) }
-            renderedBaseStates = renderedBaseStates.filter { requestedIDs.contains($0.key) }
-
-            for furniture in layout.furnitures {
-                let renderFurniture = displayFurniture(for: furniture)
-                let nodeName = "furniture-\(furniture.itemId)"
-                let signature = furnitureRenderSignature(for: renderFurniture, source: furniture)
-                if let existing = furnitureContainer.childNode(withName: nodeName, recursively: false),
-                   furnitureRenderSignatures[furniture.itemId] == signature {
-                    applyRenderTransform(to: existing, furniture: renderFurniture, source: furniture, roomCenter: roomCenter)
-                    updateDecorContainer(for: furniture, furnitureNode: existing)
-                    continue
-                }
-
-                furnitureContainer.childNode(withName: nodeName, recursively: false)?.removeFromParentNode()
-                let node = RoomEditorViewModel.isWallInfill(furniture)
-                    ? makeWallInfillNode(for: renderFurniture)
-                    : modelLoader.makeNode(for: renderFurniture)
-                furnitureRenderSignatures[furniture.itemId] = signature
-                // 유효 치수(치수 × 렌더 스케일) 기준 — 방 크기 제한(fittingScaleLimit)이 걸린
-                // 상태에서도 크기 슬라이더 비율 계산이 어긋나지 않는다.
-                renderedBaseStates[furniture.itemId] = (
-                    width: (renderFurniture.width ?? 0.5) * renderFurniture.scale.x,
-                    depth: (renderFurniture.depth ?? 0.5) * renderFurniture.scale.z,
-                    height: (renderFurniture.height ?? 0.5) * renderFurniture.scale.y,
-                    scale: node.scale
-                )
-                applyRenderTransform(to: node, furniture: renderFurniture, source: furniture, roomCenter: roomCenter)
-                furnitureContainer.addChildNode(node)
-                updateDecorContainer(for: furniture, furnitureNode: node)
-            }
-            // 벽 메우기 패널은 실제 벽처럼 가구 드래그/되밀기를 막아야 한다. 패널 박스 노드로
-            // 콜라이더를 만들어 셸 벽 콜라이더와 함께 검사한다. (패널 추가/제거 때마다 갱신)
-            infillColliders = layout.furnitures
-                .filter { RoomEditorViewModel.isWallInfill($0) }
-                .compactMap { furniture in
-                    furnitureContainer.childNode(withName: "furniture-\(furniture.itemId)", recursively: false)
-                        .flatMap { WallCollider(node: $0, roomCenter: roomCenter) }
-                }
-            applySelection(itemID: viewModel.selectedItemID)
-            refreshViewFacingTransparencyTargets()
-        }
-
-        /// 모델/크기에만 의존하는 렌더 시그니처. 위치·회전은 재사용한 노드에 즉시 반영한다.
-        /// 벽 메우기 패널은 벽 색으로 칠하므로 벽 색이 바뀌면 다시 만들도록 색을 포함한다.
-        private func furnitureRenderSignature(for furniture: PlacedFurniture, source: PlacedFurniture) -> String {
-            [
-                furniture.furnitureId.description,
-                furniture.furnitureName,
-                furniture.modelName ?? "",
-                furniture.width?.description ?? "",
-                furniture.height?.description ?? "",
-                furniture.depth?.description ?? "",
-                furniture.scale.x.description,
-                furniture.scale.y.description,
-                furniture.scale.z.description,
-                RoomEditorViewModel.isWallInfill(source) ? "infill:\(viewModel.wallColorHex)" : ""
-            ].joined(separator: "|")
-        }
-
-        /// 스캔 결과를 처음 렌더할 때는 RoomPlan이 감지한 transform을 그대로 사용한다.
-        /// 문/창문만 벽과의 z-fighting을 막기 위해 방 안쪽으로 3cm 넣는다.
-        private func applyRenderTransform(
-            to node: SCNNode,
-            furniture: PlacedFurniture,
-            source: PlacedFurniture,
-            roomCenter: SCNVector3
-        ) {
-            node.position = SCNVector3(furniture.position.x, furniture.position.y, furniture.position.z)
-            node.eulerAngles = SCNVector3(furniture.rotation.x, furniture.rotation.y, furniture.rotation.z)
-            guard Self.isDoorOrWindow(source) else { return }
-
-            let dx = roomCenter.x - node.position.x
-            let dz = roomCenter.z - node.position.z
-            let length = sqrtf(dx * dx + dz * dz)
-            guard length > 0.0001 else { return }
-            let inset: Float = 0.03
-            node.position.x += dx / length * inset
-            node.position.z += dz / length * inset
-        }
-
-        /// 벽 메우기 패널 노드 — 문/창문을 '벽으로 메우기'로 지운 자리를 GLB 대신 벽 색 박스로 막습니다.
-        /// pivot을 바닥에 둬 가구 모델과 같은 규약(position.y = 바닥면)으로 배치하고, 크기는
-        /// 스케일을 반영해 박스 치수에 직접 반영합니다. 일반 가구로 취급돼 사람 뷰 충돌·측정에 함께 잡힙니다.
-        private func makeWallInfillNode(for furniture: PlacedFurniture) -> SCNNode {
-            let width = CGFloat(max(Float(furniture.width ?? 0.9), 0.05) * max(Float(furniture.scale.x), 0.001))
-            let height = CGFloat(max(Float(furniture.height ?? 2.0), 0.05) * max(Float(furniture.scale.y), 0.001))
-            let depth = CGFloat(max(Float(furniture.depth ?? 0.1), 0.05) * max(Float(furniture.scale.z), 0.001))
-            let box = SCNBox(width: width, height: height, length: depth, chamferRadius: 0)
-            let material = SCNMaterial()
-            material.diffuse.contents = UIColor(hexString: viewModel.wallColorHex)
-            material.locksAmbientWithDiffuse = true
-            box.materials = [material]
-
-            let node = SCNNode(geometry: box)
-            node.name = "furniture-\(furniture.itemId)"
-            // pivot을 아래로 내려 박스 바닥이 position.y에 오게 한다(placeholder 규약과 동일).
-            node.pivot = SCNMatrix4MakeTranslation(0, Float(-height / 2), 0)
-            node.position = SCNVector3(Float(furniture.position.x), Float(furniture.position.y), Float(furniture.position.z))
-            node.eulerAngles.y = Float(furniture.rotation.y)
-            return node
-        }
-
-        // MARK: - 책장 꾸미기 (피규어) 렌더링
-
-        /// 피규어들은 가구 노드의 "자식"이 아니라 나란히 놓인 전용 컨테이너에 담는다.
-        /// 가구 노드는 GLB 맞춤 스케일(비균일)이 걸려 있어 자식으로 붙이면 피규어가 찌그러지므로,
-        /// 스케일 없는 컨테이너를 가구와 같은 위치/회전으로 동기화해 부모 역할을 시킨다.
-        private func updateDecorContainer(for furniture: PlacedFurniture, furnitureNode: SCNNode) {
-            let containerName = "decorbox-\(furniture.itemId)"
-            let decorations = furniture.decorations ?? []
-
-            guard !decorations.isEmpty else {
-                furnitureContainer.childNode(withName: containerName, recursively: false)?.removeFromParentNode()
-                decorRenderSignatures[furniture.itemId] = nil
-                return
-            }
-
-            let container: SCNNode
-            if let existing = furnitureContainer.childNode(withName: containerName, recursively: false) {
-                container = existing
-            } else {
-                container = SCNNode()
-                container.name = containerName
-                furnitureContainer.addChildNode(container)
-            }
-            syncDecorContainerTransform(container: container, furnitureNode: furnitureNode)
-
-            let signature = decorations.map { d in
-                [
-                    d.decorId.description, d.modelName ?? "", d.name,
-                    d.width.description, d.height.description, d.depth.description,
-                    d.position.x.description, d.position.y.description, d.position.z.description,
-                    d.rotationY.description, d.scale.description
-                ].joined(separator: "|")
-            }.joined(separator: "#")
-            guard decorRenderSignatures[furniture.itemId] != signature else { return }
-            decorRenderSignatures[furniture.itemId] = signature
-
-            container.childNodes.forEach { $0.removeFromParentNode() }
-            for decoration in decorations {
-                let name = "decor-\(furniture.itemId)-\(decoration.decorId)"
-                // 래퍼가 배치(위치/회전/균일 크기)를, 안쪽 모델 노드가 GLB 맞춤 스케일을 담당한다.
-                // 분리해 두면 크기 슬라이더가 맞춤 스케일을 다시 계산할 필요 없이 래퍼만 만진다.
-                let wrapper = SCNNode()
-                wrapper.name = name
-                wrapper.position = SCNVector3(decoration.position.x, decoration.position.y, decoration.position.z)
-                wrapper.eulerAngles.y = Float(decoration.rotationY)
-                let uniform = Float(max(decoration.scale, 0.001))
-                wrapper.scale = SCNVector3(uniform, uniform, uniform)
-                wrapper.addChildNode(modelLoader.makeDecorNode(identifier: name, decoration: decoration))
-                container.addChildNode(wrapper)
-            }
-        }
-
-        private func syncDecorContainerTransform(container: SCNNode, furnitureNode: SCNNode) {
-            container.position = furnitureNode.position
-            container.eulerAngles = SCNVector3(0, furnitureNode.eulerAngles.y, 0)
-        }
-
-        /// 가구 노드가 직접 움직였을 때(드래그/슬라이더/벽 되밀기) 피규어 컨테이너를 따라 붙인다.
-        private func syncDecorContainer(forItemID itemID: Int) {
-            guard let node = furnitureContainer.childNode(withName: "furniture-\(itemID)", recursively: false),
-                  let container = furnitureContainer.childNode(withName: "decorbox-\(itemID)", recursively: false) else { return }
-            syncDecorContainerTransform(container: container, furnitureNode: node)
-        }
-
-        private static func decorContainerItemID(_ node: SCNNode) -> Int? {
-            guard let name = node.name, name.hasPrefix("decorbox-") else { return nil }
-            return Int(name.dropFirst("decorbox-".count))
-        }
-
-        /// "decor-<가구ID>-<피규어ID>" 이름을 노드 또는 조상에서 찾아 해석한다.
-        /// 가구ID는 로컬 아이템일 때 음수라서("decor--2-1"), 마지막 "-"를 기준으로 나눈다.
-        private static func decorID(fromNodeOrAncestors node: SCNNode) -> (itemID: Int, decorID: Int)? {
-            var current: SCNNode? = node
-            while let candidate = current {
-                if let name = candidate.name, name.hasPrefix("decor-"), !name.hasPrefix("decorbox-") {
-                    let body = name.dropFirst("decor-".count)
-                    if let separator = body.lastIndex(of: "-"),
-                       let itemID = Int(body[..<separator]),
-                       let decorID = Int(body[body.index(after: separator)...]) {
-                        return (itemID, decorID)
-                    }
-                }
-                current = candidate.parent
-            }
-            return nil
-        }
-
-        /// 꾸미기 모드의 선택 하이라이트 + 회전/크기 슬라이더 실시간 반영.
-        func syncDecorState(from layout: RoomLayout) {
-            let decoratingID = viewModel.decoratingItemID
-            let selectedDecorID = viewModel.selectedDecorID
-
-            for container in furnitureContainer.childNodes {
-                guard let itemID = Self.decorContainerItemID(container) else { continue }
-                for figure in container.childNodes {
-                    removeSelectionHighlight(from: figure)
-                    guard let id = Self.decorID(fromNodeOrAncestors: figure),
-                          id.itemID == itemID else { continue }
-                    if itemID == decoratingID, id.decorID == selectedDecorID {
-                        addSelectionHighlight(to: figure)
-                    }
-                    // 슬라이더 연속 조작(회전/크기)은 sceneRevision 없이 노드에 바로 반영한다.
-                    if let decoration = layout.furnitures
-                        .first(where: { $0.itemId == itemID })?
-                        .decorations?.first(where: { $0.decorId == id.decorID }) {
-                        figure.eulerAngles.y = Float(decoration.rotationY)
-                        let uniform = Float(max(decoration.scale, 0.001))
-                        figure.scale = SCNVector3(uniform, uniform, uniform)
-                    }
-                }
-            }
-        }
-
-        /// 꾸미기 모드 진입/이탈에 맞춰 카메라를 책장 정면 뷰로 전환하거나 원래대로 되돌린다.
-        func syncDecorCamera() {
-            let target = viewModel.decoratingItemID
-            guard decorCameraItemID != target else { return }
-            if let target,
-               let node = furnitureContainer.childNode(withName: "furniture-\(target)", recursively: false) {
-                decorCameraItemID = target
-                applyDecorCamera(to: node)
-                let container = furnitureContainer.childNode(
-                    withName: "decorbox-\(target)",
-                    recursively: false
-                ) ?? makeDecorContainerIfMissing(for: target)
-                if let container {
-                    let heights = detectedDecorShelfHeights(in: node, container: container)
-                    if !heights.isEmpty {
-                        // SwiftUI updateUIView 안에서 @Published를 바로 변경하지 않고 다음 run loop에 반영한다.
-                        DispatchQueue.main.async { [weak viewModel] in
-                            guard viewModel?.decoratingItemID == target else { return }
-                            viewModel?.updateDecorShelfHeights(heights)
-                        }
-                    }
-                }
-            } else {
-                decorCameraItemID = nil
-                applyCamera(mode: viewModel.viewMode, animated: true)
-            }
-        }
-
-        /// 책장 모델 안쪽을 위에서 아래로 탐색해 실제 위쪽 면의 로컬 높이를 수집한다.
-        /// 결과는 피규어 컨테이너 좌표계의 m 단위라 탭 배치와 동일한 위치에 놓을 수 있다.
-        private func detectedDecorShelfHeights(
-            in furnitureNode: SCNNode,
-            container: SCNNode
-        ) -> [Double] {
-            guard let bounds = Self.localHierarchyBounds(of: furnitureNode) else { return [] }
-            let centerX = (bounds.min.x + bounds.max.x) / 2
-            let centerZ = (bounds.min.z + bounds.max.z) / 2
-            let width = bounds.max.x - bounds.min.x
-            let depth = bounds.max.z - bounds.min.z
-            let xOffsets: [Float] = [-0.28, 0, 0.28]
-            let zOffsets: [Float] = [-0.22, 0, 0.22]
-            var heights: [Double] = []
-
-            for xOffset in xOffsets {
-                for zOffset in zOffsets {
-                    let start = SCNVector3(
-                        centerX + width * xOffset,
-                        bounds.max.y + 0.1,
-                        centerZ + depth * zOffset
-                    )
-                    let end = SCNVector3(
-                        centerX + width * xOffset,
-                        bounds.min.y - 0.1,
-                        centerZ + depth * zOffset
-                    )
-                    let hits = furnitureNode.hitTestWithSegment(
-                        from: start,
-                        to: end,
-                        options: [
-                            SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.all.rawValue,
-                            SCNHitTestOption.ignoreHiddenNodes.rawValue: true
-                        ]
-                    )
-                    for hit in hits where RoomEditorSceneView.isDecorSupportNormal(hit.worldNormal) {
-                        let local = container.convertPosition(hit.worldCoordinates, from: nil)
-                        guard local.y.isFinite, local.y >= -0.01 else { continue }
-                        heights.append(Double(local.y))
-                    }
-                }
-            }
-            return heights
-        }
-
-        /// 웹 computeDecorView 대응: 책장의 열린 선반 정면에서 25도 위로 내려다보는
-        /// 근접 시점. 선반 안쪽 바닥이 보여 피규어를 올릴 자리를 탭하기 좋다.
-        private func applyDecorCamera(to node: SCNNode) {
-            guard let bounds = Self.localHierarchyBounds(of: node) else { return }
-            let localCenter = SCNVector3(
-                (bounds.min.x + bounds.max.x) / 2,
-                (bounds.min.y + bounds.max.y) / 2,
-                (bounds.min.z + bounds.max.z) / 2
-            )
-            let worldCenter = node.convertPosition(localCenter, to: nil)
-            let size = SIMD3(
-                (bounds.max.x - bounds.min.x) * node.scale.x,
-                (bounds.max.y - bounds.min.y) * node.scale.y,
-                (bounds.max.z - bounds.min.z) * node.scale.z
-            )
-            let radius = max(simd_length(size) / 2, 0.4)
-
-            // 모델의 열린 면은 로컬 +Z다. 가구 회전은 convertVector에 이미 반영되므로,
-            // 방 중심을 기준으로 다시 뒤집으면 책장 뒤판을 바라보게 될 수 있다.
-            let frontWorld = node.convertVector(SCNVector3(0, 0, 1), to: nil)
-            let front = RoomEditorSceneView.decorFrontDirection(from: frontWorld)
-
-            let distance = max(radius * 2.2, 1.1)
-            let elevation = Float(25 * Double.pi / 180)
-            SCNTransaction.begin()
-            SCNTransaction.animationDuration = 0.45
-            cameraNode.camera?.usesOrthographicProjection = false
-            cameraNode.camera?.fieldOfView = 60
-            cameraNode.position = SCNVector3(
-                worldCenter.x + front.x * distance * cos(elevation),
-                worldCenter.y + distance * sin(elevation),
-                worldCenter.z + front.y * distance * cos(elevation)
-            )
-            cameraNode.look(at: worldCenter, up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
-            SCNTransaction.commit()
-            sceneView?.pointOfView = cameraNode
-
-            // 궤도 회전 중심을 책장으로 옮겨, 꾸미는 동안의 시점 조작이 책장을 축으로 돌게 한다.
-            if let controller = sceneView?.defaultCameraController {
-                controller.interactionMode = .orbitTurntable
-                controller.target = worldCenter
-                controller.automaticTarget = false
-            }
-        }
-
-        /// 꾸미기 모드의 탭: 대기 소품의 선반 배치 → 기존 소품 선택 → 빈 곳 선택 해제 순으로 판정.
-        private func handleDecorTap(at point: CGPoint, in sceneView: SCNView, decoratingID: Int) {
-            let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
-
-            let wantsPlacement = viewModel.pendingFigure != nil
-            if wantsPlacement,
-               // 웹 decorSurface 대응: 책장 mesh 중 "위를 향한 면"(정규화한 법선 Y ≥ 0.7 — 상판·선반 바닥)만
-               // 지지면으로 인정한다. 옆면/앞면 탭은 배치로 이어지지 않는다.
-               let support = hits.first(where: { hit in
-                   Self.furnitureID(fromNodeOrAncestors: hit.node) == decoratingID
-                       && RoomEditorSceneView.isDecorSupportNormal(hit.worldNormal)
-               }),
-               let container = furnitureContainer.childNode(withName: "decorbox-\(decoratingID)", recursively: false)
-                   ?? makeDecorContainerIfMissing(for: decoratingID) {
-                let local = container.convertPosition(support.worldCoordinates, from: nil)
-                let position = FurnitureTransform.Vector3(x: Double(local.x), y: Double(local.y), z: Double(local.z))
-                viewModel.placePendingFigure(atLocal: position)
-                viewModel.statusMessage = nil
-                return
-            }
-
-            if wantsPlacement {
-                viewModel.statusMessage = "소품을 놓을 선반의 윗면을 탭하세요"
-                return
-            }
-
-            // 프런트와 동일하게 새 소품 배치가 대기 중이면 기존 소품보다 선반 배치를 우선한다.
-            // 배치 대기가 아닐 때 기존 소품을 탭하면 선택하고, 이후 드래그로 이동할 수 있다.
-            if !wantsPlacement,
-               let decor = hits.compactMap({ Self.decorID(fromNodeOrAncestors: $0.node) })
-                .first(where: { $0.itemID == decoratingID }) {
-                viewModel.selectedDecorID = decor.decorID
-                viewModel.statusMessage = nil
-                return
-            }
-
-            viewModel.selectedDecorID = nil
-        }
-
-        /// 첫 피규어를 올릴 때는 컨테이너가 아직 없다. 가구 노드 transform으로 즉석 생성해
-        /// 월드 → 부모 로컬 변환에 쓴다. (실제 피규어 노드는 다음 rebuild에서 채워진다)
-        private func makeDecorContainerIfMissing(for itemID: Int) -> SCNNode? {
-            guard let node = furnitureContainer.childNode(withName: "furniture-\(itemID)", recursively: false) else {
-                return nil
-            }
-            let container = SCNNode()
-            container.name = "decorbox-\(itemID)"
-            syncDecorContainerTransform(container: container, furnitureNode: node)
-            furnitureContainer.addChildNode(container)
-            return container
-        }
-
-        func applyCamera(mode: RoomViewMode, animated: Bool) {
-            let radius = max(sceneRadius, 1.5)
-            SCNTransaction.begin()
-            SCNTransaction.animationDuration = animated ? 0.4 : 0
-            switch mode {
-            case .threeD:
-                if isScannedRoom {
-                    cameraNode.camera?.usesOrthographicProjection = true
-                    cameraNode.camera?.orthographicScale = Double(scannedRoomPerspectiveScale())
-                    cameraNode.position = scannedRoomPerspectiveCameraPosition(radius: radius)
-                } else {
-                    cameraNode.camera?.usesOrthographicProjection = false
-                    cameraNode.camera?.fieldOfView = 60 // 사람 뷰(70°)에서 돌아올 때 기본 화각 복원
-                    // 방 반경의 ~2.2배 거리에서 아이소메트릭 각도로 프레이밍.
-                    cameraNode.position = SCNVector3(
-                        sceneCenter.x + radius * 1.1,
-                        radius * 1.25,
-                        sceneCenter.z + radius * 1.5
-                    )
-                }
-                // 스카이뷰(수직)에서 돌아올 때 look(at:)만 쓰면 직전 롤이 남아 화면이 기울어진다.
-                // 월드 위쪽(+Y)을 명시해 항상 수평이 잡힌 3D 뷰로 복귀하게 한다.
-                cameraNode.look(at: sceneCenter, up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
-            case .skyView:
-                cameraNode.camera?.usesOrthographicProjection = true
-                cameraNode.camera?.orthographicScale = Double(skyViewScale())
-                cameraNode.position = SCNVector3(sceneCenter.x, radius * 3 + 2, sceneCenter.z)
-                // 수직 탑다운에서 look(at:)은 화면 위쪽(롤)이 정해지지 않아 직전 카메라 상태에 따라
-                // 평면도가 뒤집혀 보인다. 방향을 명시적으로 고정: -Z가 화면 위, +X가 오른쪽.
-                cameraNode.eulerAngles = SCNVector3(-Float.pi / 2, 0, 0)
-            case .person:
-                // 방 중앙, 사람 눈높이(~1.45m)에서 시작하는 1인칭 뷰.
-                cameraNode.camera?.usesOrthographicProjection = false
-                // 휴대폰의 작은 화면에서는 너무 넓은 화각이 가장자리 왜곡과 빠른 optical flow를
-                // 키워 멀미를 유발한다. 실내를 충분히 보면서도 편안한 65°로 제한한다.
-                cameraNode.camera?.fieldOfView = 65
-                let eyeY = floorLevel + 1.45
-                let start = safePersonStartPosition(preferred: SIMD2(sceneCenter.x, sceneCenter.z))
-                let eye = SCNVector3(start.x, eyeY, start.y)
-                cameraNode.position = eye
-                // 4방향 중 가장 먼 벽까지 시야가 열린 쪽을 바라보며 시작한다.
-                // (코앞 벽을 보고 시작하는 것 방지 — 이후 드래그로 자유롭게 둘러본다)
-                let direction = openestViewDirection(from: eye)
-                let lookAt = SCNVector3(
-                    eye.x + direction.x * max(radius, 1),
-                    eyeY,
-                    eye.z + direction.y * max(radius, 1)
-                )
-                cameraNode.look(at: lookAt, up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
-                // 이후 시선 제스처가 이어갈 yaw/pitch 상태를 실제 오리엔테이션에서 읽어온다.
-                personYaw = cameraNode.eulerAngles.y
-                personPitch = cameraNode.eulerAngles.x
-                personTargetYaw = personYaw
-                personTargetPitch = personPitch
-                personTargetPosition = start
-                personWalkVelocity = .zero
-            }
-            SCNTransaction.commit()
-            // 벽 투명화는 3D 시점 전용. 탑다운에서는 벽이 시야를 가리지 않는데도
-            // 반투명 처리돼 방이 부분만 렌더된 것처럼 보이고, 사람 뷰에서는 방 안이라
-            // 모든 벽이 그대로 보여야 하므로 끈다.
-            wallFacingUpdater.isEnabled = (mode == .threeD)
-            sceneView?.pointOfView = cameraNode
-
-            if mode == .person {
-                startPersonComfortMotion()
-            } else {
-                stopPersonComfortMotion()
-            }
-
-            // 사람 뷰는 기본 카메라 컨트롤을 끄고(updateUIView) 전용 제스처로 움직인다.
-            if mode != .person, let controller = sceneView?.defaultCameraController {
-                // 스카이뷰는 평면도 역할이므로 회전/기울기를 완전히 막고 평행 이동만 허용한다.
-                // 핀치 확대·축소는 SCNView 기본 카메라 컨트롤이 계속 처리한다.
-                // 일반 3D 뷰만 방 중심을 축으로 도는 턴테이블 회전을 사용한다.
-                controller.interactionMode = mode == .skyView ? .pan : .orbitTurntable
-                controller.target = sceneCenter
-                controller.automaticTarget = false
-                controller.inertiaEnabled = true
-            }
-        }
-
-        // MARK: - 사람 뷰 조작 (시선 / 걷기 / 충돌)
-
-        /// 한 손가락 드래그 = 시선 조절. 좌우는 고개 돌리기, 위아래는 위/아래 보기.
-        @objc func handlePersonLook(_ gesture: UIPanGestureRecognizer) {
-            guard let sceneView else { return }
-            if gesture.state == .began { lastLookTranslation = .zero }
-            let translation = gesture.translation(in: sceneView)
-            let dx = Float(translation.x - lastLookTranslation.x)
-            let dy = Float(translation.y - lastLookTranslation.y)
-            lastLookTranslation = translation
-
-            // 원래 감도(0.004)는 100pt 드래그에 약 23°가 돌아 작은 손 떨림도 과하게
-            // 느껴졌다. 감도를 낮추고 display link 보간 대상으로만 갱신한다.
-            personTargetYaw += dx * 0.0022
-            // 아래 보기 한계를 약 60°까지 열어 발밑/가구 하단도 자연스럽게 확인할 수 있게 한다.
-            // 위쪽은 과도하게 젖혀지지 않도록 기존과 비슷한 범위로 유지한다.
-            personTargetPitch = max(-1.05, min(0.68, personTargetPitch + dy * 0.00175))
-        }
-
-        /// 두 손가락 드래그 = 보조 이동. 위로 밀면 전진, 좌우로 밀면 옆걸음.
-        @objc func handlePersonWalk(_ gesture: UIPanGestureRecognizer) {
-            guard let sceneView else { return }
-            if gesture.state == .began { lastWalkTranslation = .zero }
-            let translation = gesture.translation(in: sceneView)
-            let dx = Float(translation.x - lastWalkTranslation.x)
-            let dy = Float(translation.y - lastWalkTranslation.y)
-            lastWalkTranslation = translation
-
-            // 한 번의 제스처 샘플이 늦게 몰려와도 순간 점프하지 않게 이동량을 제한한다.
-            movePersonCamera(
-                forward: max(-0.10, min(0.10, -dy * 0.0035)),
-                strafe: max(-0.10, min(0.10, dx * 0.0035))
-            )
-        }
-
-        /// 핀치 = 앞뒤 이동(벌리면 전진).
-        @objc func handlePersonPinch(_ gesture: UIPinchGestureRecognizer) {
-            let delta = Float(gesture.scale - 1)
-            gesture.scale = 1
-            movePersonCamera(forward: max(-0.10, min(0.10, delta * 0.55)), strafe: 0)
-        }
-
-        /// 시선 기준으로 걷되, 벽은 미끄러지며 막히고 가구는 몸통 반경만큼 못 들어가게 한다.
-        private func movePersonCamera(forward: Float, strafe: Float) {
-            // 보간 중에도 두 손가락 이동은 사용자가 바라보려는 방향을 기준으로 한다.
-            let forwardDir = SIMD2(-sinf(personTargetYaw), -cosf(personTargetYaw))
-            let rightDir = SIMD2(cosf(personTargetYaw), -sinf(personTargetYaw))
-            var movement = forwardDir * forward + rightDir * strafe
-            guard simd_length_squared(movement) > 1e-10 else { return }
-
-            // 벽: 가구 이동과 같은 로직으로, 뚫는 성분만 깎아 벽을 따라 미끄러지게.
-            let body = FurnitureFootprint(
-                halfWidth: Self.personBodyRadius,
-                halfDepth: Self.personBodyRadius,
-                rotationY: 0
-            )
-            let motionPosition = personTargetPosition ?? SIMD2(cameraNode.position.x, cameraNode.position.z)
-            movement = wallConstrainedMovement(
-                footprint: body,
-                from: SCNVector3(motionPosition.x, cameraNode.position.y, motionPosition.y),
-                movement: movement
-            )
-
-            // 가구: 몸통 반경만큼 부풀린 발자국 안으로 못 들어가게 축별로 차단.
-            // (축별 검사라 가구 모서리에서도 걸리지 않고 옆으로 미끄러진다)
-            var position = motionPosition
-            let stepX = SIMD2(position.x + movement.x, position.y)
-            if !personIntersectsFurniture(at: stepX) { position = stepX }
-            let stepZ = SIMD2(position.x, position.y + movement.y)
-            if !personIntersectsFurniture(at: stepZ) { position = stepZ }
-
-            personTargetPosition = position
-        }
-
-        /// 해당 위치가 (문/창문 제외) 어떤 가구의 발자국 + 몸통 반경 안인지 검사.
-        private func personIntersectsFurniture(at point: SIMD2<Float>) -> Bool {
-            for furniture in viewModel.layout.furnitures where !Self.isDoorOrWindow(furniture) {
-                guard let node = furnitureContainer.childNode(withName: "furniture-\(furniture.itemId)", recursively: false) else { continue }
-                let renderFurniture = displayFurniture(for: furniture)
-                let footprint = FurnitureFootprint(
-                    halfWidth: Float(renderFurniture.width ?? 0.8) * max(Float(renderFurniture.scale.x), 0.001) / 2,
-                    halfDepth: Float(renderFurniture.depth ?? 0.8) * max(Float(renderFurniture.scale.z), 0.001) / 2,
-                    rotationY: Float(renderFurniture.rotation.y)
-                )
-                if footprint.contains(point: point, center: SIMD2(node.position.x, node.position.z), padding: Self.personBodyRadius) {
-                    return true
-                }
-            }
-            return false
-        }
-
-        private func personIntersectsWall(at point: SIMD2<Float>) -> Bool {
-            let colliders = wallColliders + infillColliders
-            guard !colliders.isEmpty else { return false }
-            let body = FurnitureFootprint(
-                halfWidth: Self.personBodyRadius,
-                halfDepth: Self.personBodyRadius,
-                rotationY: 0
-            )
-            let position = SCNVector3(point.x, floorLevel + 1.45, point.y)
-            for wall in colliders {
-                guard wall.overlapsSpan(center: position, footprint: body) else { continue }
-                let radius = body.projectionRadius(on: wall.normal)
-                let innerMost = position.dotXZ(wall.normal) - radius
-                if innerMost < wall.projection + Self.wallContactMargin {
-                    return true
-                }
-            }
-            return false
-        }
-
-        private func safePersonStartPosition(preferred: SIMD2<Float>) -> SIMD2<Float> {
-            let bounds = roomBounds.inset(by: Self.personBodyRadius + 0.08)
-            let clampedPreferred = SIMD2(
-                bounds.clampedX(preferred.x, inset: 0),
-                bounds.clampedZ(preferred.y, inset: 0)
-            )
-            if isSafePersonPosition(clampedPreferred) {
-                return clampedPreferred
-            }
-
-            let step: Float = 0.35
-            let maxRing = 12
-            for ring in 1...maxRing {
-                let distance = Float(ring) * step
-                let samples = max(8, ring * 8)
-                for index in 0..<samples {
-                    let angle = Float(index) / Float(samples) * Float.pi * 2
-                    let candidate = SIMD2(
-                        bounds.clampedX(clampedPreferred.x + cosf(angle) * distance, inset: 0),
-                        bounds.clampedZ(clampedPreferred.y + sinf(angle) * distance, inset: 0)
-                    )
-                    if isSafePersonPosition(candidate) {
-                        return candidate
-                    }
-                }
-            }
-            return clampedPreferred
-        }
-
-        private func isSafePersonPosition(_ point: SIMD2<Float>) -> Bool {
-            !personIntersectsFurniture(at: point) && !personIntersectsWall(at: point)
-        }
-
-        /// 사람 뷰 시작 방향: 눈 위치에서 ±X/±Z 네 방향으로 벽까지의 거리를 재서
-        /// 가장 멀리까지 트여 있는 방향을 고른다. 벽 콜라이더가 없으면 -Z(기존 기본값).
-        private func openestViewDirection(from eye: SCNVector3) -> SIMD2<Float> {
-            let candidates: [SIMD2<Float>] = [SIMD2(0, -1), SIMD2(1, 0), SIMD2(-1, 0), SIMD2(0, 1)]
-            guard !wallColliders.isEmpty else { return candidates[0] }
-
-            func wallDistance(along direction: SIMD2<Float>) -> Float {
-                var nearest = Float.greatestFiniteMagnitude
-                let origin = SIMD2(eye.x, eye.z)
-                // 시선이 벽면과 만나는 지점 검사를 위한 아주 작은 발자국.
-                let probe = FurnitureFootprint(halfWidth: 0.05, halfDepth: 0.05, rotationY: 0)
-                for wall in wallColliders {
-                    let normal = SIMD2(wall.normal.x, wall.normal.z)
-                    let approach = simd_dot(direction, normal)
-                    guard approach < -1e-4 else { continue } // 벽을 향해 다가가는 방향만
-                    let t = (simd_dot(origin, normal) - wall.projection) / -approach
-                    guard t > 0.05 else { continue }
-                    let hit = origin + direction * t
-                    guard wall.overlapsSpan(center: SCNVector3(hit.x, eye.y, hit.y), footprint: probe) else { continue }
-                    nearest = min(nearest, t)
-                }
-                return nearest
-            }
-
-            return candidates.max(by: { wallDistance(along: $0) < wallDistance(along: $1) }) ?? candidates[0]
-        }
-
-        private func skyViewScale() -> Float {
-            let padding: Float = isScannedRoom ? 1.04 : 1.15
-            let measurementPadding = viewModel.isMeasuring ? measurementCameraPadding * 2 : 0
-            let verticalFit = sceneBounds.depth + measurementPadding
-            let measuredAspect = Float((sceneView?.bounds.width ?? 0) / max(sceneView?.bounds.height ?? 1, 1))
-            let aspect = isScannedRoom ? max(measuredAspect, 0.56) : measuredAspect
-            let horizontalFit = aspect > 0 ? (sceneBounds.width + measurementPadding) / aspect : sceneBounds.width + measurementPadding
-            return max(verticalFit, horizontalFit, 2.5) * padding
-        }
-
-        private func scannedRoomPerspectiveCameraPosition(radius: Float) -> SCNVector3 {
-            let x = sceneCenter.x + radius * 0.7
-            let z = sceneCenter.z + radius * 0.85
-            let y = max(radius * 1.25, 4)
-            return SCNVector3(x, y, z)
-        }
-
-        private func scannedRoomPerspectiveScale() -> Float {
-            max(sceneBounds.width, sceneBounds.depth, 3) * 1.05
-        }
-
-        /// 회전·높이 슬라이더 조작을 전체 리빌드 없이 선택 노드에 즉시 반영합니다.
         func syncSelectedRotation(from layout: RoomLayout, selectedID: Int?) {
             guard let selectedID,
                   let item = layout.furnitures.first(where: { $0.itemId == selectedID }),
@@ -1236,11 +558,11 @@ struct RoomEditorSceneView: UIViewRepresentable {
             }
         }
 
-        private func removeSelectionHighlight(from node: SCNNode) {
+        func removeSelectionHighlight(from node: SCNNode) {
             node.childNode(withName: selectionHighlightName, recursively: false)?.removeFromParentNode()
         }
 
-        private func addSelectionHighlight(to node: SCNNode) {
+        func addSelectionHighlight(to node: SCNNode) {
             guard let bounds = Self.localHierarchyBounds(of: node) else { return }
             let width = max(CGFloat(bounds.max.x - bounds.min.x) + 0.06, 0.08)
             let height = max(CGFloat(bounds.max.y - bounds.min.y) + 0.06, 0.08)
@@ -1275,7 +597,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             }
         }
 
-        private func rebuildMeasurementNodes() {
+        func rebuildMeasurementNodes() {
             measurementContainer.childNodes.forEach { $0.removeFromParentNode() }
 
             // 뷰별로 다른 구성:
@@ -1317,7 +639,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             // 프론트엔드 측정모드는 벽 치수(가로/세로/높이)만 보여주고 가구별 치수 라벨은 두지 않습니다.
         }
 
-        private func addOverallMeasurementNodes(includeHeight: Bool) {
+        func addOverallMeasurementNodes(includeHeight: Bool) {
             let bounds = dynamicOverallBounds()
             // 전체 치수는 벽별 치수(0.35)보다 더 바깥(0.8)에 둬 도면처럼 층이 지게 한다.
             addHorizontalDimensionLine(
@@ -1353,7 +675,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
         }
 
         /// 스카이뷰 전용 높이 표기: 세로(깊이) 치수선과 같은 열, 방 위쪽 모서리 바깥에 라벨로 띄운다.
-        private func addSkyviewHeightLabel() {
+        func addSkyviewHeightLabel() {
             let bounds = dynamicOverallBounds()
             let label = Self.makeMeasurementLabel(
                 text: "높이 \(Self.formatCentimeters(roomHeight))",
@@ -1363,7 +685,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             measurementContainer.addChildNode(label)
         }
 
-        private func addObjectMeasurementNodes() {
+        func addObjectMeasurementNodes() {
             for furniture in viewModel.layout.furnitures {
                 guard let node = furnitureContainer.childNode(withName: "furniture-\(furniture.itemId)", recursively: false) else {
                     continue
@@ -1386,7 +708,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             }
         }
 
-        private func dynamicOverallBounds() -> HorizontalBounds {
+        func dynamicOverallBounds() -> HorizontalBounds {
             var bounds = roomBounds
             for furniture in viewModel.layout.furnitures {
                 guard let node = furnitureContainer.childNode(withName: "furniture-\(furniture.itemId)", recursively: false) else {
@@ -1404,7 +726,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             return bounds
         }
 
-        private func addHorizontalDimensionLine(
+        func addHorizontalDimensionLine(
             center: SCNVector3,
             direction: SCNVector3,
             normal: SCNVector3,
@@ -1457,7 +779,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
         /// `position`은 선의 "중심"이다. 눈금/라벨도 같은 중심 기준으로 배치해야
         /// 바닥이 y=0이 아닌 스캔 방에서도 선·눈금·라벨이 어긋나지 않는다.
-        private func addVerticalDimensionLine(position: SCNVector3, height: Float, label: String, style: MeasurementLabelStyle) {
+        func addVerticalDimensionLine(position: SCNVector3, height: Float, label: String, style: MeasurementLabelStyle) {
             guard height > 0.05 else { return }
             let bottomY = position.y - height / 2
             let topY = position.y + height / 2
@@ -1479,7 +801,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             measurementContainer.addChildNode(textNode)
         }
 
-        private static func makeHorizontalStroke(center: SCNVector3, direction: SCNVector3, length: Float, style: MeasurementLabelStyle) -> SCNNode {
+        static func makeHorizontalStroke(center: SCNVector3, direction: SCNVector3, length: Float, style: MeasurementLabelStyle) -> SCNNode {
             let box = SCNBox(width: CGFloat(max(length, 0.01)), height: 0.012, length: 0.012, chamferRadius: 0)
             box.materials = [measurementMaterial(color: style.lineColor)]
             let node = SCNNode(geometry: box)
@@ -1489,7 +811,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             return node
         }
 
-        private static func makeVerticalStroke(center: SCNVector3, height: Float, style: MeasurementLabelStyle) -> SCNNode {
+        static func makeVerticalStroke(center: SCNVector3, height: Float, style: MeasurementLabelStyle) -> SCNNode {
             let box = SCNBox(width: 0.012, height: CGFloat(max(height, 0.01)), length: 0.012, chamferRadius: 0)
             box.materials = [measurementMaterial(color: style.lineColor)]
             let node = SCNNode(geometry: box)
@@ -1498,7 +820,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             return node
         }
 
-        private static func measurementMaterial(color: UIColor) -> SCNMaterial {
+        static func measurementMaterial(color: UIColor) -> SCNMaterial {
             let material = SCNMaterial()
             material.diffuse.contents = color
             material.emission.contents = color
@@ -1510,11 +832,11 @@ struct RoomEditorSceneView: UIViewRepresentable {
             return material
         }
 
-        private static func dimensionDirection(for normal: SCNVector3) -> SCNVector3 {
+        static func dimensionDirection(for normal: SCNVector3) -> SCNVector3 {
             SCNVector3(-normal.z, 0, normal.x).normalizedXZ
         }
 
-        private static func makeMeasurementLabel(text: String, style: MeasurementLabelStyle) -> SCNNode {
+        static func makeMeasurementLabel(text: String, style: MeasurementLabelStyle) -> SCNNode {
             let (image, pixelSize) = measurementLabelImage(text: text, style: style)
             // 텍스트 높이(월드)를 기준으로 이미지 비율에 맞춰 평면 크기를 정해, 글자가 라벨을 꽉 채우게 한다.
             let worldHeight = style.labelWorldHeight
@@ -1539,7 +861,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
         }
 
         /// 텍스트에 꼭 맞는(여백 최소) 고해상도 라벨 이미지와 그 픽셀 크기를 함께 반환합니다.
-        private static func measurementLabelImage(text: String, style: MeasurementLabelStyle) -> (image: UIImage, size: CGSize) {
+        static func measurementLabelImage(text: String, style: MeasurementLabelStyle) -> (image: UIImage, size: CGSize) {
             let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             let font = UIFont.monospacedDigitSystemFont(ofSize: 52, weight: .bold)
             let attributes: [NSAttributedString.Key: Any] = [
@@ -1575,715 +897,16 @@ struct RoomEditorSceneView: UIViewRepresentable {
             return (image, size)
         }
 
-        private static func formatMeters(_ value: Float) -> String {
+        static func formatMeters(_ value: Float) -> String {
             String(format: "%.2fm", value)
         }
 
         /// 프론트엔드와 동일하게 치수를 cm 정수로 표기합니다. (예: 3.5m → "350 cm")
-        private static func formatCentimeters(_ value: Float) -> String {
+        static func formatCentimeters(_ value: Float) -> String {
             "\(max(Int((value * 100).rounded()), 1)) cm"
         }
 
-        // MARK: - Gestures
-
-        @objc func handleTap(_ gesture: UITapGestureRecognizer) {
-            guard let sceneView else { return }
-            guard viewModel.viewMode != .person else {
-                viewModel.selectedItemID = nil
-                viewModel.isMovingSelectedFurniture = false
-                movePersonCameraToTappedFloor(gesture)
-                return
-            }
-
-            let point = gesture.location(in: sceneView)
-
-            // 꾸미기 모드: 탭은 피규어 선택/배치 전용으로 동작한다.
-            if let decoratingID = viewModel.decoratingItemID {
-                handleDecorTap(at: point, in: sceneView, decoratingID: decoratingID)
-                return
-            }
-
-            let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
-
-            if let itemID = hits.compactMap({ Self.furnitureID(fromNodeOrAncestors: $0.node) }).first {
-                viewModel.selectedItemID = itemID
-            } else if let decor = hits.compactMap({ Self.decorID(fromNodeOrAncestors: $0.node) }).first {
-                // 꾸미기 모드 밖에서 피규어를 탭하면 피규어가 올려진 책장을 선택한다.
-                viewModel.selectedItemID = decor.itemID
-            } else {
-                viewModel.selectedItemID = nil
-                viewModel.isMovingSelectedFurniture = false
-            }
-        }
-
-        private func movePersonCameraToTappedFloor(_ gesture: UITapGestureRecognizer) {
-            guard let sceneView else { return }
-            let point = gesture.location(in: sceneView)
-            let hits = sceneView.hitTest(point, options: [.categoryBitMask: Self.floorHitCategory])
-            if let floorHit = hits.first {
-                walkPersonCamera(toward: SIMD2(floorHit.worldCoordinates.x, floorHit.worldCoordinates.z))
-                return
-            }
-
-            // 투명 드래그 바닥은 SceneKit hit-test에서 제외될 수 있다(특히 스캔 메시의
-            // 깊이 상태와 겹칠 때). 프런트엔드처럼 화면 탭 광선과 실제 바닥 평면의 교점으로
-            // 목적지를 계산하면, 바닥 mesh hit 유무와 관계없이 탭 이동이 항상 동작한다.
-            guard let target = floorPoint(from: point, in: sceneView) else { return }
-            walkPersonCamera(toward: target)
-        }
-
-        private func floorPoint(from screenPoint: CGPoint, in sceneView: SCNView) -> SIMD2<Float>? {
-            let near = sceneView.unprojectPoint(
-                SCNVector3(Float(screenPoint.x), Float(screenPoint.y), 0)
-            )
-            let far = sceneView.unprojectPoint(
-                SCNVector3(Float(screenPoint.x), Float(screenPoint.y), 1)
-            )
-            let direction = SCNVector3(far.x - near.x, far.y - near.y, far.z - near.z)
-            guard abs(direction.y) > 1e-6 else { return nil }
-
-            let distance = (floorLevel - near.y) / direction.y
-            guard distance >= 0 else { return nil }
-            return SIMD2(
-                near.x + direction.x * distance,
-                near.z + direction.z * distance
-            )
-        }
-
-        /// 탭한 지점을 향해 "걸어서" 이동한다. 순간이동이 아니라 5cm 스텝 스윕이라
-        /// 경로 중간의 벽·가구를 통과하지 않고, 목적지가 가구 위/벽 뒤라도
-        /// 갈 수 있는 곳까지 가서 그 앞에 멈춘다. (탭이 조용히 무시되는 일 없음)
-        private func walkPersonCamera(toward target: SIMD2<Float>) {
-            let body = FurnitureFootprint(
-                halfWidth: Self.personBodyRadius,
-                halfDepth: Self.personBodyRadius,
-                rotationY: 0
-            )
-            // 목표가 멀어도 한 번에 방을 가로지르지 않는다. 사람 눈높이 카메라의 장거리
-            // 고속 활주는 가장 멀미가 큰 패턴이라, 편안한 보행 거리만 이동하고 다음 탭에서 이어간다.
-            let start = personTargetPosition ?? SIMD2(cameraNode.position.x, cameraNode.position.z)
-            var position = start
-            let requested = target - start
-            let total = simd_length(requested)
-            guard total > 0.05 else { return }
-            let travel = min(total, Self.personMaxTapTravel)
-            let comfortTarget = start + requested / total * travel
-            let stepCount = max(1, Int(ceilf(travel / 0.04)))
-            let step = (comfortTarget - start) / Float(stepCount)
-
-            for _ in 0..<stepCount {
-                let adjusted = wallConstrainedMovement(
-                    footprint: body,
-                    from: SCNVector3(position.x, cameraNode.position.y, position.y),
-                    movement: step
-                )
-                var next = position
-                let stepX = SIMD2(next.x + adjusted.x, next.y)
-                if !personIntersectsFurniture(at: stepX) { next = stepX }
-                let stepZ = SIMD2(next.x, next.y + adjusted.y)
-                if !personIntersectsFurniture(at: stepZ) { next = stepZ }
-                if simd_length(next - position) < 0.005 { break } // 벽/가구에 막혀 더 못 감
-                position = next
-            }
-
-            let distance = simd_length(position - start)
-            guard distance > 0.02 else { return }
-            // display link가 가속/감속을 적용하며 목표까지 걷는다. SceneKit transaction으로
-            // 일정 속도 이동을 시키는 것보다 입력 중단/재입력 때도 속도가 자연스럽게 이어진다.
-            personTargetPosition = position
-        }
-
-        private func startPersonComfortMotion() {
-            guard personMotionDisplayLink == nil else { return }
-            let displayLink = CADisplayLink(target: self, selector: #selector(advancePersonComfortMotion(_:)))
-            displayLink.preferredFramesPerSecond = 120
-            displayLink.add(to: .main, forMode: .common)
-            personMotionDisplayLink = displayLink
-            lastPersonMotionTimestamp = nil
-        }
-
-        func stopPersonComfortMotion() {
-            personMotionDisplayLink?.invalidate()
-            personMotionDisplayLink = nil
-            personTargetPosition = nil
-            personWalkVelocity = .zero
-            lastPersonMotionTimestamp = nil
-        }
-
-        @objc private func advancePersonComfortMotion(_ displayLink: CADisplayLink) {
-            guard viewModel.viewMode == .person else {
-                stopPersonComfortMotion()
-                return
-            }
-            defer { lastPersonMotionTimestamp = displayLink.timestamp }
-            guard let previousTimestamp = lastPersonMotionTimestamp else { return }
-            let deltaTime = Float(min(max(displayLink.timestamp - previousTimestamp, 1.0 / 240.0), 1.0 / 30.0))
-
-            // 시선은 55ms 반응 시간으로만 완화한다. 손가락과 눈 사이의 지연은 느껴지지 않으면서
-            // 미세한 방향 전환의 톱니/급정지를 제거한다.
-            let lookBlend = 1 - expf(-deltaTime / Self.personLookResponse)
-            personYaw += Self.shortestAngle(from: personYaw, to: personTargetYaw) * lookBlend
-            personPitch += (personTargetPitch - personPitch) * lookBlend
-            cameraNode.eulerAngles = SCNVector3(personPitch, personYaw, 0)
-
-            guard let target = personTargetPosition else { return }
-            let current = SIMD2(cameraNode.position.x, cameraNode.position.z)
-            let remaining = target - current
-            let distance = simd_length(remaining)
-            guard distance > 0.002 else {
-                cameraNode.position = SCNVector3(target.x, cameraNode.position.y, target.y)
-                personWalkVelocity = .zero
-                return
-            }
-
-            // 목표가 멀수록 보행 속도까지만, 가까워질수록 자연스럽게 감속한다.
-            let desiredSpeed = min(Self.personWalkMaxSpeed, distance * 4.5)
-            let desiredVelocity = remaining / distance * desiredSpeed
-            let velocityDelta = desiredVelocity - personWalkVelocity
-            let maxVelocityChange = Self.personWalkAcceleration * deltaTime
-            let velocityDeltaLength = simd_length(velocityDelta)
-            if velocityDeltaLength > maxVelocityChange {
-                personWalkVelocity += velocityDelta / velocityDeltaLength * maxVelocityChange
-            } else {
-                personWalkVelocity = desiredVelocity
-            }
-
-            let step = personWalkVelocity * deltaTime
-            if simd_length(step) >= distance {
-                cameraNode.position = SCNVector3(target.x, cameraNode.position.y, target.y)
-                personWalkVelocity = .zero
-            } else {
-                cameraNode.position = SCNVector3(
-                    current.x + step.x,
-                    cameraNode.position.y,
-                    current.y + step.y
-                )
-            }
-        }
-
-        private static func shortestAngle(from: Float, to: Float) -> Float {
-            var difference = (to - from).truncatingRemainder(dividingBy: .pi * 2)
-            if difference > .pi { difference -= .pi * 2 }
-            if difference < -.pi { difference += .pi * 2 }
-            return difference
-        }
-
-        /// 가구 이동 팬은 "선택된 가구 위에서 시작한 터치"만 받는다. 그 외 터치는 받지 않아
-        /// 즉시 실패하고, 카메라 컨트롤(시점 회전/이동/핀치 줌)이 평소처럼 이어받는다.
-        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-            guard gestureRecognizer === movePanGesture else { return true }
-            guard let sceneView else { return false }
-            let point = touch.location(in: sceneView)
-            let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
-
-            // 꾸미기 중에는 기존 소품에서 시작한 한 손가락 팬만 가로챈다. 빈 곳 팬은
-            // SceneKit 카메라 컨트롤로 그대로 전달되어 프런트의 제한된 orbit 조작과 같다.
-            if let decoratingID = viewModel.decoratingItemID {
-                guard viewModel.pendingFigure == nil else { return false }
-                return hits.contains {
-                    Self.decorID(fromNodeOrAncestors: $0.node)?.itemID == decoratingID
-                }
-            }
-
-            guard let selectedID = viewModel.selectedItemID else { return false }
-            // 벽 메우기 패널은 벽 구조라 드래그로 옮길 수 없다.
-            if let item = viewModel.layout.furnitures.first(where: { $0.itemId == selectedID }),
-               RoomEditorViewModel.isWallInfill(item) {
-                return false
-            }
-            return hits.contains { Self.furnitureID(fromNodeOrAncestors: $0.node) == selectedID }
-        }
-
-        /// SceneKit 카메라 컨트롤(회전/이동/핀치) 제스처들이 가구 이동 팬의 "실패"를 기다리게 한다.
-        /// 이동 팬은 선택된 가구 위에서 시작한 터치만 받으므로(delegate 참고), 그 외 터치에선
-        /// 즉시 실패 처리되어 카메라 조작이 평소처럼 동작한다.
-        func updateCameraGestureRequirements(on view: SCNView) {
-            guard let movePan = movePanGesture else { return }
-            for recognizer in view.gestureRecognizers ?? [] where recognizer !== movePan {
-                let id = ObjectIdentifier(recognizer)
-                guard !cameraGestureRequirementConfigured.contains(id) else { continue }
-                recognizer.require(toFail: movePan)
-                cameraGestureRequirementConfigured.insert(id)
-            }
-        }
-
-        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
-            guard let sceneView else { return }
-
-            if let decoratingID = viewModel.decoratingItemID {
-                handleDecorPan(gesture, in: sceneView, decoratingID: decoratingID)
-                return
-            }
-
-            guard
-                  let selectedID = viewModel.selectedItemID,
-                  let node = furnitureContainer.childNode(withName: "furniture-\(selectedID)", recursively: false) else { return }
-
-            // 바닥 노드만 hitTest 하도록 전용 카테고리로 제한합니다. (모든 노드 검사 → 바닥만 = 훨씬 가벼움)
-            let point = gesture.location(in: sceneView)
-            let hits = sceneView.hitTest(point, options: [.categoryBitMask: Self.floorHitCategory])
-            guard let floorHit = hits.first else { return }
-
-            // 드래그 시작: 손가락이 짚은 지점과 가구 중심의 간격을 기억해,
-            // 가구의 "잡은 부분"이 손가락에 붙어 1:1로 따라오게 한다.
-            if gesture.state == .began {
-                dragGrabOffset = SIMD2(
-                    node.position.x - floorHit.worldCoordinates.x,
-                    node.position.z - floorHit.worldCoordinates.z
-                )
-                isSnapEngaged = false
-            }
-
-            let proposed = SCNVector3(
-                floorHit.worldCoordinates.x + dragGrabOffset.x,
-                node.position.y,
-                floorHit.worldCoordinates.z + dragGrabOffset.y
-            )
-            let item = viewModel.layout.furnitures.first(where: { $0.itemId == selectedID })
-            let renderFurniture = item.map { displayFurniture(for: $0) }
-
-            // 웹 에디터(constrainedMovementBeforeWallCollision)와 동일한 이동 방식:
-            // 목표 지점까지의 "이동 벡터"에서 벽을 파고드는 성분만 깎아낸다. 자석 스냅 없이도
-            // 벽 쪽으로 밀면 남은 여유만큼만 이동해 벽에 딱 붙어 멈추고, 접선 성분은 살아 있어
-            // 벽에 붙은 채로 자연스럽게 미끄러진다. 충돌 후 되돌리는 후처리는 하지 않는다.
-            // 문/창문은 벽에 놓이는 reference라 웹과 동일하게 충돌 제한에서 제외한다.
-            var next = proposed
-            if let item, let renderFurniture, !Self.isDoorOrWindow(item) {
-                let movement = SIMD2(proposed.x - node.position.x, proposed.z - node.position.z)
-                let allowed = wallConstrainedMovement(for: renderFurniture, from: node.position, movement: movement)
-                next = SCNVector3(node.position.x + allowed.x, node.position.y, node.position.z + allowed.y)
-            }
-            node.position = next
-            // 책장 위 피규어들이 드래그를 실시간으로 따라오게 컨테이너를 동기화한다.
-            syncDecorContainer(forItemID: selectedID)
-
-            // 벽/가구에 새로 막히는 순간에만 가벼운 햅틱 — 닿았다는 걸 손끝으로 알 수 있게.
-            let blockedDistance = simd_length(SIMD2(next.x - proposed.x, next.z - proposed.z))
-            if blockedDistance > 0.02, !isSnapEngaged {
-                isSnapEngaged = true
-                Haptics.impact(.light)
-            } else if blockedDistance < 0.005 {
-                isSnapEngaged = false
-            }
-
-            if viewModel.isMeasuring {
-                rebuildMeasurementNodes()
-            }
-
-            if gesture.state == .ended || gesture.state == .cancelled {
-                // 벽 투명도 대상은 드래그 중엔 바뀔 일이 거의 없으니, 매 이벤트 대신 종료 시 한 번만 갱신.
-                refreshViewFacingTransparencyTargets()
-                guard let item else { return }
-                viewModel.commitTransform(
-                    itemID: selectedID,
-                    transform: FurnitureTransform(
-                        position: .init(x: Double(next.x), y: Double(next.y), z: Double(next.z)),
-                        rotation: item.rotation,
-                        scale: item.scale
-                    )
-                )
-            }
-        }
-
-        /// 프런트엔드 `figure-move` 대응. 선반 위를 드래그하면 해당 표면으로 스냅하고,
-        /// 손가락이 잠시 표면을 벗어나면 현재 선반 높이의 평면을 따라 책장 가장자리까지 이동한다.
-        private func handleDecorPan(
-            _ gesture: UIPanGestureRecognizer,
-            in sceneView: SCNView,
-            decoratingID: Int
-        ) {
-            let point = gesture.location(in: sceneView)
-            let container = furnitureContainer.childNode(
-                withName: "decorbox-\(decoratingID)",
-                recursively: false
-            )
-
-            if gesture.state == .began {
-                let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
-                guard let decor = hits.compactMap({ Self.decorID(fromNodeOrAncestors: $0.node) })
-                    .first(where: { $0.itemID == decoratingID }),
-                      let wrapper = container?.childNode(
-                        withName: "decor-\(decoratingID)-\(decor.decorID)",
-                        recursively: false
-                      ) else { return }
-                draggingDecorID = decor.decorID
-                decorDragStartPosition = wrapper.position
-                viewModel.selectedDecorID = decor.decorID
-                Haptics.selection()
-            }
-
-            guard let container, let decorID = draggingDecorID,
-                  let wrapper = container.childNode(
-                    withName: "decor-\(decoratingID)-\(decorID)",
-                    recursively: false
-                  ) else { return }
-
-            if gesture.state == .cancelled || gesture.state == .failed {
-                if let start = decorDragStartPosition {
-                    wrapper.position = start
-                }
-                draggingDecorID = nil
-                decorDragStartPosition = nil
-                return
-            }
-
-            if let candidate = decorDragPosition(
-                at: point,
-                in: sceneView,
-                decoratingID: decoratingID,
-                container: container,
-                current: wrapper.position
-            ), let constrained = viewModel.constrainedSelectedDecorPosition(candidate) {
-                wrapper.position = SCNVector3(
-                    Float(constrained.x),
-                    Float(constrained.y),
-                    Float(constrained.z)
-                )
-            }
-
-            if gesture.state == .ended {
-                viewModel.moveSelectedDecor(
-                    toLocal: .init(
-                        x: Double(wrapper.position.x),
-                        y: Double(wrapper.position.y),
-                        z: Double(wrapper.position.z)
-                    )
-                )
-                draggingDecorID = nil
-                decorDragStartPosition = nil
-            }
-        }
-
-        private func decorDragPosition(
-            at point: CGPoint,
-            in sceneView: SCNView,
-            decoratingID: Int,
-            container: SCNNode,
-            current: SCNVector3
-        ) -> FurnitureTransform.Vector3? {
-            let hits = sceneView.hitTest(point, options: [.searchMode: SCNHitTestSearchMode.all.rawValue])
-            if let support = hits.first(where: { hit in
-                Self.furnitureID(fromNodeOrAncestors: hit.node) == decoratingID
-                    && RoomEditorSceneView.isDecorSupportNormal(hit.worldNormal)
-            }) {
-                let local = container.convertPosition(support.worldCoordinates, from: nil)
-                return .init(x: Double(local.x), y: Double(local.y), z: Double(local.z))
-            }
-
-            // 프런트의 constrainedSupportPoint 폴백: 포인터 광선과 현재 선반 높이의
-            // 월드 수평면 교차점을 사용한다. 책장 범위 제한은 ViewModel이 적용한다.
-            let currentWorld = container.convertPosition(current, to: nil)
-            let near = sceneView.unprojectPoint(SCNVector3(Float(point.x), Float(point.y), 0))
-            let far = sceneView.unprojectPoint(SCNVector3(Float(point.x), Float(point.y), 1))
-            let direction = SCNVector3(far.x - near.x, far.y - near.y, far.z - near.z)
-            guard abs(direction.y) > 1e-6 else { return nil }
-            let distance = (currentWorld.y - near.y) / direction.y
-            guard distance >= 0 else { return nil }
-            let world = SCNVector3(
-                near.x + direction.x * distance,
-                currentWorld.y,
-                near.z + direction.z * distance
-            )
-            let local = container.convertPosition(world, from: nil)
-            return .init(x: Double(local.x), y: Double(current.y), z: Double(local.z))
-        }
-
-        private static func furnitureID(fromNodeOrAncestors node: SCNNode) -> Int? {
-            var current: SCNNode? = node
-            while let candidate = current {
-                if let name = candidate.name, name.hasPrefix("furniture-") {
-                    return Int(name.dropFirst("furniture-".count))
-                }
-                current = candidate.parent
-            }
-            return nil
-        }
-
-        private static func localHierarchyBounds(of root: SCNNode) -> (min: SCNVector3, max: SCNVector3)? {
-            var found = false
-            var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
-            var hi = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
-
-            func accumulate(_ node: SCNNode, _ parent: simd_float4x4) {
-                if node.name == "__selection_highlight" || node.name == "__measurement_label" { return }
-                let transform = parent * node.simdTransform
-                if node.geometry != nil {
-                    let (minBounds, maxBounds) = node.boundingBox
-                    let corners: [SIMD4<Float>] = [
-                        .init(minBounds.x, minBounds.y, minBounds.z, 1),
-                        .init(maxBounds.x, minBounds.y, minBounds.z, 1),
-                        .init(minBounds.x, maxBounds.y, minBounds.z, 1),
-                        .init(maxBounds.x, maxBounds.y, minBounds.z, 1),
-                        .init(minBounds.x, minBounds.y, maxBounds.z, 1),
-                        .init(maxBounds.x, minBounds.y, maxBounds.z, 1),
-                        .init(minBounds.x, maxBounds.y, maxBounds.z, 1),
-                        .init(maxBounds.x, maxBounds.y, maxBounds.z, 1)
-                    ]
-                    for corner in corners {
-                        let point = transform * corner
-                        lo = simd_min(lo, SIMD3(point.x, point.y, point.z))
-                        hi = simd_max(hi, SIMD3(point.x, point.y, point.z))
-                        found = true
-                    }
-                }
-                for child in node.childNodes {
-                    accumulate(child, transform)
-                }
-            }
-
-            for child in root.childNodes {
-                accumulate(child, matrix_identity_float4x4)
-            }
-            if root.geometry != nil {
-                accumulate(root, matrix_identity_float4x4)
-            }
-
-            guard found else { return nil }
-            return (SCNVector3(lo.x, lo.y, lo.z), SCNVector3(hi.x, hi.y, hi.z))
-        }
-
-        private static func horizontalBounds(of furnitures: [PlacedFurniture]) -> HorizontalBounds? {
-            var bounds: HorizontalBounds?
-            for furniture in furnitures {
-                let footprint = Self.rotatedFootprint(for: furniture)
-                let halfWidth = footprint.x
-                let halfDepth = footprint.z
-                let itemBounds = HorizontalBounds(
-                    minX: Float(furniture.position.x) - halfWidth,
-                    maxX: Float(furniture.position.x) + halfWidth,
-                    minZ: Float(furniture.position.z) - halfDepth,
-                    maxZ: Float(furniture.position.z) + halfDepth
-                )
-                bounds = HorizontalBounds.union(bounds, itemBounds)
-            }
-            return bounds
-        }
-
-        private static func horizontalBounds(of root: SCNNode) -> HorizontalBounds? {
-            var bounds: HorizontalBounds?
-
-            func accumulate(_ node: SCNNode) {
-                if node.geometry != nil {
-                    let (minBounds, maxBounds) = node.boundingBox
-                    let corners = [
-                        SCNVector3(minBounds.x, minBounds.y, minBounds.z),
-                        SCNVector3(maxBounds.x, minBounds.y, minBounds.z),
-                        SCNVector3(minBounds.x, maxBounds.y, minBounds.z),
-                        SCNVector3(maxBounds.x, maxBounds.y, minBounds.z),
-                        SCNVector3(minBounds.x, minBounds.y, maxBounds.z),
-                        SCNVector3(maxBounds.x, minBounds.y, maxBounds.z),
-                        SCNVector3(minBounds.x, maxBounds.y, maxBounds.z),
-                        SCNVector3(maxBounds.x, maxBounds.y, maxBounds.z)
-                    ]
-
-                    for corner in corners {
-                        let world = node.convertPosition(corner, to: nil)
-                        let pointBounds = HorizontalBounds(
-                            minX: world.x,
-                            maxX: world.x,
-                            minZ: world.z,
-                            maxZ: world.z
-                        )
-                        bounds = HorizontalBounds.union(bounds, pointBounds)
-                    }
-                }
-
-                for child in node.childNodes {
-                    accumulate(child)
-                }
-            }
-
-            accumulate(root)
-            return bounds
-        }
-
-        private func displayFurniture(for furniture: PlacedFurniture) -> PlacedFurniture {
-            guard isScannedRoom else { return furniture }
-            let scaleLimit = fittingScaleLimit(for: furniture, in: usableRoomBounds())
-            guard scaleLimit < 1 else { return furniture }
-
-            var adjusted = furniture
-            adjusted.scale = .init(
-                x: furniture.scale.x * Double(scaleLimit),
-                y: furniture.scale.y * Double(scaleLimit),
-                z: furniture.scale.z * Double(scaleLimit)
-            )
-            return adjusted
-        }
-
-        private func fittingScaleLimit(for furniture: PlacedFurniture, in bounds: HorizontalBounds) -> Float {
-            let clearance: Float = 0.08
-            let footprint = Self.rotatedFootprint(for: furniture)
-            let widthLimit = max(bounds.width - clearance * 2, 0.1) / max(footprint.x * 2, 0.001)
-            let depthLimit = max(bounds.depth - clearance * 2, 0.1) / max(footprint.z * 2, 0.001)
-            return min(1, widthLimit, depthLimit)
-        }
-
-        private func usableRoomBounds() -> HorizontalBounds {
-            // 벽 안쪽 여백 없음 — 가구가 벽에 딱 붙게 합니다. (벽 안으로 들어가는 건 벽 콜라이더가 막음)
-            roomBounds
-        }
-
-        private static func rotatedFootprint(for furniture: PlacedFurniture) -> (x: Float, z: Float) {
-            let halfWidth = Float(furniture.width ?? 0.8) * max(Float(furniture.scale.x), 0.001) / 2
-            let halfDepth = Float(furniture.depth ?? 0.8) * max(Float(furniture.scale.z), 0.001) / 2
-            let angle = Float(furniture.rotation.y)
-            let cosY = abs(cosf(angle))
-            let sinY = abs(sinf(angle))
-            return (
-                x: halfWidth * cosY + halfDepth * sinY,
-                z: halfWidth * sinY + halfDepth * cosY
-            )
-        }
-
-        /// 벽과 가구 사이에 남기는 접촉 간격(m). 웹 에디터의 WALL_MOVEMENT_MARGIN(1e-4)과 동일.
-        /// 이동 차단과 밀어내기가 같은 값을 써야 벽에 붙은 가구가 이벤트마다 떨리지 않는다.
-        private static let wallContactMargin: Float = 0.0001
-
-        /// 교체/추가 직후 가구가 벽을 뚫고 있으면 방 안쪽으로 되밀어 넣는다.
-        /// (웹 에디터 initializeWallConstraints → pushObjectOutOfWalls 대응)
-        /// SwiftUI 뷰 업데이트 중에 @Published를 건드리면 안 되므로 다음 런루프에서 처리한다.
-        func resolveWallPenetrationIfNeeded() {
-            guard viewModel.pendingWallResolveItemID != nil else { return }
-            DispatchQueue.main.async { [weak self] in
-                self?.resolveWallPenetrationNow()
-            }
-        }
-
-        private func resolveWallPenetrationNow() {
-            guard let itemID = viewModel.pendingWallResolveItemID else { return }
-            viewModel.pendingWallResolveItemID = nil
-            guard let item = viewModel.layout.furnitures.first(where: { $0.itemId == itemID }),
-                  !Self.isDoorOrWindow(item),
-                  let node = furnitureContainer.childNode(withName: "furniture-\(itemID)", recursively: false) else { return }
-
-            let furniture = displayFurniture(for: item)
-            let resolved = pushedOutOfWalls(for: furniture, position: node.position)
-            let moved = simd_length(SIMD2(resolved.x - node.position.x, resolved.z - node.position.z))
-            guard moved > 0.0005 else { return }
-
-            node.position = resolved
-            syncDecorContainer(forItemID: itemID)
-            viewModel.commitTransform(
-                itemID: itemID,
-                transform: FurnitureTransform(
-                    position: .init(x: Double(resolved.x), y: Double(resolved.y), z: Double(resolved.z)),
-                    rotation: item.rotation,
-                    scale: item.scale
-                ),
-                recordHistory: false
-            )
-        }
-
-        /// 웹 pushObjectOutOfWalls 포팅: 벽 경계를 침투한 만큼 방 안쪽 normal 방향으로
-        /// 밀어내기를 침투가 없어질 때까지(최대 10회) 반복한다.
-        private func pushedOutOfWalls(for furniture: PlacedFurniture, position: SCNVector3) -> SCNVector3 {
-            let colliders = wallColliders + infillColliders
-            guard !colliders.isEmpty else { return position }
-            let footprint = FurnitureFootprint(
-                halfWidth: Float(furniture.width ?? 0.8) * max(Float(furniture.scale.x), 0.001) / 2,
-                halfDepth: Float(furniture.depth ?? 0.8) * max(Float(furniture.scale.z), 0.001) / 2,
-                rotationY: Float(furniture.rotation.y)
-            )
-            var position = position
-            for _ in 0..<10 {
-                var didPush = false
-                for wall in colliders {
-                    guard wall.overlapsSpan(center: position, footprint: footprint) else { continue }
-                    let radius = footprint.projectionRadius(on: wall.normal)
-                    let innerMost = position.dotXZ(wall.normal) - radius
-                    let penetration = (wall.projection + Self.wallContactMargin) - innerMost
-                    guard penetration > 0.0005 else { continue }
-                    position.x += wall.normal.x * penetration
-                    position.z += wall.normal.z * penetration
-                    didPush = true
-                }
-                if !didPush { break }
-            }
-            return position
-        }
-
-        /// 웹 에디터 collision.js의 constrainedMovementBeforeWallCollision 포팅.
-        /// 이동 벡터를 3cm 스텝으로 나눠 스윕하면서, 각 벽에 대해 "남은 여유(clearance)보다
-        /// 더 파고드는 안쪽 성분"만 깎아낸다. 접선 성분은 그대로 남아 벽에 붙은 채 미끄러지고,
-        /// 빠른 드래그로 벽을 건너뛰는 터널링도 스텝 분할로 막는다.
-        private func wallConstrainedMovement(for furniture: PlacedFurniture, from start: SCNVector3, movement: SIMD2<Float>) -> SIMD2<Float> {
-            let footprint = FurnitureFootprint(
-                halfWidth: Float(furniture.width ?? 0.8) * max(Float(furniture.scale.x), 0.001) / 2,
-                halfDepth: Float(furniture.depth ?? 0.8) * max(Float(furniture.scale.z), 0.001) / 2,
-                rotationY: Float(furniture.rotation.y)
-            )
-            return wallConstrainedMovement(footprint: footprint, from: start, movement: movement)
-        }
-
-        /// 발자국(footprint)을 직접 받는 본체 — 가구 이동과 사람 뷰 카메라(몸통)가 공유한다.
-        private func wallConstrainedMovement(footprint: FurnitureFootprint, from start: SCNVector3, movement: SIMD2<Float>) -> SIMD2<Float> {
-            let colliders = wallColliders + infillColliders
-            guard !colliders.isEmpty else { return movement }
-            let totalDistance = simd_length(movement)
-            guard totalDistance > 1e-6 else { return .zero }
-
-            // 웹 설정의 실제 유효 스텝: max(0.005, min(sweepStep 0.03, colliderHalfThickness 0.005 × 2)) = 1cm
-            let stepSize: Float = 0.01
-            let stepCount = min(max(1, Int(ceilf(totalDistance / stepSize))), 240)
-            let requestedStep = movement / Float(stepCount)
-            var position = SIMD2(start.x, start.z)
-            var constrained = SIMD2<Float>(0, 0)
-
-            for _ in 0..<stepCount {
-                var adjusted = requestedStep
-                // 한 벽에서 깎은 결과가 다른 벽을 향할 수 있어(코너), 변화가 없을 때까지 몇 번 반복.
-                for _ in 0..<4 {
-                    var changed = false
-                    for wall in colliders {
-                        let normal = SIMD2(wall.normal.x, wall.normal.z)
-                        let inward = simd_dot(adjusted, normal)
-                        guard inward < -1e-6 else { continue } // 벽 쪽으로 향하는 이동만 검사
-                        let moved = position + adjusted
-                        guard wall.overlapsSpan(center: SCNVector3(moved.x, start.y, moved.y), footprint: footprint) else { continue }
-                        let radius = footprint.projectionRadius(on: wall.normal)
-                        let innerMost = simd_dot(position, normal) - radius
-                        let clearance = innerMost - (wall.projection + Self.wallContactMargin)
-                        let blocked = -inward - max(0, clearance)
-                        if blocked > 1e-6 {
-                            adjusted += normal * blocked
-                            changed = true
-                        }
-                    }
-                    if !changed { break }
-                }
-                if simd_length_squared(adjusted) <= 1e-10 { break }
-                position += adjusted
-                constrained += adjusted
-            }
-            return constrained
-        }
-
-        private static func makeWallColliders(from root: SCNNode, roomCenter: SCNVector3) -> [WallCollider] {
-            var colliders: [WallCollider] = []
-
-            func visit(_ node: SCNNode) {
-                if isWallGeometryNode(node) {
-                    // 프런트엔드의 worldWallFaceCollidersFromGeometry와 같은 경로:
-                    // 스캔 벽의 각 삼각형 면을 따로 충돌 면으로 만든다. 특히 대각선 벽을
-                    // 한 개의 축 정렬 bounding box로 처리하면, 벽 바깥의 넓은 삼각 영역이
-                    // 막혀 버리므로 이 세분화가 필수다.
-                    let faceColliders = WallCollider.faceColliders(node: node, roomCenter: roomCenter)
-                    if faceColliders.isEmpty, let fallback = WallCollider(node: node, roomCenter: roomCenter) {
-                        // geometry element를 읽을 수 없는 특수 USD mesh만 기존 OBB 추정으로 보완.
-                        colliders.append(fallback)
-                    } else {
-                        colliders += faceColliders
-                    }
-                }
-                node.childNodes.forEach(visit)
-            }
-
-            visit(root)
-            return colliders
-        }
-
-        private func refreshViewFacingTransparencyTargets() {
+        func refreshViewFacingTransparencyTargets() {
             guard isScannedRoom else {
                 wallFacingUpdater.setWalls([])
                 return
@@ -2291,7 +914,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             wallFacingUpdater.setWalls(shellViewFacingSurfaces + furnitureDoorWindowViewFacingSurfaces())
         }
 
-        private static func makeViewFacingSurfaces(from colliders: [WallCollider]) -> [WallFacingUpdater.Wall] {
+        static func makeViewFacingSurfaces(from colliders: [WallCollider]) -> [WallFacingUpdater.Wall] {
             // 충돌은 triangle별로 세분화하지만, 투명화는 같은 mesh에 대해 한 번만 처리한다.
             // 그렇지 않으면 스캔 mesh의 수백 개 face가 렌더 프레임마다 같은 material을 반복
             // 변경해 사람뷰 프레임이 떨어질 수 있다.
@@ -2309,7 +932,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             }
         }
 
-        private static func makeDoorWindowViewFacingSurfaces(from root: SCNNode, roomCenter: SCNVector3) -> [WallFacingUpdater.Wall] {
+        static func makeDoorWindowViewFacingSurfaces(from root: SCNNode, roomCenter: SCNVector3) -> [WallFacingUpdater.Wall] {
             var surfaces: [WallFacingUpdater.Wall] = []
 
             func visit(_ node: SCNNode) {
@@ -2323,7 +946,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             return surfaces
         }
 
-        private func furnitureDoorWindowViewFacingSurfaces() -> [WallFacingUpdater.Wall] {
+        func furnitureDoorWindowViewFacingSurfaces() -> [WallFacingUpdater.Wall] {
             let roomCenter = SCNVector3(roomBounds.centerX, 0, roomBounds.centerZ)
             return viewModel.layout.furnitures.compactMap { furniture in
                 guard Self.isDoorOrWindow(furniture),
@@ -2346,7 +969,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             }
         }
 
-        private static func isWallGeometryNode(_ node: SCNNode) -> Bool {
+        static func isWallGeometryNode(_ node: SCNNode) -> Bool {
             guard node.geometry != nil else { return false }
             var current: SCNNode? = node
             var hasWallName = false
@@ -2367,7 +990,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
         /// 프런트엔드 isUsdFloorMesh와 같은 이름 기반 판별.
         /// 문/창문 메시는 이름에 바닥 관련 단어가 있어도 색칠하지 않습니다.
-        private static func isFloorGeometryNode(_ node: SCNNode) -> Bool {
+        static func isFloorGeometryNode(_ node: SCNNode) -> Bool {
             guard node.geometry != nil else { return false }
             var current: SCNNode? = node
             while let candidate = current {
@@ -2385,7 +1008,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
             return false
         }
 
-        private static func isDoorWindowGeometryNode(_ node: SCNNode) -> Bool {
+        static func isDoorWindowGeometryNode(_ node: SCNNode) -> Bool {
             guard node.geometry != nil else { return false }
             var current: SCNNode? = node
             while let candidate = current {
@@ -2397,11 +1020,11 @@ struct RoomEditorSceneView: UIViewRepresentable {
             return false
         }
 
-        private static func isDoorOrWindow(_ furniture: PlacedFurniture) -> Bool {
+        static func isDoorOrWindow(_ furniture: PlacedFurniture) -> Bool {
             isDoorOrWindowName(furniture.furnitureName) || isDoorOrWindowName(furniture.modelName)
         }
 
-        private static func isDoorOrWindowName(_ name: String?) -> Bool {
+        static func isDoorOrWindowName(_ name: String?) -> Bool {
             guard let name else { return false }
             return name.localizedCaseInsensitiveContains("door") ||
                 name.localizedCaseInsensitiveContains("window") ||
@@ -2409,7 +1032,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
                 name.localizedCaseInsensitiveContains("창문")
         }
 
-        private static func measurementSegments(for bounds: HorizontalBounds) -> [MeasurementSegment] {
+        static func measurementSegments(for bounds: HorizontalBounds) -> [MeasurementSegment] {
             [
                 MeasurementSegment(
                     center: SCNVector3(bounds.centerX, 0, bounds.minZ),
@@ -2436,13 +1059,13 @@ struct RoomEditorSceneView: UIViewRepresentable {
     }
 }
 
-private struct MeasurementSegment {
+struct MeasurementSegment {
     var center: SCNVector3
     var normal: SCNVector3
     var length: Float
 }
 
-private enum MeasurementLabelStyle {
+enum MeasurementLabelStyle {
     case wall
     case object
     case overall
@@ -2495,7 +1118,7 @@ private enum MeasurementLabelStyle {
     }
 }
 
-private struct FurnitureFootprint {
+struct FurnitureFootprint {
     var halfWidth: Float
     var halfDepth: Float
     var rotationY: Float
@@ -2520,7 +1143,7 @@ private struct FurnitureFootprint {
     }
 }
 
-private struct WallCollider {
+struct WallCollider {
     var normal: SCNVector3
     var projection: Float
     var lengthAxis: SCNVector3
@@ -2846,7 +1469,7 @@ final class WallFacingUpdater: NSObject, SCNSceneRendererDelegate {
     }
 }
 
-private struct HorizontalBounds {
+struct HorizontalBounds {
     var minX: Float
     var maxX: Float
     var minZ: Float
@@ -2929,7 +1552,7 @@ extension UIColor {
     }
 }
 
-private extension SCNVector3 {
+extension SCNVector3 {
     var lengthXZ: Float {
         hypotf(x, z)
     }
