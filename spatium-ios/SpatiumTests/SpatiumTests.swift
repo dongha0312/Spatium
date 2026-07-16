@@ -57,6 +57,33 @@ struct SpatiumTests {
         #expect(didRestart)
     }
 
+    @Test func scanEditorPreparationOnlyBecomesReadyAfterSuccessfulExport() async {
+        let expectedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scan-editor-test.usdz")
+
+        let outcome = await ScanEditorPreparation.run {
+            expectedURL
+        }
+
+        #expect(outcome == .ready(expectedURL))
+    }
+
+    @Test func scanEditorPreparationShowsRetryStateInsteadOfOpeningAfterFailure() async {
+        let outcome = await ScanEditorPreparation.run {
+            throw CocoaError(.fileWriteOutOfSpace)
+        }
+
+        #expect(outcome == .failed(message: ScanEditorPreparation.failureMessage))
+    }
+
+    @Test func cancelledScanEditorPreparationDoesNotShowAnError() async {
+        let outcome = await ScanEditorPreparation.run {
+            throw CancellationError()
+        }
+
+        #expect(outcome == .cancelled)
+    }
+
     @Test func editorCatalogAlwaysIncludesUserFurnitureAndOtherFilters() {
         let groups = FurnitureCatalog.editorGroups(in: FurnitureCatalog.items)
 

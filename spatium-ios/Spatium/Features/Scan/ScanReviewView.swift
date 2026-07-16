@@ -1,5 +1,51 @@
 import SwiftUI
 
+enum ScanEditorPreparationState: Equatable {
+    case idle
+    case preparing
+    case failed(message: String)
+
+    var isPreparing: Bool {
+        self == .preparing
+    }
+
+    var isFailed: Bool {
+        if case .failed = self { return true }
+        return false
+    }
+}
+
+enum ScanEditorPreparationOutcome: Equatable {
+    case ready(URL)
+    case failed(message: String)
+    case cancelled
+}
+
+enum ScanEditorPreparation {
+    static let failureMessage = "스캔 파일을 만들 수 없어요. 저장 공간을 확인한 후 다시 시도해 주세요."
+
+    static func run(_ operation: () async throws -> URL) async -> ScanEditorPreparationOutcome {
+        do {
+            let url = try await operation()
+            try Task.checkCancellation()
+            return .ready(url)
+        } catch is CancellationError {
+            return .cancelled
+        } catch {
+            return .failed(message: failureMessage)
+        }
+    }
+}
+
+private struct ScanEditorPresentation: Identifiable {
+    let id = UUID()
+    let usdzURL: URL
+    let scanItems: [EditableScanItem]
+    let roomName: String
+    let area: Double
+    let ceilingHeight: Double
+}
+
 struct EmptyScanView: View {
     var onStartScan: () -> Void
 
@@ -37,24 +83,25 @@ struct ScanReviewView: View {
     var onOpenSettings: () -> Void
     /// 3D 에디터가 저장 과정에서 서버 룸을 새로 만들었을 때 바깥 상태(activeRoomID 등)를 갱신하는 콜백.
     var onRoomUploaded: ((RoomRecord) -> Void)? = nil
+    /// 테스트에서 성공/실패를 결정적으로 재현할 수 있도록 export 동작만 주입 가능하게 둔다.
+    var editorUSDZExporter: (ScanProject) async throws -> URL = { project in
+        try await project.exportUSDZForEditing()
+    }
 
-    @State private var showScanEditor = false
-    /// 에디터에 넘길 방 메시. 여는 순간 한 번만 내보낸다 — fullScreenCover 콘텐츠에서
-    /// 직접 export하면 부모 상태가 바뀔 때마다 메인 스레드에서 파일을 다시 쓴다.
-    @State private var editorUSDZURL: URL?
+    @State private var editorPreparationState: ScanEditorPreparationState = .idle
+    @State private var editorPreparationTask: Task<Void, Never>?
+    /// URL과 편집 스냅샷이 함께 준비된 경우에만 전체 화면 편집기를 표시한다.
+    @State private var editorPresentation: ScanEditorPresentation?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             ScanStatusHeader(project: project, onStartScan: onStartScan)
             RoomTypeCard(project: $project)
-            ScanEditEntryCard(itemCount: project.items.count) {
-                // 메시 export가 백그라운드에서 도는 동안 메인 스레드는 멈추지 않는다.
-                let snapshot = project
-                Task {
-                    editorUSDZURL = try? await snapshot.exportUSDZForEditing()
-                    showScanEditor = true
-                }
-            }
+            ScanEditEntryCard(
+                itemCount: project.items.count,
+                preparationState: editorPreparationState,
+                onOpen: prepareScanEditor
+            )
             DetectedItemsCard(items: $project.items)
             ExportCard(
                 exporting: exporting,
@@ -66,64 +113,181 @@ struct ScanReviewView: View {
                 onOpenSettings: onOpenSettings
             )
         }
-        .fullScreenCover(isPresented: $showScanEditor) {
+        .fullScreenCover(item: $editorPresentation) { presentation in
             RoomEditorView(
-                scanItems: project.items,
-                roomName: project.resolvedRoomType,
-                usdzURL: editorUSDZURL,
-                area: project.estimatedFootprint.width * project.estimatedFootprint.depth,
-                ceilingHeight: project.estimatedCeilingHeight,
+                scanItems: presentation.scanItems,
+                roomName: presentation.roomName,
+                usdzURL: presentation.usdzURL,
+                area: presentation.area,
+                ceilingHeight: presentation.ceilingHeight,
                 projectID: projectID,
                 projectName: projectName,
                 onRoomCreated: onRoomUploaded
             )
         }
+        .onChange(of: project.createdAt) { _, _ in
+            cancelEditorPreparation()
+        }
+        .onDisappear {
+            // 전체 화면 편집기 표시로 부모가 가려지는 경우에는 준비된 presentation을 유지한다.
+            guard editorPresentation == nil else { return }
+            editorPreparationTask?.cancel()
+            editorPreparationTask = nil
+            editorPreparationState = .idle
+        }
+    }
+
+    private func prepareScanEditor() {
+        guard !editorPreparationState.isPreparing else { return }
+
+        editorPreparationTask?.cancel()
+        editorPreparationState = .preparing
+        let snapshot = project
+
+        editorPreparationTask = Task {
+            let outcome = await ScanEditorPreparation.run {
+                try await editorUSDZExporter(snapshot)
+            }
+            guard !Task.isCancelled else { return }
+
+            switch outcome {
+            case let .ready(url):
+                let footprint = snapshot.estimatedFootprint
+                editorPreparationState = .idle
+                editorPresentation = ScanEditorPresentation(
+                    usdzURL: url,
+                    scanItems: snapshot.items,
+                    roomName: snapshot.resolvedRoomType,
+                    area: footprint.width * footprint.depth,
+                    ceilingHeight: snapshot.estimatedCeilingHeight
+                )
+            case let .failed(message):
+                Haptics.error()
+                editorPreparationState = .failed(message: message)
+            case .cancelled:
+                editorPreparationState = .idle
+            }
+            editorPreparationTask = nil
+        }
+    }
+
+    private func cancelEditorPreparation() {
+        editorPreparationTask?.cancel()
+        editorPreparationTask = nil
+        editorPreparationState = .idle
+        editorPresentation = nil
     }
 }
 
 /// 스캔 결과를 실제 3D로 열어 객체를 편집하는 진입 카드.
 private struct ScanEditEntryCard: View {
     let itemCount: Int
+    let preparationState: ScanEditorPreparationState
     var onOpen: () -> Void
 
     var body: some View {
         Button(action: onOpen) {
             HStack(spacing: 14) {
-                Image(systemName: "cube.transparent")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .frame(width: 48, height: 48)
-                    .background(
-                        LinearGradient(
-                            colors: [SpatiumTheme.accentLight, SpatiumTheme.accent],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                entryIcon
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("3D로 편집하기")
+                    Text(title)
                         .font(.headline.weight(.black))
-                        .foregroundStyle(SpatiumTheme.text)
-                    Text("스캔된 방에서 객체 \(itemCount)개를 이동·수정·추가·삭제")
+                        .foregroundStyle(preparationState.isFailed ? SpatiumTheme.coral : SpatiumTheme.text)
+                    Text(message)
                         .font(.caption)
                         .foregroundStyle(SpatiumTheme.soft)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer()
 
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.subheadline.weight(.bold))
-                    .foregroundStyle(SpatiumTheme.accent)
+                trailingStatus
             }
             .padding(16)
             .background(SpatiumTheme.surface)
-            .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.accentLight.opacity(0.5), lineWidth: 1.5))
+            .overlay(
+                RoundedRectangle(cornerRadius: SpatiumRadius.lg)
+                    .stroke(borderColor, lineWidth: 1.5)
+            )
             .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
             .shadow(color: SpatiumTheme.shadow.opacity(0.12), radius: 14, y: 6)
         }
         .buttonStyle(.pressable)
+        .disabled(preparationState.isPreparing)
+        .accessibilityHint(preparationState.isFailed ? "스캔 파일 준비를 다시 시도합니다" : "스캔된 방을 3D 편집기로 엽니다")
+        .animation(.easeOut(duration: 0.2), value: preparationState)
+    }
+
+    @ViewBuilder
+    private var entryIcon: some View {
+        ZStack {
+            LinearGradient(
+                colors: iconGradient,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+
+            if preparationState.isPreparing {
+                ProgressView()
+                    .tint(.white)
+            } else {
+                Image(systemName: preparationState.isFailed ? "exclamationmark.triangle.fill" : "cube.transparent")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(.white)
+            }
+        }
+        .frame(width: 48, height: 48)
+        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var trailingStatus: some View {
+        switch preparationState {
+        case .idle:
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(SpatiumTheme.accent)
+        case .preparing:
+            Text("준비 중")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(SpatiumTheme.soft)
+        case .failed:
+            Label("다시 시도", systemImage: "arrow.clockwise")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(SpatiumTheme.coral)
+        }
+    }
+
+    private var title: String {
+        switch preparationState {
+        case .idle: "3D로 편집하기"
+        case .preparing: "3D 편집기 준비 중"
+        case .failed: "3D 편집기를 열지 못했어요"
+        }
+    }
+
+    private var message: String {
+        switch preparationState {
+        case .idle:
+            "스캔된 방에서 객체 \(itemCount)개를 이동·수정·추가·삭제"
+        case .preparing:
+            "스캔 메시를 만드는 동안 잠시 기다려 주세요"
+        case let .failed(message):
+            message
+        }
+    }
+
+    private var iconGradient: [Color] {
+        preparationState.isFailed
+            ? [SpatiumTheme.coral.opacity(0.7), SpatiumTheme.coral]
+            : [SpatiumTheme.accentLight, SpatiumTheme.accent]
+    }
+
+    private var borderColor: Color {
+        preparationState.isFailed
+            ? SpatiumTheme.coral.opacity(0.45)
+            : SpatiumTheme.accentLight.opacity(0.5)
     }
 }
 
