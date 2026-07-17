@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import SwiftUI
 
-enum ProjectCachePersistenceState: Equatable {
+enum ProjectCachePersistenceState: Equatable, Sendable {
     case idle
     case saved(Date)
     case failed(message: String)
@@ -10,6 +10,84 @@ enum ProjectCachePersistenceState: Equatable {
     var failureMessage: String? {
         if case let .failed(message) = self { return message }
         return nil
+    }
+}
+
+/// 프로젝트 캐시의 인코딩·파일 I/O를 메인 스레드 밖에서 순서대로 처리한다.
+/// revision이 더 큰 작업을 먼저 받았다면 뒤늦게 도착한 오래된 작업은 건너뛰어
+/// 연속 편집이나 로그아웃 중 이전 스냅샷이 최신 상태를 덮어쓰지 않게 한다.
+private nonisolated final class ProjectCacheDiskStore: @unchecked Sendable {
+    enum MutationResult: Sendable {
+        case applied(Date)
+        case superseded
+    }
+
+    private let cacheFileURL: URL
+    private let queue = DispatchQueue(
+        label: "com.spatium.project-cache-disk-store",
+        qos: .utility
+    )
+    private let operationObserver: (@Sendable (Bool) -> Void)?
+
+    /// 전용 직렬 큐에서만 접근한다.
+    private var highestAttemptedRevision: UInt64 = 0
+
+    init(
+        cacheFileURL: URL,
+        operationObserver: (@Sendable (Bool) -> Void)? = nil
+    ) {
+        self.cacheFileURL = cacheFileURL
+        self.operationObserver = operationObserver
+    }
+
+    func save(_ projects: [SpatiumProject], revision: UInt64) async throws -> MutationResult {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                do {
+                    guard revision > highestAttemptedRevision else {
+                        continuation.resume(returning: .superseded)
+                        return
+                    }
+                    // 실패하더라도 이보다 오래된 작업이 나중에 디스크를 되돌리지 못하게 한다.
+                    highestAttemptedRevision = revision
+                    operationObserver?(Thread.isMainThread)
+
+                    try FileManager.default.createDirectory(
+                        at: cacheFileURL.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    let encoder = JSONEncoder()
+                    encoder.dateEncodingStrategy = .iso8601
+                    let data = try encoder.encode(projects)
+                    try data.write(to: cacheFileURL, options: .atomic)
+                    continuation.resume(returning: .applied(Date()))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    func clear(revision: UInt64) async throws -> MutationResult {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                do {
+                    guard revision > highestAttemptedRevision else {
+                        continuation.resume(returning: .superseded)
+                        return
+                    }
+                    highestAttemptedRevision = revision
+                    operationObserver?(Thread.isMainThread)
+
+                    if FileManager.default.fileExists(atPath: cacheFileURL.path) {
+                        try FileManager.default.removeItem(at: cacheFileURL)
+                    }
+                    continuation.resume(returning: .applied(Date()))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 }
 
@@ -21,15 +99,23 @@ final class ProjectStore: ObservableObject {
 
     private let service = ProjectService()
     private let cacheFileURL: URL
+    private let cacheDiskStore: ProjectCacheDiskStore
     private let authenticationStateProvider: () -> Bool
     private var cancellables: Set<AnyCancellable> = []
     private var isRefreshing = false
+    private var cacheRevision: UInt64 = 0
 
     init(
         cacheFileURL: URL? = nil,
-        authenticationStateProvider: (() -> Bool)? = nil
+        authenticationStateProvider: (() -> Bool)? = nil,
+        cacheOperationObserver: (@Sendable (Bool) -> Void)? = nil
     ) {
-        self.cacheFileURL = cacheFileURL ?? Self.defaultCacheFileURL()
+        let resolvedCacheFileURL = cacheFileURL ?? Self.defaultCacheFileURL()
+        self.cacheFileURL = resolvedCacheFileURL
+        self.cacheDiskStore = ProjectCacheDiskStore(
+            cacheFileURL: resolvedCacheFileURL,
+            operationObserver: cacheOperationObserver
+        )
         let resolvedAuthenticationStateProvider = authenticationStateProvider ?? {
             AuthTokenStore.shared.isLoggedIn
         }
@@ -58,15 +144,21 @@ final class ProjectStore: ObservableObject {
     private func clearLocalData() {
         projects = []
         lastErrorMessage = nil
-        guard FileManager.default.fileExists(atPath: cacheFileURL.path) else {
-            cachePersistenceState = .idle
-            return
-        }
-        do {
-            try FileManager.default.removeItem(at: cacheFileURL)
-            cachePersistenceState = .idle
-        } catch {
-            recordCachePersistenceFailure(error)
+        cachePersistenceState = .idle
+        let revision = nextCacheRevision()
+        let cacheDiskStore = cacheDiskStore
+
+        Task { [weak self] in
+            do {
+                let result = try await cacheDiskStore.clear(revision: revision)
+                guard let self, revision == cacheRevision else { return }
+                if case .applied = result {
+                    cachePersistenceState = .idle
+                }
+            } catch {
+                guard let self, revision == cacheRevision else { return }
+                recordCachePersistenceFailure(error)
+            }
         }
     }
 
@@ -107,8 +199,8 @@ final class ProjectStore: ObservableObject {
                 return merged
             }
             lastErrorMessage = nil
-            saveCache()
             await refreshRoomCounts(silently: silently)
+            _ = await persistCurrentCache()
         } catch is CancellationError {
             return
         } catch {
@@ -128,7 +220,7 @@ final class ProjectStore: ObservableObject {
         if !authenticationStateProvider() {
             let local = SpatiumProject(id: Self.newLocalID(), name: trimmed)
             projects.insert(local, at: 0)
-            saveCache()
+            _ = await persistCurrentCache()
             return local
         }
 
@@ -136,7 +228,7 @@ final class ProjectStore: ObservableObject {
             let created = try await service.createProject(name: trimmed)
             projects.insert(created, at: 0)
             lastErrorMessage = nil
-            saveCache()
+            _ = await persistCurrentCache()
             return created
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -196,7 +288,7 @@ final class ProjectStore: ObservableObject {
             projects[index].rooms.insert(created, at: 0)
         }
         projects[index].roomCount = max(projects[index].roomCount, projects[index].rooms.count)
-        saveCache()
+        _ = await persistCurrentCache()
         return created
     }
 
@@ -210,7 +302,7 @@ final class ProjectStore: ObservableObject {
             projects[index].rooms.insert(room, at: 0)
         }
         projects[index].roomCount = max(projects[index].roomCount, projects[index].rooms.count)
-        saveCache()
+        scheduleCachePersistence()
     }
 
     func loadRooms(projectID: String, silently: Bool = false) async {
@@ -221,9 +313,9 @@ final class ProjectStore: ObservableObject {
             projects[index].rooms = rooms
             projects[index].roomCount = rooms.count
             lastErrorMessage = nil
-            saveCache()
             // 목록 API에는 항목 수가 없으므로, 각 방의 스캔 JSON에서 실제 개수를 받아 채운다.
             await refreshItemCounts(projectID: projectID, rooms: rooms)
+            _ = await persistCurrentCache()
         } catch is CancellationError {
             return
         } catch {
@@ -244,7 +336,9 @@ final class ProjectStore: ObservableObject {
             }
             for await (roomID, count) in group {
                 guard let count else { continue }
-                updateRoom(roomID: roomID, projectID: projectID) { $0.itemCount = count }
+                updateRoom(roomID: roomID, projectID: projectID, shouldPersist: false) {
+                    $0.itemCount = count
+                }
             }
         }
     }
@@ -256,7 +350,7 @@ final class ProjectStore: ObservableObject {
 
         let previousName = projects[index].name
         projects[index].name = trimmed
-        saveCache()
+        _ = await persistCurrentCache()
 
         guard !projectID.hasPrefix("local-") else {
             lastErrorMessage = nil
@@ -269,7 +363,7 @@ final class ProjectStore: ObservableObject {
         } catch {
             if let currentIndex = projects.firstIndex(where: { $0.id == projectID }) {
                 projects[currentIndex].name = previousName
-                saveCache()
+                _ = await persistCurrentCache()
             }
             lastErrorMessage = error.localizedDescription
         }
@@ -282,7 +376,10 @@ final class ProjectStore: ObservableObject {
               let roomIndex = projects[projectIndex].rooms.firstIndex(where: { $0.id == roomID }) else { return }
 
         let previousName = projects[projectIndex].rooms[roomIndex].roomType
-        updateRoom(roomID: roomID, projectID: projectID) { $0.roomType = trimmed }
+        updateRoom(roomID: roomID, projectID: projectID, shouldPersist: false) {
+            $0.roomType = trimmed
+        }
+        _ = await persistCurrentCache()
 
         guard !projectID.hasPrefix("local-"), !roomID.hasPrefix("local-") else {
             lastErrorMessage = nil
@@ -293,7 +390,10 @@ final class ProjectStore: ObservableObject {
             try await service.renameRoom(roomID: roomID, newName: trimmed)
             lastErrorMessage = nil
         } catch {
-            updateRoom(roomID: roomID, projectID: projectID) { $0.roomType = previousName }
+            updateRoom(roomID: roomID, projectID: projectID, shouldPersist: false) {
+                $0.roomType = previousName
+            }
+            _ = await persistCurrentCache()
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -301,7 +401,7 @@ final class ProjectStore: ObservableObject {
     func deleteProject(projectID: String) async {
         guard let projectIndex = projects.firstIndex(where: { $0.id == projectID }) else { return }
         let removedProject = projects.remove(at: projectIndex)
-        saveCache()
+        _ = await persistCurrentCache()
 
         guard !projectID.hasPrefix("local-") else {
             lastErrorMessage = nil
@@ -314,7 +414,7 @@ final class ProjectStore: ObservableObject {
         } catch {
             let restoredIndex = min(projectIndex, projects.count)
             projects.insert(removedProject, at: restoredIndex)
-            saveCache()
+            _ = await persistCurrentCache()
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -325,7 +425,7 @@ final class ProjectStore: ObservableObject {
 
         let removedRoom = projects[projectIndex].rooms.remove(at: roomIndex)
         projects[projectIndex].roomCount = max(0, projects[projectIndex].roomCount - 1)
-        saveCache()
+        _ = await persistCurrentCache()
         RoomScanAssetService().invalidateCache(forRoomID: roomID)
 
         guard !projectID.hasPrefix("local-"), !roomID.hasPrefix("local-") else {
@@ -341,7 +441,7 @@ final class ProjectStore: ObservableObject {
                 let restoredIndex = min(roomIndex, projects[currentProjectIndex].rooms.count)
                 projects[currentProjectIndex].rooms.insert(removedRoom, at: restoredIndex)
                 projects[currentProjectIndex].roomCount = max(projects[currentProjectIndex].roomCount + 1, projects[currentProjectIndex].rooms.count)
-                saveCache()
+                _ = await persistCurrentCache()
             }
             lastErrorMessage = error.localizedDescription
         }
@@ -383,7 +483,6 @@ final class ProjectStore: ObservableObject {
         guard !projectIDs.isEmpty else { return }
 
         var firstErrorMessage: String?
-        var changed = false
         await withTaskGroup(of: (String, Result<Int, Error>).self) { group in
             for projectID in projectIDs {
                 group.addTask { [service] in
@@ -400,16 +499,12 @@ final class ProjectStore: ObservableObject {
                     guard let index = projects.firstIndex(where: { $0.id == projectID }),
                           projects[index].roomCount != count else { continue }
                     projects[index].roomCount = count
-                    changed = true
                 case let .failure(error):
                     if firstErrorMessage == nil, !(error is CancellationError) {
                         firstErrorMessage = error.localizedDescription
                     }
                 }
             }
-        }
-        if changed {
-            saveCache()
         }
         if let firstErrorMessage {
             if !silently {
@@ -424,14 +519,21 @@ final class ProjectStore: ObservableObject {
         guard let index = projects.firstIndex(where: { $0.id == projectID }) else { return }
         projects[index].rooms.insert(room, at: 0)
         projects[index].roomCount = max(projects[index].roomCount, projects[index].rooms.count)
-        saveCache()
+        scheduleCachePersistence()
     }
 
-    private func updateRoom(roomID: String, projectID: String, mutate: (inout RoomRecord) -> Void) {
+    private func updateRoom(
+        roomID: String,
+        projectID: String,
+        shouldPersist: Bool = true,
+        mutate: (inout RoomRecord) -> Void
+    ) {
         guard let projectIndex = projects.firstIndex(where: { $0.id == projectID }),
               let roomIndex = projects[projectIndex].rooms.firstIndex(where: { $0.id == roomID }) else { return }
         mutate(&projects[projectIndex].rooms[roomIndex])
-        saveCache()
+        if shouldPersist {
+            scheduleCachePersistence()
+        }
     }
 
     private static func newLocalID() -> String {
@@ -450,9 +552,9 @@ final class ProjectStore: ObservableObject {
     /// 저장 공간·권한 문제를 해결한 뒤 현재 메모리의 최신 프로젝트 목록을 다시 기록한다.
     /// 실패한 시점의 오래된 스냅샷이 아니라 사용자가 계속 작업한 결과 전체를 저장한다.
     @discardableResult
-    func retryLocalPersistence() -> Bool {
+    func retryLocalPersistence() async -> Bool {
         cachePersistenceState = .idle
-        return saveCache()
+        return await persistCurrentCache()
     }
 
     func dismissLocalPersistenceError() {
@@ -460,18 +562,37 @@ final class ProjectStore: ObservableObject {
         cachePersistenceState = .idle
     }
 
+    private func nextCacheRevision() -> UInt64 {
+        cacheRevision += 1
+        return cacheRevision
+    }
+
+    private func scheduleCachePersistence() {
+        let snapshot = projects
+        let revision = nextCacheRevision()
+        Task { [weak self] in
+            guard let self else { return }
+            _ = await persistCache(snapshot, revision: revision)
+        }
+    }
+
     @discardableResult
-    private func saveCache() -> Bool {
+    private func persistCurrentCache() async -> Bool {
+        let snapshot = projects
+        let revision = nextCacheRevision()
+        return await persistCache(snapshot, revision: revision)
+    }
+
+    private func persistCache(_ snapshot: [SpatiumProject], revision: UInt64) async -> Bool {
         do {
-            try FileManager.default.createDirectory(
-                at: cacheFileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            let data = try JSONEncoder.spatiumAPI.encode(projects)
-            try data.write(to: cacheFileURL, options: .atomic)
-            cachePersistenceState = .saved(Date())
+            let result = try await cacheDiskStore.save(snapshot, revision: revision)
+            guard revision == cacheRevision else { return true }
+            if case let .applied(savedAt) = result {
+                cachePersistenceState = .saved(savedAt)
+            }
             return true
         } catch {
+            guard revision == cacheRevision else { return true }
             recordCachePersistenceFailure(error)
             return false
         }

@@ -3,7 +3,7 @@ import Foundation
 /// A project grouping multiple scanned rooms. `id` is the server's `projectId`
 /// once synced; locally-created (not-yet-synced) projects use a negative
 /// placeholder id until the server call succeeds.
-struct SpatiumProject: Identifiable, Codable {
+struct SpatiumProject: Identifiable, Codable, Sendable {
     var id: String
     var name: String
     var createdAt = Date()

@@ -992,7 +992,7 @@ struct ProjectStorePersistenceTests {
         // 디스크 오류가 해결되기 전 계속 작업해도 재시도 시점의 최신 메모리 상태를 저장한다.
         let secondProject = try await store.createProject(name: "실패 후 추가한 프로젝트")
         try FileManager.default.removeItem(at: blockedDirectory)
-        let didRetry = store.retryLocalPersistence()
+        let didRetry = await store.retryLocalPersistence()
 
         #expect(didRetry)
         #expect(store.localPersistenceErrorMessage == nil)
@@ -1003,6 +1003,71 @@ struct ProjectStorePersistenceTests {
         )
         #expect(savedProjects.map(\.id) == [secondProject.id, firstProject.id])
         #expect(savedProjects.map(\.name) == ["실패 후 추가한 프로젝트", "로컬 저장 복구 테스트"])
+    }
+
+    @Test func projectCacheEncodingAndWritingRunOutsideMainThread() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-project-cache-thread-\(UUID().uuidString)", isDirectory: true)
+        let cacheFileURL = testRoot.appendingPathComponent("projects.json")
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let recorder = ProjectCacheThreadRecorder()
+        let store = ProjectStore(
+            cacheFileURL: cacheFileURL,
+            authenticationStateProvider: { false },
+            cacheOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+
+        _ = try await store.createProject(name: "백그라운드 저장 테스트")
+
+        let observedThreads = recorder.recordedMainThreadValues
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func overlappingProjectCacheWritesKeepNewestCompleteSnapshot() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-project-cache-order-\(UUID().uuidString)", isDirectory: true)
+        let cacheFileURL = testRoot.appendingPathComponent("projects.json")
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let store = ProjectStore(
+            cacheFileURL: cacheFileURL,
+            authenticationStateProvider: { false }
+        )
+        let firstTask = Task { @MainActor in
+            try await store.createProject(name: "첫 번째 프로젝트")
+        }
+        let secondTask = Task { @MainActor in
+            try await store.createProject(name: "두 번째 프로젝트")
+        }
+        let firstProject = try await firstTask.value
+        let secondProject = try await secondTask.value
+
+        let savedData = try Data(contentsOf: cacheFileURL)
+        let savedProjects = try JSONDecoder.spatiumAPI.decode(
+            [SpatiumProject].self,
+            from: savedData
+        )
+        #expect(store.projects.map(\.id) == [secondProject.id, firstProject.id])
+        #expect(savedProjects.map(\.id) == store.projects.map(\.id))
+    }
+}
+
+private final class ProjectCacheThreadRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Bool] = []
+
+    func record(isMainThread: Bool) {
+        lock.lock()
+        values.append(isMainThread)
+        lock.unlock()
+    }
+
+    var recordedMainThreadValues: [Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
     }
 }
 

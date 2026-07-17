@@ -259,7 +259,7 @@ struct MainTabView: View {
                     // 동일한 경고와 재시도 버튼이 정상적으로 다시 나타난다.
                     Task { @MainActor in
                         await Task.yield()
-                        projectStore.retryLocalPersistence()
+                        _ = await projectStore.retryLocalPersistence()
                     }
                 }
             }
