@@ -737,6 +737,44 @@ struct ImgTo3DUploadImageTests {
         #expect(max(previewCGImage.width, previewCGImage.height) <= 24)
         #expect(prepared.upload.data.count <= ImgTo3DUploadImage.maximumUploadBytes)
     }
+
+    @Test func profileAvatarPreprocessingDownsamplesAndEncodesJPEG() throws {
+        let original = solidImage(size: CGSize(width: 1_024, height: 512))
+        let png = try #require(original.pngData())
+        let prepared = try #require(ProfileAvatarImagePreprocessor.prepare(rawData: png))
+        let uploadDimension = try #require(maximumPixelDimension(of: prepared.uploadData))
+        let preview = try #require(prepared.previewImage.cgImage)
+
+        #expect(uploadDimension <= ProfileAvatarImagePreprocessor.maximumPixelDimension)
+        #expect(max(preview.width, preview.height) <= ProfileAvatarImagePreprocessor.maximumPixelDimension)
+        #expect(prepared.uploadData.starts(with: [0xFF, 0xD8]))
+    }
+}
+
+@MainActor
+struct SettingsCacheStorageTests {
+    @Test func cacheWorkerCountsAndClearsOnlyManagedDirectories() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("settings-cache-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let managedDirectory = root.appendingPathComponent("RoomScans", isDirectory: true)
+        let unmanagedDirectory = root.appendingPathComponent("KeepMe", isDirectory: true)
+        try FileManager.default.createDirectory(at: managedDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: unmanagedDirectory, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 4_096).write(
+            to: managedDirectory.appendingPathComponent("scan.bin")
+        )
+        let unmanagedFile = unmanagedDirectory.appendingPathComponent("user-data.bin")
+        try Data(repeating: 2, count: 2_048).write(to: unmanagedFile)
+
+        let measured = await SettingsCacheStorage.totalBytesInBackground(root: root)
+        #expect(measured == 4_096)
+
+        let remaining = await SettingsCacheStorage.clearInBackground(root: root)
+        #expect(remaining == 0)
+        #expect(FileManager.default.fileExists(atPath: unmanagedFile.path))
+    }
 }
 
 @MainActor
@@ -1217,6 +1255,24 @@ struct BackendContractTests {
         let source = "data:image/png;base64,\(expected.base64EncodedString())"
         #expect(ProfileImageDataDecoder.decode(source) == expected)
         #expect(ProfileImageDataDecoder.decode("https://example.com/avatar.png") == nil)
+    }
+
+    @Test func profileDataURLImageIsDecodedAndDownsampledInBackground() async throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let original = UIGraphicsImageRenderer(
+            size: CGSize(width: 1_024, height: 512),
+            format: format
+        ).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1_024, height: 512))
+        }
+        let png = try #require(original.pngData())
+        let source = "data:image/png;base64,\(png.base64EncodedString())"
+        let decoded = try #require(await ProfileImageDataDecoder.decodeImageInBackground(source))
+        let image = try #require(decoded.cgImage)
+
+        #expect(max(image.width, image.height) <= ProfileImageDataDecoder.maximumDisplayPixelDimension)
     }
 
     @Test func imgTo3DOptionsMatchSpringGatewayAndFastAPI() {
