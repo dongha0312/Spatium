@@ -37,6 +37,17 @@ private struct SpatiumAPIErrorBody: Decodable {
     var message: String?
 }
 
+/// JSON 엔벨로프가 아닌 파일 응답을 위한 공통 결과입니다.
+/// AI 생성물과 보호된 사용자 가구 모델처럼 본문 자체가 데이터인 API에서 사용합니다.
+struct SpatiumAPIRawResponse {
+    let data: Data
+    let httpResponse: HTTPURLResponse
+
+    func header(named name: String) -> String? {
+        httpResponse.value(forHTTPHeaderField: name)
+    }
+}
+
 extension JSONEncoder {
     static let spatiumAPI: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -71,9 +82,8 @@ actor AuthRefreshCoordinator {
     }
 }
 
-/// Thin client for the CODEX backend. Every endpoint returns the same
-/// {statusCode, message, data} envelope, so callers just specify the path,
-/// method, and expected `data` payload type.
+/// Spring API 공통 클라이언트. 일반 API의 `{statusCode, message, data}` 엔벨로프와
+/// AI·모델 다운로드의 바이너리 응답이 인증 및 토큰 재발급 흐름을 공유합니다.
 struct SpatiumAPIClient {
     static let shared = SpatiumAPIClient()
 
@@ -132,6 +142,49 @@ struct SpatiumAPIClient {
         }
     }
 
+    /// Spring API가 JSON 엔벨로프 대신 파일 본문을 직접 반환하는 요청을 보냅니다.
+    /// 인증 만료 시에도 일반 API와 동일하게 토큰을 재발급하고 한 번 재시도합니다.
+    func sendData(
+        method: String = "GET",
+        path: String,
+        query: [String: String] = [:],
+        requiresAuth: Bool = true,
+        timeout: TimeInterval = 120
+    ) async throws -> SpatiumAPIRawResponse {
+        try await sendResolvingAuthData(requiresAuth: requiresAuth) {
+            var request = try makeRequest(
+                method: method,
+                path: path,
+                query: query,
+                requiresAuth: requiresAuth
+            )
+            request.timeoutInterval = timeout
+            return request
+        }
+    }
+
+    /// 멀티파트를 스트리밍 업로드하고 바이너리 응답을 그대로 돌려줍니다.
+    func sendMultipartData(
+        method: String = "POST",
+        path: String,
+        parts: [MultipartFormPart],
+        requiresAuth: Bool = true,
+        timeout: TimeInterval = 120
+    ) async throws -> SpatiumAPIRawResponse {
+        let boundary = "Spatium-\(UUID().uuidString)"
+        let bodyFileURL = try await Task.detached {
+            try MultipartFormData.writeBodyFile(parts: parts, boundary: boundary)
+        }.value
+        defer { try? FileManager.default.removeItem(at: bodyFileURL) }
+
+        return try await sendResolvingAuthData(requiresAuth: requiresAuth, uploadingFile: bodyFileURL) {
+            var request = try makeRequest(method: method, path: path, query: [:], requiresAuth: requiresAuth)
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = timeout
+            return request
+        }
+    }
+
     /// 요청을 보내고, 액세스 토큰 만료(401)면 refreshToken으로 재발급 후 한 번 재시도합니다.
     /// 재발급 자체가 거부되면(세션 만료) 토큰을 비워 로그인 화면으로 돌아가게 합니다.
     private func sendResolvingAuth<ResponseData: Decodable>(
@@ -140,7 +193,8 @@ struct SpatiumAPIClient {
         makeRequest: () throws -> URLRequest
     ) async throws -> SpatiumAPIEnvelope<ResponseData> {
         do {
-            return try await perform(try makeRequest(), uploadingFile: bodyFileURL)
+            let response = try await performData(try makeRequest(), uploadingFile: bodyFileURL)
+            return try decodeEnvelope(response)
         } catch let error as SpatiumAPIError {
             guard requiresAuth, case .unauthorized = error,
                   let refreshToken = tokenStore.refreshToken, !refreshToken.hasPrefix("mock_") else {
@@ -153,11 +207,43 @@ struct SpatiumAPIClient {
                     tokenStore.clear()
                 }
                 throw SpatiumAPIError.unauthorized
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 throw SpatiumAPIError.unauthorized
             }
             // 새 액세스 토큰으로 요청을 다시 만들어 한 번만 재시도.
-            return try await perform(try makeRequest(), uploadingFile: bodyFileURL)
+            let response = try await performData(try makeRequest(), uploadingFile: bodyFileURL)
+            return try decodeEnvelope(response)
+        }
+    }
+
+    /// 바이너리 API도 엔벨로프 API와 같은 인증 재시도 규칙을 공유합니다.
+    private func sendResolvingAuthData(
+        requiresAuth: Bool,
+        uploadingFile bodyFileURL: URL? = nil,
+        makeRequest: () throws -> URLRequest
+    ) async throws -> SpatiumAPIRawResponse {
+        do {
+            return try await performData(try makeRequest(), uploadingFile: bodyFileURL)
+        } catch let error as SpatiumAPIError {
+            guard requiresAuth, case .unauthorized = error,
+                  let refreshToken = tokenStore.refreshToken, !refreshToken.hasPrefix("mock_") else {
+                throw error
+            }
+            do {
+                try await AuthRefreshCoordinator.shared.refreshIfNeeded()
+            } catch let refreshError as SpatiumAPIError {
+                if case .unauthorized = refreshError {
+                    tokenStore.clear()
+                }
+                throw SpatiumAPIError.unauthorized
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw SpatiumAPIError.unauthorized
+            }
+            return try await performData(try makeRequest(), uploadingFile: bodyFileURL)
         }
     }
 
@@ -188,10 +274,10 @@ struct SpatiumAPIClient {
         return request
     }
 
-    private func perform<ResponseData: Decodable>(
+    private func performData(
         _ request: URLRequest,
         uploadingFile bodyFileURL: URL? = nil
-    ) async throws -> SpatiumAPIEnvelope<ResponseData> {
+    ) async throws -> SpatiumAPIRawResponse {
         let data: Foundation.Data
         let response: URLResponse
         do {
@@ -201,6 +287,9 @@ struct SpatiumAPIClient {
                 (data, response) = try await URLSession.shared.data(for: request)
             }
         } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+                throw CancellationError()
+            }
             throw SpatiumAPIError.network(error)
         }
 
@@ -221,6 +310,15 @@ struct SpatiumAPIClient {
                 message: errorBody?.message ?? "요청을 처리하지 못했습니다."
             )
         }
+
+        return SpatiumAPIRawResponse(data: data, httpResponse: httpResponse)
+    }
+
+    private func decodeEnvelope<ResponseData: Decodable>(
+        _ response: SpatiumAPIRawResponse
+    ) throws -> SpatiumAPIEnvelope<ResponseData> {
+        let data = response.data
+        let httpResponse = response.httpResponse
 
         if httpResponse.statusCode == 204 || data.isEmpty {
             return SpatiumAPIEnvelope(statusCode: httpResponse.statusCode, message: "", data: nil)

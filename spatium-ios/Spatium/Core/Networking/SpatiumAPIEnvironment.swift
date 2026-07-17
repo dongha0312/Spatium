@@ -8,18 +8,12 @@ final class SpatiumAPIEnvironment: ObservableObject {
     static let shared = SpatiumAPIEnvironment()
 
     private static let storageKey = "spatium.apiBaseURL"
-    private static let imageTo3DStorageKey = "spatium.imageTo3DBaseURL"
     private static let furnitureAssetStorageKey = "spatium.furnitureAssetBaseURL"
     private static let defaultBaseURL = "http://210.119.12.115:8080"
-    private static let defaultImageTo3DBaseURL = "http://210.119.12.115:8000"
     private static let defaultFurnitureAssetBaseURL = "http://210.119.12.115:3000"
 
     @Published var baseURLString: String {
         didSet { UserDefaults.standard.set(baseURLString, forKey: Self.storageKey) }
-    }
-
-    @Published var imageTo3DBaseURLString: String {
-        didSet { UserDefaults.standard.set(imageTo3DBaseURLString, forKey: Self.imageTo3DStorageKey) }
     }
 
     @Published var furnitureAssetBaseURLString: String {
@@ -29,23 +23,16 @@ final class SpatiumAPIEnvironment: ObservableObject {
     private init() {
         #if DEBUG
         baseURLString = UserDefaults.standard.string(forKey: Self.storageKey) ?? Self.defaultBaseURL
-        imageTo3DBaseURLString = UserDefaults.standard.string(forKey: Self.imageTo3DStorageKey)
-            ?? Self.defaultImageTo3DBaseURL
         furnitureAssetBaseURLString = UserDefaults.standard.string(forKey: Self.furnitureAssetStorageKey)
             ?? Self.defaultFurnitureAssetBaseURL
         #else
         baseURLString = Self.defaultBaseURL
-        imageTo3DBaseURLString = Self.defaultImageTo3DBaseURL
         furnitureAssetBaseURLString = Self.defaultFurnitureAssetBaseURL
         #endif
     }
 
     var baseURL: URL? {
         URL(string: baseURLString)
-    }
-
-    var imageTo3DBaseURL: URL? {
-        URL(string: imageTo3DBaseURLString)
     }
 
     var furnitureAssetBaseURL: URL? {

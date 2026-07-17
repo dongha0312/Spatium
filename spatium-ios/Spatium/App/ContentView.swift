@@ -40,6 +40,7 @@ struct ContentView: View {
         } else if ProcessInfo.processInfo.arguments.contains("-UITestSettings")
                     || ProcessInfo.processInfo.arguments.contains("-UITestHome")
                     || ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D")
+                    || ProcessInfo.processInfo.arguments.contains("-UITestGuestRestrictions")
                     || ProcessInfo.processInfo.arguments.contains("-UITestGuestCreate") {
             // 스크린샷 검증용: 로그인 게이트를 건너뛰고 메인 탭(설정·홈·가구만들기)으로 바로 진입.
             MainTabView()
@@ -107,6 +108,8 @@ struct MainTabView: View {
     @State private var isRefreshing = false
     @State private var exportError: String?
     @State private var uploadMessage: String?
+    @State private var guestRestriction: GuestRestrictedAction?
+    @State private var showGuestLogin = false
 
     private var usesCompactHeight: Bool {
         verticalSizeClass == .compact
@@ -143,9 +146,19 @@ struct MainTabView: View {
                 .scaleEffect(selectedTab == .imgTo3D ? 0.97 : 1)
                 .allowsHitTesting(selectedTab != .imgTo3D)
 
-                ImgTo3DView {
-                    selectedProjectID = nil
-                    selectedTab = .rooms
+                Group {
+                    if showsGuestRestrictions {
+                        GuestFeatureRestrictionView(
+                            title: "가구 만들기는 로그인이 필요해요",
+                            message: "게스트 모드에서는 AI 배경 제거와 3D 모델 생성을 사용할 수 없어요. 로그인 후 이용해 주세요.",
+                            onLogin: { showGuestLogin = true }
+                        )
+                    } else {
+                        ImgTo3DView {
+                            selectedProjectID = nil
+                            selectedTab = .rooms
+                        }
+                    }
                 }
                     .frame(
                         maxWidth: usesCompactHeight ? .infinity : 520,
@@ -221,6 +234,11 @@ struct MainTabView: View {
         .sheet(isPresented: $showShareSheet, onDismiss: cleanupSharedFiles) {
             ShareSheet(activityItems: shareItems)
         }
+        .sheet(isPresented: $showGuestLogin) {
+            LoginView(onLoggedIn: {
+                showGuestLogin = false
+            })
+        }
         .tint(SpatiumTheme.accent)
         .task(id: tokenStore.accessToken) {
             await userFurnitureStore.refreshFromBackend()
@@ -250,12 +268,25 @@ struct MainTabView: View {
         } message: {
             Text(activeErrorMessage ?? "알 수 없는 오류가 발생했습니다.")
         }
+        .alert(item: $guestRestriction) { restriction in
+            Alert(
+                title: Text(restriction.title),
+                message: Text(restriction.message),
+                primaryButton: .default(Text("로그인")) {
+                    showGuestLogin = true
+                },
+                secondaryButton: .cancel(Text("취소"))
+            )
+        }
         #if DEBUG
         .onAppear {
             if ProcessInfo.processInfo.arguments.contains("-UITestSettings") {
                 selectedTab = .settings
             }
             if ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D") {
+                selectedTab = .imgTo3D
+            }
+            if ProcessInfo.processInfo.arguments.contains("-UITestGuestRestrictions") {
                 selectedTab = .imgTo3D
             }
             // 게스트 프로젝트 생성 크래시 재현용: 게스트 상태로 로컬 프로젝트를 자동 생성한다.
@@ -285,6 +316,19 @@ struct MainTabView: View {
         flowErrorMessage
             ?? projectStore.localPersistenceErrorMessage
             ?? projectStore.lastErrorMessage
+    }
+
+    private var showsGuestRestrictions: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-UITestGuestRestrictions") {
+            return true
+        }
+        // 기존 가구 만들기 UI 테스트는 네트워크 없이 단계별 화면을 직접 검증한다.
+        if ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D") {
+            return false
+        }
+        #endif
+        return !tokenStore.isLoggedIn
     }
 
     private var isShowingLocalPersistenceError: Bool {
@@ -381,6 +425,7 @@ struct MainTabView: View {
                     uploading: uploading,
                     exportError: exportError,
                     uploadMessage: uploadMessage,
+                    isGuestMode: !tokenStore.isLoggedIn,
                     onStartScan: startNewScan,
                     onExport: exportScanPackage,
                     onUpload: uploadScanPackage,
@@ -516,6 +561,10 @@ struct MainTabView: View {
             uploadMessage = "먼저 프로젝트를 선택/생성해 주세요."
             return
         }
+        guard tokenStore.isLoggedIn else {
+            guestRestriction = .scanUpload
+            return
+        }
         // 이미 서버 룸이 된 스캔(에디터 저장 또는 이전 업로드)은 다시 올리면 중복 룸이 생긴다.
         if let activeRoomID, !activeRoomID.hasPrefix("local-") {
             uploadMessage = "이미 서버에 저장된 스캔입니다."
@@ -567,6 +616,66 @@ struct MainTabView: View {
             try? FileManager.default.removeItem(at: url)
         }
         shareItems = []
+    }
+}
+
+private enum GuestRestrictedAction: String, Identifiable {
+    case scanUpload
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .scanUpload: "게스트 모드에서는 업로드할 수 없어요"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .scanUpload: "스캔 파일을 서버 프로젝트에 저장하려면 로그인이 필요해요. 파일 공유와 로컬 편집은 게스트 모드에서도 사용할 수 있습니다."
+        }
+    }
+}
+
+private struct GuestFeatureRestrictionView: View {
+    let title: String
+    let message: String
+    var onLogin: () -> Void
+
+    var body: some View {
+        VStack {
+            Card {
+                VStack(spacing: 18) {
+                    Image(systemName: "person.crop.circle.badge.exclamationmark")
+                        .font(.system(size: 42, weight: .semibold))
+                        .foregroundStyle(SpatiumTheme.accent)
+                        .frame(width: 78, height: 78)
+                        .background(SpatiumTheme.warmPanel, in: Circle())
+
+                    VStack(spacing: 8) {
+                        Text(title)
+                            .font(.title3.weight(.black))
+                            .foregroundStyle(SpatiumTheme.text)
+                            .multilineTextAlignment(.center)
+                        Text(message)
+                            .font(.subheadline)
+                            .foregroundStyle(SpatiumTheme.soft)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    PrimaryButton(
+                        title: "로그인하고 사용하기",
+                        systemImage: "person.crop.circle.badge.checkmark",
+                        action: onLogin
+                    )
+                }
+                .padding(.vertical, 14)
+            }
+            .frame(maxWidth: 460)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityIdentifier("guest-img-to-3d-restriction")
     }
 }
 

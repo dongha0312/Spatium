@@ -309,7 +309,6 @@ private struct DeveloperSettingsSheet: View {
                 SettingsGroup(title: "연결 (개발자 전용)") {
                     EndpointEditor(
                         springBaseURLString: $environment.baseURLString,
-                        imageTo3DBaseURLString: $environment.imageTo3DBaseURLString,
                         furnitureAssetBaseURLString: $environment.furnitureAssetBaseURLString
                     )
                 }
@@ -415,7 +414,6 @@ private struct SettingsGroup<Content: View>: View {
 #if DEBUG
 private struct EndpointEditor: View {
     @Binding var springBaseURLString: String
-    @Binding var imageTo3DBaseURLString: String
     @Binding var furnitureAssetBaseURLString: String
 
     var body: some View {
@@ -446,35 +444,12 @@ private struct EndpointEditor: View {
                 .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
 
             HStack(spacing: 12) {
-                SettingsIcon(systemImage: "cube.transparent", tint: SpatiumTheme.accent)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Image-to-3D FastAPI 서버")
-                        .font(.subheadline.weight(.black))
-                        .foregroundStyle(SpatiumTheme.text)
-                    Text("분리·GLB 생성 요청에 사용")
-                        .font(.caption)
-                        .foregroundStyle(SpatiumTheme.soft)
-                }
-                Spacer()
-            }
-
-            TextField("http://서버IP:8000", text: $imageTo3DBaseURLString)
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.subheadline)
-                .padding(12)
-                .background(SpatiumTheme.background)
-                .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
-
-            HStack(spacing: 12) {
                 SettingsIcon(systemImage: "shippingbox", tint: SpatiumTheme.accent)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("사용자 GLB 파일 서버")
+                    Text("기본 가구 에셋 서버")
                         .font(.subheadline.weight(.black))
                         .foregroundStyle(SpatiumTheme.text)
-                    Text("Spring이 반환하는 /data 모델 경로의 호스트")
+                    Text("기본 카탈로그의 공개 /data 모델 경로에 사용")
                         .font(.caption)
                         .foregroundStyle(SpatiumTheme.soft)
                 }
