@@ -670,11 +670,23 @@ struct SpatiumTests {
 @MainActor
 struct ImgTo3DUploadImageTests {
     /// 8×8 단색 이미지 — 인코딩 테스트용 최소 입력.
-    private func solidImage() -> UIImage {
-        UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+    private func solidImage(size: CGSize = CGSize(width: 8, height: 8)) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
             UIColor.systemBrown.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+            context.fill(CGRect(origin: .zero, size: size))
         }
+    }
+
+    private func maximumPixelDimension(of data: Data) -> Int? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue else {
+            return nil
+        }
+        return max(width, height)
     }
 
     @Test func heicPhotoConvertsToPNGForBackend() throws {
@@ -687,7 +699,8 @@ struct ImgTo3DUploadImageTests {
         CGImageDestinationAddImage(destination, cgImage, nil)
         guard CGImageDestinationFinalize(destination) else { return }
 
-        let normalized = try #require(ImgTo3DUploadImage.normalize(image: image, rawData: heicData as Data))
+        let prepared = try #require(ImgTo3DUploadImage.prepare(rawData: heicData as Data))
+        let normalized = prepared.upload
         #expect(normalized.convertedFromIncompatibleFormat)
         #expect(normalized.fileExtension == "png")
         #expect(normalized.data.starts(with: [0x89, 0x50, 0x4E, 0x47]))
@@ -696,17 +709,33 @@ struct ImgTo3DUploadImageTests {
     @Test func jpegPhotoPassesThroughUnchanged() throws {
         let image = solidImage()
         let jpeg = try #require(image.jpegData(compressionQuality: 0.9))
-        let normalized = try #require(ImgTo3DUploadImage.normalize(image: image, rawData: jpeg))
+        let normalized = try #require(ImgTo3DUploadImage.prepare(rawData: jpeg)).upload
         #expect(!normalized.convertedFromIncompatibleFormat)
         #expect(normalized.fileExtension == "jpg")
         #expect(normalized.data == jpeg)
     }
 
     @Test func cameraCaptureWithoutRawDataEncodesToPNG() throws {
-        let normalized = try #require(ImgTo3DUploadImage.normalize(image: solidImage(), rawData: nil))
+        let normalized = try #require(ImgTo3DUploadImage.prepare(cameraImage: solidImage())).upload
         #expect(!normalized.convertedFromIncompatibleFormat)
         #expect(normalized.fileExtension == "png")
         #expect(normalized.data.starts(with: [0x89, 0x50, 0x4E, 0x47]))
+    }
+
+    @Test func oversizedPhotoIsDownsampledForUploadAndPreview() throws {
+        let original = solidImage(size: CGSize(width: 160, height: 80))
+        let png = try #require(original.pngData())
+        let prepared = try #require(ImgTo3DUploadImage.prepare(
+            rawData: png,
+            maximumUploadPixelDimension: 64,
+            maximumPreviewPixelDimension: 24
+        ))
+
+        let uploadDimension = try #require(maximumPixelDimension(of: prepared.upload.data))
+        let previewCGImage = try #require(prepared.previewImage.cgImage)
+        #expect(uploadDimension <= 64)
+        #expect(max(previewCGImage.width, previewCGImage.height) <= 24)
+        #expect(prepared.upload.data.count <= ImgTo3DUploadImage.maximumUploadBytes)
     }
 }
 

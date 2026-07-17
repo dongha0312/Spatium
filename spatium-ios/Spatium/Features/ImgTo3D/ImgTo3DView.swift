@@ -15,6 +15,9 @@ struct ImgTo3DView: View {
     @State private var image: UIImage?
     /// 서버 전송용으로 정규화된 이미지(HEIC → PNG 변환 포함).
     @State private var uploadImage: ImgTo3DUploadImage.Normalized?
+    @State private var isPreparingImage = false
+    @State private var imagePreparationID: UUID?
+    @State private var imagePreparationTask: Task<Void, Never>?
     @State private var showCamera = false
     @State private var showPhotoGallery = false
     @State private var showPhotoPermissionAlert = false
@@ -105,7 +108,7 @@ struct ImgTo3DView: View {
         }
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
-            Task { await loadPhoto(item) }
+            beginLoadingPhoto(item)
         }
         .onChange(of: step) { _, _ in
             focusedField = nil
@@ -115,7 +118,7 @@ struct ImgTo3DView: View {
         }
         .sheet(isPresented: $showCamera) {
             CameraImagePicker { selectedImage in
-                setImage(selectedImage)
+                beginPreparingCameraImage(selectedImage)
             }
             .ignoresSafeArea()
         }
@@ -153,6 +156,9 @@ struct ImgTo3DView: View {
             Button("취소", role: .cancel) {}
         } message: {
             Text("가구 사진을 선택하려면 설정에서 Spatium의 사진 접근을 허용해주세요.")
+        }
+        .onDisappear {
+            imagePreparationTask?.cancel()
         }
         #if DEBUG
         .onAppear {
@@ -215,6 +221,7 @@ struct ImgTo3DView: View {
         case .upload:
             ImgTo3DUploadStep(
                 image: image,
+                isPreparingImage: isPreparingImage,
                 convertedFromIncompatibleFormat: uploadImage?.convertedFromIncompatibleFormat == true,
                 canUseCamera: UIImagePickerController.isSourceTypeAvailable(.camera),
                 onChoosePhoto: openGalleryWithPermission,
@@ -330,7 +337,7 @@ struct ImgTo3DView: View {
 
     private var canAdvance: Bool {
         switch step {
-        case .upload: image != nil
+        case .upload: image != nil && uploadImage != nil && !isPreparingImage
         case .name: !objectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .segmentation: segmentationReady
         case .generation: generated
@@ -373,24 +380,82 @@ struct ImgTo3DView: View {
         }
     }
 
-    private func loadPhoto(_ item: PhotosPickerItem) async {
-        guard let data = try? await item.loadTransferable(type: Data.self),
-              let loadedImage = UIImage(data: data) else {
-            alertMessage = "사진을 불러오지 못했어요. 다른 사진을 선택해주세요."
-            Haptics.error()
-            return
+    private func beginLoadingPhoto(_ item: PhotosPickerItem) {
+        let requestID = beginImagePreparation()
+        imagePreparationTask = Task {
+            await loadPhoto(item, requestID: requestID)
         }
-        setImage(loadedImage, rawData: data)
     }
 
-    private func setImage(_ newImage: UIImage, rawData: Data? = nil) {
-        image = newImage
+    private func beginPreparingCameraImage(_ cameraImage: UIImage) {
+        let requestID = beginImagePreparation()
+        imagePreparationTask = Task {
+            await loadCameraImage(cameraImage, requestID: requestID)
+        }
+    }
+
+    private func beginImagePreparation() -> UUID {
+        imagePreparationTask?.cancel()
+        let requestID = UUID()
+        imagePreparationID = requestID
+        isPreparingImage = true
+        return requestID
+    }
+
+    private func loadPhoto(_ item: PhotosPickerItem, requestID: UUID) async {
+        defer { finishImagePreparation(requestID: requestID) }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                reportImagePreparationFailure(requestID: requestID)
+                return
+            }
+            try Task.checkCancellation()
+            let prepared = await ImgTo3DUploadImage.prepareInBackground(rawData: data)
+            try Task.checkCancellation()
+            guard imagePreparationID == requestID else { return }
+            guard let prepared else {
+                reportImagePreparationFailure(requestID: requestID)
+                return
+            }
+            applyPreparedImage(prepared)
+        } catch is CancellationError {
+            return
+        } catch {
+            reportImagePreparationFailure(requestID: requestID)
+        }
+    }
+
+    private func loadCameraImage(_ cameraImage: UIImage, requestID: UUID) async {
+        defer { finishImagePreparation(requestID: requestID) }
+        let prepared = await ImgTo3DUploadImage.prepareInBackground(cameraImage: cameraImage)
+        guard !Task.isCancelled, imagePreparationID == requestID else { return }
+        guard let prepared else {
+            reportImagePreparationFailure(requestID: requestID)
+            return
+        }
+        applyPreparedImage(prepared)
+    }
+
+    private func applyPreparedImage(_ prepared: ImgTo3DUploadImage.Prepared) {
+        image = prepared.previewImage
+        uploadImage = prepared.upload
         normalizedName = nil
         segmentationReady = false
         resetGeneratedModelState()
         Haptics.success()
+    }
 
-        uploadImage = ImgTo3DUploadImage.normalize(image: newImage, rawData: rawData)
+    private func reportImagePreparationFailure(requestID: UUID) {
+        guard imagePreparationID == requestID else { return }
+        alertMessage = "사진을 불러오지 못했어요. 다른 사진을 선택해주세요."
+        Haptics.error()
+    }
+
+    private func finishImagePreparation(requestID: UUID) {
+        guard imagePreparationID == requestID else { return }
+        isPreparingImage = false
+        imagePreparationID = nil
+        imagePreparationTask = nil
     }
 
     /// 사진·이름·선택 객체가 바뀌면 그 입력으로 만들었던 이후 결과는 모두 무효입니다.
@@ -444,9 +509,9 @@ struct ImgTo3DView: View {
 
     private func runSegmentation() async {
         guard !segmentationReady, !isSegmenting,
-              let image,
+              image != nil,
               !objectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        guard let payload = uploadImage ?? ImgTo3DUploadImage.normalize(image: image, rawData: nil) else {
+        guard let payload = uploadImage else {
             segmentationError = "업로드 이미지를 준비하지 못했습니다."
             return
         }
@@ -650,6 +715,10 @@ struct ImgTo3DView: View {
     }
 
     private func resetWizard() {
+        imagePreparationTask?.cancel()
+        imagePreparationTask = nil
+        imagePreparationID = nil
+        isPreparingImage = false
         step = .upload
         photoItem = nil
         image = nil

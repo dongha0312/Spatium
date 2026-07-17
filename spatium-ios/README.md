@@ -114,6 +114,8 @@ xcodebuild \
 
 사진 배경 제거와 3D 생성은 인증된 Spring `/api/ai/*`로 요청합니다. Spring이 내부 인증으로 Image-to-3D 서버를 호출하고 PNG/GLB를 앱에 스트리밍하므로, 앱은 FastAPI 주소나 내부 키를 알지 못합니다. 사용자가 만든 가구 모델도 인증된 `/api/furniture/{id}/model`에서 받고, 공개 에셋 서버는 기본 카탈로그의 `/data` 모델에만 사용합니다. 따라서 JWT가 없는 게스트는 AI 생성과 사용자 가구 서버 동기화를 사용할 수 없습니다.
 
+가구 사진은 선택 직후 메인 스레드 밖에서 ImageIO로 전처리합니다. 업로드용 긴 변은 최대 2048px·파일은 서버 계약과 같은 10MiB 이하로 제한하고, 화면에는 최대 1024px 미리보기만 유지합니다. 이미 제한 안에 있는 PNG/JPEG는 원본 바이트를 보존하며 HEIC 등 비호환 형식만 PNG로 변환합니다.
+
 - **Debug** 빌드에서는 숨겨진 개발자 설정으로 서버 주소를 변경할 수 있습니다.
 - **Release** 빌드에서는 배포 주소로 고정됩니다.
 - 현재 서버가 IP + 평문 HTTP로 서비스되어 `Info.plist`에서 ATS(`NSAllowsArbitraryLoads`)를 허용해 둔 상태이며, 백엔드 HTTPS 전환 후 도메인 예외로 좁힐 예정입니다.
@@ -151,7 +153,7 @@ Spatium/
 
 ## 🧪 테스트
 
-- **SpatiumTests** — 유닛 테스트 53개 (Swift Testing): 백엔드 API 계약(요청/응답 스키마 고정), 에디터 undo·redo/draft, SceneKit 증분 렌더링, 스캔 생명주기, 가구 치수·이미지 변환, 로컬 캐시 저장 실패 복구
+- **SpatiumTests** — 유닛 테스트 54개 (Swift Testing): 백엔드 API 계약(요청/응답 스키마 고정), 에디터 undo·redo/draft, SceneKit 증분 렌더링, 스캔 생명주기, 가구 치수·이미지 다운샘플링·변환, 로컬 캐시 저장 실패 복구
 - **SpatiumUITests** — UI 테스트 23개 + 런치 테스트 1개 (XCUITest): 게스트 기능 제한 안내, 에디터·꾸미기·카탈로그 회귀, 가로모드 레이아웃 스위트, 접근성 큰 글씨, 런치 성능
 
 DEBUG 빌드는 로그인 없이 특정 화면·상태로 바로 진입하는 `-UITest…` 실행 인자를 20여 개 지원합니다(스크린샷·UI 테스트용). 대표적으로 `-UITestEditor`(3D 에디터 직행), `-UITestImgTo3D`, `-UITestGuestRestrictions`, `-UITestOnboarding`, `-UITestGuestCreate` 등 — 전체 목록은 `ContentView.swift`와 각 Feature 뷰에서 확인할 수 있습니다.
