@@ -841,6 +841,37 @@ struct ImgTo3DModelViewerTests {
 
 @MainActor
 struct FurnitureModelLoaderTests {
+    @Test func modelTemplateCacheEvictsLeastRecentlyUsedEntriesWithinLimits() {
+        var cache = BoundedLRUCache<String, Int>(countLimit: 3, totalCostLimit: 5)
+        cache.insert(1, forKey: "bed", cost: 2)
+        cache.insert(2, forKey: "chair", cost: 2)
+
+        let cachedBed = cache.value(forKey: "bed")
+        #expect(cachedBed == 1)
+        cache.insert(3, forKey: "sofa", cost: 2)
+
+        let evictedChair = cache.value(forKey: "chair")
+        #expect(evictedChair == nil)
+        #expect(cache.keysInLeastRecentlyUsedOrder == ["bed", "sofa"])
+        #expect(cache.totalCost == 4)
+
+        cache.insert(4, forKey: "table", cost: 1)
+        cache.insert(5, forKey: "storage", cost: 1)
+
+        #expect(cache.keysInLeastRecentlyUsedOrder == ["sofa", "table", "storage"])
+        #expect(cache.count == 3)
+        #expect(cache.totalCost == 4)
+
+        cache.removeAll()
+        cache.insert(6, forKey: "oversized", cost: 10)
+        #expect(cache.keysInLeastRecentlyUsedOrder == ["oversized"])
+        #expect(cache.totalCost == 10)
+
+        cache.insert(7, forKey: "latest", cost: 1)
+        #expect(cache.keysInLeastRecentlyUsedOrder == ["latest"])
+        #expect(cache.totalCost == 1)
+    }
+
     @Test func userGLBIsFittedToCatalogDimensionsInRoom() throws {
         let fileName = "usr_dfcb0a2619784c6faa11b2bfe17eb363"
         _ = try #require(Bundle.main.url(forResource: fileName, withExtension: "glb"))
