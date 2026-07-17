@@ -970,6 +970,64 @@ struct FurnitureModelLoaderTests {
 
 @MainActor
 struct ProjectStorePersistenceTests {
+    @Test func initialProjectCacheReadAndDecodingRunOutsideMainThread() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-project-cache-load-\(UUID().uuidString)", isDirectory: true)
+        let cacheFileURL = testRoot.appendingPathComponent("projects.json")
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+        try FileManager.default.createDirectory(at: testRoot, withIntermediateDirectories: true)
+
+        let cachedProjects = [
+            SpatiumProject(id: "project-cached", name: "캐시 프로젝트")
+        ]
+        let data = try JSONEncoder.spatiumAPI.encode(cachedProjects)
+        try data.write(to: cacheFileURL, options: .atomic)
+
+        let recorder = ProjectCacheThreadRecorder()
+        let store = ProjectStore(
+            cacheFileURL: cacheFileURL,
+            authenticationStateProvider: { true },
+            cacheOperationObserver: { recorder.record(isMainThread: $0) },
+            automaticallyRefresh: false
+        )
+
+        let didLoadCache = await waitUntil {
+            store.projects.map(\.id) == cachedProjects.map(\.id)
+        }
+        let observedThreads = recorder.recordedMainThreadValues
+
+        #expect(didLoadCache)
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func guestProjectRiskCountReadsCacheOutsideMainThread() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-guest-project-count-\(UUID().uuidString)", isDirectory: true)
+        let cacheFileURL = testRoot.appendingPathComponent("projects.json")
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+        try FileManager.default.createDirectory(at: testRoot, withIntermediateDirectories: true)
+
+        let cachedProjects = [
+            SpatiumProject(id: "local-first", name: "게스트 프로젝트 1"),
+            SpatiumProject(id: "project-synced", name: "서버 프로젝트"),
+            SpatiumProject(id: "local-second", name: "게스트 프로젝트 2")
+        ]
+        let data = try JSONEncoder.spatiumAPI.encode(cachedProjects)
+        try data.write(to: cacheFileURL, options: .atomic)
+
+        let recorder = ProjectCacheThreadRecorder()
+        let guestProjectCount = await ProjectStore.guestLocalProjectCount(
+            cacheFileURL: cacheFileURL,
+            cacheOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+        let observedThreads = recorder.recordedMainThreadValues
+
+        #expect(guestProjectCount == 2)
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
     @Test func projectCacheWriteFailureIsVisibleAndCanBeRetried() async throws {
         let testRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("spatium-project-cache-\(UUID().uuidString)", isDirectory: true)
@@ -1051,6 +1109,14 @@ struct ProjectStorePersistenceTests {
         )
         #expect(store.projects.map(\.id) == [secondProject.id, firstProject.id])
         #expect(savedProjects.map(\.id) == store.projects.map(\.id))
+    }
+
+    private func waitUntil(_ condition: () -> Bool) async -> Bool {
+        for _ in 0..<100 {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return condition()
     }
 }
 

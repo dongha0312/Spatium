@@ -40,6 +40,28 @@ private nonisolated final class ProjectCacheDiskStore: @unchecked Sendable {
         self.operationObserver = operationObserver
     }
 
+    func load() async throws -> [SpatiumProject] {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                do {
+                    operationObserver?(Thread.isMainThread)
+                    guard FileManager.default.fileExists(atPath: cacheFileURL.path) else {
+                        continuation.resume(returning: [])
+                        return
+                    }
+
+                    let data = try Data(contentsOf: cacheFileURL)
+                    let decoder = JSONDecoder()
+                    decoder.dateDecodingStrategy = .iso8601
+                    let projects = try decoder.decode([SpatiumProject].self, from: data)
+                    continuation.resume(returning: projects)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
     func save(_ projects: [SpatiumProject], revision: UInt64) async throws -> MutationResult {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
@@ -98,9 +120,9 @@ final class ProjectStore: ObservableObject {
     @Published private(set) var cachePersistenceState: ProjectCachePersistenceState = .idle
 
     private let service = ProjectService()
-    private let cacheFileURL: URL
     private let cacheDiskStore: ProjectCacheDiskStore
     private let authenticationStateProvider: () -> Bool
+    private let automaticallyRefresh: Bool
     private var cancellables: Set<AnyCancellable> = []
     private var isRefreshing = false
     private var cacheRevision: UInt64 = 0
@@ -108,10 +130,10 @@ final class ProjectStore: ObservableObject {
     init(
         cacheFileURL: URL? = nil,
         authenticationStateProvider: (() -> Bool)? = nil,
-        cacheOperationObserver: (@Sendable (Bool) -> Void)? = nil
+        cacheOperationObserver: (@Sendable (Bool) -> Void)? = nil,
+        automaticallyRefresh: Bool = true
     ) {
         let resolvedCacheFileURL = cacheFileURL ?? Self.defaultCacheFileURL()
-        self.cacheFileURL = resolvedCacheFileURL
         self.cacheDiskStore = ProjectCacheDiskStore(
             cacheFileURL: resolvedCacheFileURL,
             operationObserver: cacheOperationObserver
@@ -120,8 +142,10 @@ final class ProjectStore: ObservableObject {
             AuthTokenStore.shared.isLoggedIn
         }
         self.authenticationStateProvider = resolvedAuthenticationStateProvider
-        // 캐시는 로그인 세션 전용: 게스트/비로그인에게 이전 계정의 프로젝트를 보여주지 않는다.
-        projects = resolvedAuthenticationStateProvider() ? loadCache() : []
+        self.automaticallyRefresh = automaticallyRefresh
+        // 생성 시점의 인증 상태를 고정해, 게스트로 시작한 스토어가 로그인 전환 중
+        // 게스트 캐시를 계정 프로젝트처럼 뒤늦게 불러오지 않게 한다.
+        let shouldLoadInitialCache = resolvedAuthenticationStateProvider()
 
         // 로그아웃하면 이전 계정 데이터가 다음 사용자에게 남지 않도록 캐시를 비운다.
         AuthTokenStore.shared.$isLoggedIn
@@ -137,7 +161,9 @@ final class ProjectStore: ObservableObject {
             }
             .store(in: &cancellables)
 
-        Task { await refresh(silently: true) }
+        Task { [weak self] in
+            await self?.loadInitialCacheAndRefresh(shouldLoadCache: shouldLoadInitialCache)
+        }
     }
 
     /// 로그아웃/계정 전환 시 메모리와 디스크 캐시를 모두 비운다.
@@ -162,7 +188,7 @@ final class ProjectStore: ObservableObject {
         }
     }
 
-    private static func defaultCacheFileURL() -> URL {
+    private nonisolated static func defaultCacheFileURL() -> URL {
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return directory.appendingPathComponent("projects.json")
     }
@@ -170,12 +196,32 @@ final class ProjectStore: ObservableObject {
     /// 게스트(비로그인)로 만들어져 아직 서버에 없는 로컬 프로젝트 수.
     /// 로그인하면 서버 목록이 캐시를 덮어써 이 프로젝트들이 사라지므로,
     /// 로그인 화면이 사전 경고를 띄우는 데 사용한다.
-    static func guestLocalProjectCount() -> Int {
-        guard let data = try? Data(contentsOf: defaultCacheFileURL()),
-              let cached = try? JSONDecoder.spatiumAPI.decode([SpatiumProject].self, from: data) else {
-            return 0
-        }
+    nonisolated static func guestLocalProjectCount(
+        cacheFileURL: URL? = nil,
+        cacheOperationObserver: (@Sendable (Bool) -> Void)? = nil
+    ) async -> Int {
+        let diskStore = ProjectCacheDiskStore(
+            cacheFileURL: cacheFileURL ?? defaultCacheFileURL(),
+            operationObserver: cacheOperationObserver
+        )
+        let cached = (try? await diskStore.load()) ?? []
         return cached.filter { $0.id.hasPrefix("local-") }.count
+    }
+
+    private func loadInitialCacheAndRefresh(shouldLoadCache: Bool) async {
+        if shouldLoadCache {
+            let revisionBeforeLoad = cacheRevision
+            let cachedProjects = (try? await cacheDiskStore.load()) ?? []
+            guard !Task.isCancelled else { return }
+
+            // 로드 중 로그아웃·로컬 편집·새 저장이 발생했다면 이전 파일 스냅샷을 적용하지 않는다.
+            if authenticationStateProvider(), revisionBeforeLoad == cacheRevision {
+                projects = cachedProjects
+            }
+        }
+
+        guard automaticallyRefresh, !Task.isCancelled else { return }
+        await refresh(silently: true)
     }
 
     /// 서버에서 최신 프로젝트 목록을 받아옵니다. 실패 시 기존(캐시/로컬)을 유지합니다.
@@ -538,11 +584,6 @@ final class ProjectStore: ObservableObject {
 
     private static func newLocalID() -> String {
         "local-\(UUID().uuidString.prefix(8))"
-    }
-
-    private func loadCache() -> [SpatiumProject] {
-        guard let data = try? Data(contentsOf: cacheFileURL) else { return [] }
-        return (try? JSONDecoder.spatiumAPI.decode([SpatiumProject].self, from: data)) ?? []
     }
 
     var localPersistenceErrorMessage: String? {
