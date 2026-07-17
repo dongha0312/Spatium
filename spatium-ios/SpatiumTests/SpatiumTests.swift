@@ -983,7 +983,7 @@ struct ProjectStorePersistenceTests {
         let data = try JSONEncoder.spatiumAPI.encode(cachedProjects)
         try data.write(to: cacheFileURL, options: .atomic)
 
-        let recorder = ProjectCacheThreadRecorder()
+        let recorder = DiskOperationThreadRecorder()
         let store = ProjectStore(
             cacheFileURL: cacheFileURL,
             authenticationStateProvider: { true },
@@ -1016,7 +1016,7 @@ struct ProjectStorePersistenceTests {
         let data = try JSONEncoder.spatiumAPI.encode(cachedProjects)
         try data.write(to: cacheFileURL, options: .atomic)
 
-        let recorder = ProjectCacheThreadRecorder()
+        let recorder = DiskOperationThreadRecorder()
         let guestProjectCount = await ProjectStore.guestLocalProjectCount(
             cacheFileURL: cacheFileURL,
             cacheOperationObserver: { recorder.record(isMainThread: $0) }
@@ -1069,7 +1069,7 @@ struct ProjectStorePersistenceTests {
         let cacheFileURL = testRoot.appendingPathComponent("projects.json")
         defer { try? FileManager.default.removeItem(at: testRoot) }
 
-        let recorder = ProjectCacheThreadRecorder()
+        let recorder = DiskOperationThreadRecorder()
         let store = ProjectStore(
             cacheFileURL: cacheFileURL,
             authenticationStateProvider: { false },
@@ -1120,7 +1120,7 @@ struct ProjectStorePersistenceTests {
     }
 }
 
-private final class ProjectCacheThreadRecorder: @unchecked Sendable {
+private final class DiskOperationThreadRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var values: [Bool] = []
 
@@ -1139,7 +1139,56 @@ private final class ProjectCacheThreadRecorder: @unchecked Sendable {
 
 @MainActor
 struct UserFurnitureStoreTests {
-    @Test func legacyCentimeterDimensionsMigrateToMetersBeforeRoomPlacement() throws {
+    @Test func initialCatalogReadDecodingMigrationAndSortingRunOutsideMainThread() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-furniture-load-thread-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let older = UserFurniture(
+            id: "usr_older",
+            name: "이전 가구",
+            normalizedName: "older furniture",
+            category: "other",
+            categoryLabel: "기타",
+            width: 60,
+            height: 120,
+            depth: 45,
+            modelFileName: "usr_older",
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+        let newer = UserFurniture(
+            id: "usr_newer",
+            name: "최근 가구",
+            normalizedName: "newer furniture",
+            category: "chair",
+            categoryLabel: "의자",
+            width: 0.5,
+            height: 0.8,
+            depth: 0.5,
+            modelFileName: "usr_newer",
+            createdAt: Date(timeIntervalSince1970: 200)
+        )
+        let data = try JSONEncoder.spatiumAPI.encode([older, newer])
+        try data.write(to: directory.appendingPathComponent("catalog.json"), options: .atomic)
+
+        let recorder = DiskOperationThreadRecorder()
+        let store = UserFurnitureStore(
+            storageDirectory: directory,
+            initialLoadOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+        await store.waitForInitialCatalogLoad()
+
+        #expect(store.items.map(\.id) == [newer.id, older.id])
+        #expect(store.items.last?.width == 0.6)
+        #expect(store.items.last?.height == 1.2)
+        #expect(store.items.last?.depth == 0.45)
+        let observedThreads = recorder.recordedMainThreadValues
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func legacyCentimeterDimensionsMigrateToMetersBeforeRoomPlacement() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("spatium-furniture-units-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1162,6 +1211,7 @@ struct UserFurnitureStoreTests {
         try data.write(to: directory.appendingPathComponent("catalog.json"), options: .atomic)
 
         let store = UserFurnitureStore(storageDirectory: directory)
+        await store.waitForInitialCatalogLoad()
         let migrated = try #require(store.items.first)
         #expect(migrated.width == 0.6)
         #expect(migrated.height == 1.2)
@@ -1171,9 +1221,50 @@ struct UserFurnitureStoreTests {
         #expect(migrated.catalogItem.depth == 0.45)
 
         let relaunched = UserFurnitureStore(storageDirectory: directory)
+        await relaunched.waitForInitialCatalogLoad()
         #expect(relaunched.items.first?.width == 0.6)
         #expect(relaunched.items.first?.height == 1.2)
         #expect(relaunched.items.first?.depth == 0.45)
+    }
+
+    @Test func mutationStartedDuringInitialLoadPreservesLoadedCatalog() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-furniture-load-mutation-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let existing = UserFurniture(
+            id: "usr_existing_at_launch",
+            name: "기존 가구",
+            normalizedName: "existing furniture",
+            category: "chair",
+            categoryLabel: "의자",
+            width: 0.5,
+            height: 0.8,
+            depth: 0.5,
+            modelFileName: "usr_existing_at_launch",
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+        let data = try JSONEncoder.spatiumAPI.encode([existing])
+        try data.write(to: directory.appendingPathComponent("catalog.json"), options: .atomic)
+
+        let store = UserFurnitureStore(storageDirectory: directory)
+        let added = try await store.add(
+            id: "usr_added_at_launch",
+            name: "새 가구",
+            normalizedName: "new furniture",
+            category: "table",
+            categoryLabel: "테이블",
+            width: 1.2,
+            height: 0.75,
+            depth: 0.65,
+            sourceModelURL: nil
+        )
+
+        #expect(Set(store.items.map(\.id)) == Set([existing.id, added.id]))
+        let relaunched = UserFurnitureStore(storageDirectory: directory)
+        await relaunched.waitForInitialCatalogLoad()
+        #expect(Set(relaunched.items.map(\.id)) == Set([existing.id, added.id]))
     }
 
     @Test func signedOutRefreshKeepsCachedServerFurnitureForNextLogin() async throws {
@@ -1205,6 +1296,7 @@ struct UserFurnitureStoreTests {
             storageDirectory: directory,
             accessTokenProvider: { nil }
         )
+        await relaunched.waitForInitialCatalogLoad()
         #expect(relaunched.items.first?.id == cached.id)
         #expect(relaunched.items.first?.serverModelPath == cached.serverModelPath)
     }
@@ -1250,6 +1342,7 @@ struct UserFurnitureStoreTests {
         #expect(store.catalogItems.last?.group == "기타")
 
         let reloaded = UserFurnitureStore(storageDirectory: directory)
+        await reloaded.waitForInitialCatalogLoad()
         #expect(reloaded.items.count == 1)
         #expect(reloaded.items.first?.id == furniture.id)
         #expect(reloaded.items.first?.name == furniture.name)
@@ -1338,6 +1431,7 @@ struct UserFurnitureStoreTests {
         #expect(try Data(contentsOf: newModelURL) == glbData)
 
         let reloaded = UserFurnitureStore(storageDirectory: directory)
+        await reloaded.waitForInitialCatalogLoad()
         let persisted = try #require(reloaded.items.first)
         #expect(persisted.id == synchronized.id)
         #expect(persisted.name == synchronized.name)
@@ -1386,6 +1480,7 @@ struct UserFurnitureStoreTests {
 
         #expect(Set(store.items.map(\.id)) == expectedIDs)
         let reloaded = UserFurnitureStore(storageDirectory: directory)
+        await reloaded.waitForInitialCatalogLoad()
         #expect(Set(reloaded.items.map(\.id)) == expectedIDs)
     }
 

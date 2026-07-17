@@ -81,10 +81,50 @@ private nonisolated final class UserFurnitureDiskStore: @unchecked Sendable {
         label: "com.spatium.user-furniture-disk-store",
         qos: .utility
     )
+    private let initialLoadOperationObserver: (@Sendable (Bool) -> Void)?
 
-    init(storageDirectory: URL, metadataURL: URL) {
+    init(
+        storageDirectory: URL,
+        metadataURL: URL,
+        initialLoadOperationObserver: (@Sendable (Bool) -> Void)? = nil
+    ) {
         self.storageDirectory = storageDirectory
         self.metadataURL = metadataURL
+        self.initialLoadOperationObserver = initialLoadOperationObserver
+    }
+
+    func load() async -> [UserFurniture] {
+        await performWithoutThrowing { [self] in
+            initialLoadOperationObserver?(Thread.isMainThread)
+            guard let data = try? Data(contentsOf: metadataURL) else { return [] }
+
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            guard let decoded = try? decoder.decode([UserFurniture].self, from: data) else {
+                return []
+            }
+
+            let migrated = decoded.map { furniture in
+                let dimensions = UserFurnitureMetricDimensions.meters(
+                    width: furniture.width,
+                    height: furniture.height,
+                    depth: furniture.depth
+                )
+                var result = furniture
+                result.width = dimensions.width
+                result.height = dimensions.height
+                result.depth = dimensions.depth
+                return result
+            }
+            let sorted = migrated.sorted { $0.createdAt > $1.createdAt }
+
+            // 레거시 단위를 고친 스냅샷은 같은 직렬 큐에서 바로 기록해,
+            // 초기 로드 직후 들어오는 변경보다 늦게 디스크를 덮어쓰지 않게 한다.
+            if migrated != decoded {
+                try? writeCatalog(sorted)
+            }
+            return sorted
+        }
     }
 
     func add(
@@ -286,28 +326,30 @@ final class UserFurnitureStore: ObservableObject {
     @Published private(set) var builtInItems: [FurnitureCatalogItem] = FurnitureCatalog.items
 
     private let storageDirectory: URL
-    private let metadataURL: URL
     private let diskStore: UserFurnitureDiskStore
     private let accessTokenProvider: (() -> String?)?
     private var isRefreshingFromBackend = false
     private var isMutationInProgress = false
     private var mutationWaiters: [CheckedContinuation<Void, Never>] = []
-    private var initialPersistenceTask: Task<Void, Never>?
+    private var initialLoadTask: Task<Void, Never>?
 
     init(
         storageDirectory: URL? = nil,
-        accessTokenProvider: (() -> String?)? = nil
+        accessTokenProvider: (() -> String?)? = nil,
+        initialLoadOperationObserver: (@Sendable (Bool) -> Void)? = nil
     ) {
         let storageDirectory = storageDirectory ?? Self.defaultStorageDirectory
         let metadataURL = storageDirectory.appendingPathComponent("catalog.json")
         self.storageDirectory = storageDirectory
-        self.metadataURL = metadataURL
         diskStore = UserFurnitureDiskStore(
             storageDirectory: storageDirectory,
-            metadataURL: metadataURL
+            metadataURL: metadataURL,
+            initialLoadOperationObserver: initialLoadOperationObserver
         )
         self.accessTokenProvider = accessTokenProvider
-        load()
+        initialLoadTask = Task { [weak self] in
+            await self?.loadInitialCatalog()
+        }
     }
 
     var catalogItems: [FurnitureCatalogItem] {
@@ -477,6 +519,7 @@ final class UserFurnitureStore: ObservableObject {
     /// 하나의 실패가 서버 미배포나 네트워크 문제일 수 있으므로 이번 새로고침의 나머지 업로드도 중단한다.
     @discardableResult
     func synchronizePendingFurniture(using uploader: FurnitureUploader) async -> Int {
+        await waitForInitialCatalogLoad()
         let pendingIDs = items
             .filter { $0.serverModelPath == nil }
             .map(\.id)
@@ -659,31 +702,16 @@ final class UserFurnitureStore: ObservableObject {
         modelURL(for: fileName, storageDirectory: defaultStorageDirectory)
     }
 
-    private func load() {
-        guard let data = try? Data(contentsOf: metadataURL),
-              let decoded = try? JSONDecoder.spatiumAPI.decode([UserFurniture].self, from: data) else {
-            items = []
-            return
+    func waitForInitialCatalogLoad() async {
+        if let initialLoadTask {
+            await initialLoadTask.value
         }
-        let migrated = decoded.map { furniture in
-            let dimensions = UserFurnitureMetricDimensions.meters(
-                width: furniture.width,
-                height: furniture.height,
-                depth: furniture.depth
-            )
-            var result = furniture
-            result.width = dimensions.width
-            result.height = dimensions.height
-            result.depth = dimensions.depth
-            return result
-        }
-        items = migrated.sorted { $0.createdAt > $1.createdAt }
-        if migrated != decoded {
-            let migratedItems = items
-            initialPersistenceTask = Task { [diskStore] in
-                try? await diskStore.persist(migratedItems)
-            }
-        }
+    }
+
+    private func loadInitialCatalog() async {
+        let loadedItems = await diskStore.load()
+        items = loadedItems
+        initialLoadTask = nil
     }
 
     private func withMutationLock<T>(
@@ -691,10 +719,7 @@ final class UserFurnitureStore: ObservableObject {
     ) async throws -> T {
         await acquireMutationLock()
         do {
-            if let initialPersistenceTask {
-                await initialPersistenceTask.value
-                self.initialPersistenceTask = nil
-            }
+            await waitForInitialCatalogLoad()
             try Task.checkCancellation()
             let result = try await operation()
             releaseMutationLock()
