@@ -415,7 +415,7 @@ final class RoomEditorViewModel: ObservableObject {
             )
             // 서버 메타데이터가 바뀌었으므로 로컬 스캔 캐시를 비워, 방 목록의 항목 수와
             // 다음 렌더가 최신 편집 상태를 반영하게 한다.
-            RoomScanAssetService().invalidateCache(forRoomID: roomID)
+            await RoomScanAssetService().invalidateCache(forRoomID: roomID)
             await markCurrentLayoutSaved()
             statusMessage = "저장되었습니다."
         } catch {

@@ -1254,6 +1254,106 @@ struct RoomSceneModelDiskStoreTests {
 }
 
 @MainActor
+struct RoomScanAssetServiceTests {
+    @Test func roomScanPackageReadDecodingAndItemMappingRunOutsideMainThread() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-room-scan-package-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let room = try makeFixture(in: testRoot, roomID: "local/package")
+        let recorder = DiskOperationThreadRecorder()
+        let service = RoomScanAssetService(
+            cacheRootURL: testRoot.appendingPathComponent("RoomScans", isDirectory: true),
+            diskOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+
+        let optionalPackage = try await service.loadPackage(for: room)
+        let package = try #require(optionalPackage)
+        let item = try #require(package.items.first)
+        let observedThreads = recorder.recordedMainThreadValues
+
+        #expect(package.items.count == 1)
+        #expect(item.detectedCategory == "chair")
+        #expect(item.positionX == 1)
+        #expect(item.positionZ == 2)
+        #expect(package.floorColor == "#112233")
+        #expect(package.usdzURL?.lastPathComponent == "source.usdz")
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func roomScanItemCountReadAndCacheInvalidationRunOutsideMainThread() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-room-scan-count-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let roomID = "local/count"
+        let room = try makeFixture(in: testRoot, roomID: roomID)
+        let cacheRoot = testRoot.appendingPathComponent("RoomScans", isDirectory: true)
+        let roomCache = cacheRoot.appendingPathComponent("local_count", isDirectory: true)
+        let recorder = DiskOperationThreadRecorder()
+        let service = RoomScanAssetService(
+            cacheRootURL: cacheRoot,
+            diskOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+
+        let itemCount = await service.loadItemCount(for: room)
+        #expect(FileManager.default.fileExists(atPath: roomCache.path))
+
+        await service.invalidateCache(forRoomID: roomID)
+        let observedThreads = recorder.recordedMainThreadValues
+
+        #expect(itemCount == 1)
+        #expect(!FileManager.default.fileExists(atPath: roomCache.path))
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    private func makeFixture(in testRoot: URL, roomID: String) throws -> RoomRecord {
+        let sourceDirectory = testRoot.appendingPathComponent("Sources", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+
+        let jsonURL = sourceDirectory.appendingPathComponent("source.json")
+        let usdzURL = sourceDirectory.appendingPathComponent("source.usdz")
+        let json = """
+        {
+          "objects": [
+            {
+              "category": "chair",
+              "dimensions": { "x": 1, "y": 2, "z": 3 },
+              "transform": {
+                "columns": [
+                  [1, 0, 0, 0],
+                  [0, 1, 0, 0],
+                  [0, 0, 1, 0],
+                  [1, 0, 2, 1]
+                ]
+              }
+            }
+          ],
+          "doors": [],
+          "windows": [],
+          "_spatiumFloorColor": "#112233"
+        }
+        """
+        try Data(json.utf8).write(to: jsonURL, options: .atomic)
+        try Data("test-usdz".utf8).write(to: usdzURL, options: .atomic)
+
+        return RoomRecord(
+            id: roomID,
+            roomType: "로컬 스캔 테스트",
+            itemCount: 0,
+            photoCount: 0,
+            uploadedAt: Date(),
+            fileName: "",
+            area: 16,
+            scanJsonUrl: jsonURL.absoluteString,
+            usdzUrl: usdzURL.absoluteString
+        )
+    }
+}
+
+@MainActor
 struct UserFurnitureStoreTests {
     @Test func initialCatalogReadDecodingMigrationAndSortingRunOutsideMainThread() async throws {
         let directory = FileManager.default.temporaryDirectory

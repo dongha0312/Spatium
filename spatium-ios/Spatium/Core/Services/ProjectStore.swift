@@ -472,7 +472,7 @@ final class ProjectStore: ObservableObject {
         let removedRoom = projects[projectIndex].rooms.remove(at: roomIndex)
         projects[projectIndex].roomCount = max(0, projects[projectIndex].roomCount - 1)
         _ = await persistCurrentCache()
-        RoomScanAssetService().invalidateCache(forRoomID: roomID)
+        await RoomScanAssetService().invalidateCache(forRoomID: roomID)
 
         guard !projectID.hasPrefix("local-"), !roomID.hasPrefix("local-") else {
             lastErrorMessage = nil

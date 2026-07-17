@@ -3,10 +3,10 @@ import simd
 
 /// 원시 RoomPlan export JSON(objects/doors/windows + transform.columns) 파서.
 /// 번들에 내장된 테스트 스캔을 CapturedRoom 없이 직접 편집기에 로드할 때 사용합니다.
-struct RoomPlanExportJSON: Decodable {
-    struct Dim: Decodable { let x: Float; let y: Float; let z: Float }
-    struct Transform: Decodable { let columns: [[Float]] }
-    struct Entry: Decodable {
+nonisolated struct RoomPlanExportJSON: Decodable, Sendable {
+    struct Dim: Decodable, Sendable { let x: Float; let y: Float; let z: Float }
+    struct Transform: Decodable, Sendable { let columns: [[Float]] }
+    struct Entry: Decodable, Sendable {
         let category: String?
         let dimensions: Dim
         let transform: Transform

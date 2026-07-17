@@ -1,12 +1,138 @@
 import Foundation
 
-struct RoomScanPackage {
+nonisolated struct RoomScanPackage: Sendable {
     var items: [EditableScanItem]
     var usdzURL: URL?
     var floorColor: String?
 }
 
-struct RoomScanAssetService {
+private nonisolated struct RoomScanDecodedMetadata: Sendable {
+    var items: [EditableScanItem]
+    var floorColor: String?
+}
+
+/// 로컬 방 스캔 캐시의 파일 작업과 JSON 변환을 앱 전체 공용 utility 큐에서 직렬화한다.
+/// 방 목록의 병렬 항목 수 조회와 편집기 진입이 겹쳐도 같은 캐시 파일을 동시에 교체하지 않는다.
+private nonisolated final class RoomScanAssetDiskStore: @unchecked Sendable {
+    static let shared = RoomScanAssetDiskStore(rootDirectoryURL: defaultRootDirectoryURL())
+
+    private let rootDirectoryURL: URL
+    private let operationObserver: (@Sendable (Bool) -> Void)?
+    private let queue = DispatchQueue(
+        label: "com.spatium.room-scan-asset-disk-store",
+        qos: .utility
+    )
+
+    init(
+        rootDirectoryURL: URL,
+        operationObserver: (@Sendable (Bool) -> Void)? = nil
+    ) {
+        self.rootDirectoryURL = rootDirectoryURL
+        self.operationObserver = operationObserver
+    }
+
+    func cacheDirectory(for roomID: String) async throws -> URL {
+        try await perform { [self] in
+            operationObserver?(Thread.isMainThread)
+            let directoryURL = roomDirectory(for: roomID)
+            try FileManager.default.createDirectory(
+                at: directoryURL,
+                withIntermediateDirectories: true
+            )
+            return directoryURL
+        }
+    }
+
+    func cachedFileURL(in directoryURL: URL, preferredFileName: String) async -> URL? {
+        await performWithoutThrowing { [self] in
+            operationObserver?(Thread.isMainThread)
+            let fileURL = directoryURL.appendingPathComponent(preferredFileName)
+            return FileManager.default.fileExists(atPath: fileURL.path) ? fileURL : nil
+        }
+    }
+
+    func installDownloadedFile(
+        at temporaryURL: URL,
+        in directoryURL: URL,
+        preferredFileName: String
+    ) async throws -> URL {
+        try await perform { [self] in
+            operationObserver?(Thread.isMainThread)
+            let destinationURL = directoryURL.appendingPathComponent(preferredFileName)
+
+            // 같은 방의 병렬 요청이 먼저 설치를 끝냈다면 중복 교체 없이 해당 캐시를 재사용한다.
+            if FileManager.default.fileExists(atPath: destinationURL.path) {
+                try? FileManager.default.removeItem(at: temporaryURL)
+                return destinationURL
+            }
+
+            do {
+                try FileManager.default.moveItem(at: temporaryURL, to: destinationURL)
+                return destinationURL
+            } catch {
+                try? FileManager.default.removeItem(at: temporaryURL)
+                throw error
+            }
+        }
+    }
+
+    func decodeMetadata(at fileURL: URL) async throws -> RoomScanDecodedMetadata? {
+        try await perform { [self] in
+            operationObserver?(Thread.isMainThread)
+            let data = try Data(contentsOf: fileURL)
+            guard let export = try? JSONDecoder().decode(RoomPlanExportJSON.self, from: data) else {
+                return nil
+            }
+            return RoomScanDecodedMetadata(
+                items: export.items(),
+                floorColor: export.floorColor
+            )
+        }
+    }
+
+    func invalidateCache(for roomID: String) async {
+        await performWithoutThrowing { [self] in
+            operationObserver?(Thread.isMainThread)
+            try? FileManager.default.removeItem(at: roomDirectory(for: roomID))
+        }
+    }
+
+    private func roomDirectory(for roomID: String) -> URL {
+        let safeID = roomID.replacingOccurrences(of: "/", with: "_")
+        return rootDirectoryURL.appendingPathComponent(safeID, isDirectory: true)
+    }
+
+    private static func defaultRootDirectoryURL() -> URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("RoomScans", isDirectory: true)
+    }
+
+    private func perform<T>(
+        _ operation: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                do {
+                    continuation.resume(returning: try operation())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func performWithoutThrowing<T>(
+        _ operation: @escaping @Sendable () -> T
+    ) async -> T {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                continuation.resume(returning: operation())
+            }
+        }
+    }
+}
+
+nonisolated struct RoomScanAssetService: Sendable {
     enum LoadError: LocalizedError {
         case noFiles
         case invalidURL(String)
@@ -22,6 +148,22 @@ struct RoomScanAssetService {
                 return "스캔 JSON을 해석할 수 없습니다."
             }
         }
+    }
+
+    private let diskStore: RoomScanAssetDiskStore
+
+    init() {
+        self.diskStore = .shared
+    }
+
+    init(
+        cacheRootURL: URL,
+        diskOperationObserver: (@Sendable (Bool) -> Void)? = nil
+    ) {
+        self.diskStore = RoomScanAssetDiskStore(
+            rootDirectoryURL: cacheRootURL,
+            operationObserver: diskOperationObserver
+        )
     }
 
     func loadPackage(for room: RoomRecord) async throws -> RoomScanPackage? {
@@ -48,7 +190,7 @@ struct RoomScanAssetService {
             throw LoadError.noFiles
         }
 
-        let cacheDirectory = try cacheDirectory(for: room.id)
+        let cacheDirectory = try await diskStore.cacheDirectory(for: room.id)
         let localJSONURL: URL?
         if let jsonURL {
             localJSONURL = try await downloadIfNeeded(jsonURL, into: cacheDirectory, preferredFileName: "room-\(room.id).json")
@@ -66,12 +208,11 @@ struct RoomScanAssetService {
         let items: [EditableScanItem]
         let floorColor: String?
         if let localJSONURL {
-            let data = try Data(contentsOf: localJSONURL)
-            guard let export = try? JSONDecoder().decode(RoomPlanExportJSON.self, from: data) else {
+            guard let metadata = try await diskStore.decodeMetadata(at: localJSONURL) else {
                 throw LoadError.invalidJSON
             }
-            items = export.items()
-            floorColor = export.floorColor
+            items = metadata.items
+            floorColor = metadata.floorColor
         } else {
             items = []
             floorColor = nil
@@ -85,19 +226,17 @@ struct RoomScanAssetService {
     func loadItemCount(for room: RoomRecord) async -> Int? {
         guard let jsonReference = room.renderJSONReference,
               let jsonURL = try? await resolveURL(jsonReference),
-              let directory = try? cacheDirectory(for: room.id),
+              let directory = try? await diskStore.cacheDirectory(for: room.id),
               let localURL = try? await downloadIfNeeded(jsonURL, into: directory, preferredFileName: "room-\(room.id).json"),
-              let data = try? Data(contentsOf: localURL),
-              let export = try? JSONDecoder().decode(RoomPlanExportJSON.self, from: data) else {
+              let metadata = try? await diskStore.decodeMetadata(at: localURL) else {
             return nil
         }
-        return export.items().count
+        return metadata.items.count
     }
 
     /// 에디터 저장 등으로 서버 메타데이터가 바뀐 뒤 호출해, 다음 로드가 새 파일을 받게 합니다.
-    func invalidateCache(forRoomID roomID: String) {
-        guard let directory = try? cacheDirectory(for: roomID) else { return }
-        try? FileManager.default.removeItem(at: directory)
+    func invalidateCache(forRoomID roomID: String) async {
+        await diskStore.invalidateCache(for: roomID)
     }
 
     private func resolveURL(_ value: String) async throws -> URL {
@@ -118,23 +257,16 @@ struct RoomScanAssetService {
         return baseURL.appendingPathComponent(value)
     }
 
-    private func cacheDirectory(for roomID: String) throws -> URL {
-        let safeID = roomID.replacingOccurrences(of: "/", with: "_")
-        let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("RoomScans", isDirectory: true)
-            .appendingPathComponent(safeID, isDirectory: true)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        return root
-    }
-
     private func downloadIfNeeded(_ sourceURL: URL, into directory: URL, preferredFileName: String) async throws -> URL {
         if sourceURL.isFileURL {
             return sourceURL
         }
 
-        let destination = directory.appendingPathComponent(preferredFileName)
-        if FileManager.default.fileExists(atPath: destination.path) {
-            return destination
+        if let cachedURL = await diskStore.cachedFileURL(
+            in: directory,
+            preferredFileName: preferredFileName
+        ) {
+            return cachedURL
         }
 
         var request = URLRequest(url: sourceURL)
@@ -157,10 +289,10 @@ struct RoomScanAssetService {
             )
         }
 
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
-        }
-        try FileManager.default.moveItem(at: temporaryURL, to: destination)
-        return destination
+        return try await diskStore.installDownloadedFile(
+            at: temporaryURL,
+            in: directory,
+            preferredFileName: preferredFileName
+        )
     }
 }
