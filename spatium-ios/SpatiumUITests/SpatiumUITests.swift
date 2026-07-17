@@ -84,6 +84,22 @@ final class SpatiumUITests: XCTestCase {
     }
 
     @MainActor
+    func testGuestModeExplainsImgTo3DRestrictionBeforeStarting() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestGuestRestrictions"]
+        app.launch()
+
+        XCTAssertTrue(
+            app.otherElements["guest-img-to-3d-restriction"].waitForExistence(timeout: 8)
+        )
+        XCTAssertTrue(app.staticTexts["가구 만들기는 로그인이 필요해요"].exists)
+        XCTAssertTrue(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "게스트 모드에서는 AI 배경 제거")
+        ).firstMatch.exists)
+        XCTAssertTrue(app.buttons["로그인하고 사용하기"].isHittable)
+    }
+
+    @MainActor
     func testRoomCatalogShowsUserFurnitureAndOtherCategories() throws {
         let app = XCUIApplication()
         app.launchArguments = [

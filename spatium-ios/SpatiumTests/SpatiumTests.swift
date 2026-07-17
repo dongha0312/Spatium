@@ -1026,14 +1026,14 @@ struct UserFurnitureStoreTests {
             #expect(metadata.dimensions == .init(x: 0.5, y: 0.6, z: 0.4))
             return FurnitureCreateResponse(
                 id: "usr_server_created",
-                modelUrl: "/data/user_3d_models/usr_server_created.glb"
+                modelUrl: "/api/furniture/usr_server_created/model"
             )
         }
 
         #expect(count == 1)
         let synchronized = try #require(store.items.first)
         #expect(synchronized.id == "usr_server_created")
-        #expect(synchronized.serverModelPath == "/data/user_3d_models/usr_server_created.glb")
+        #expect(synchronized.serverModelPath == "/api/furniture/usr_server_created/model")
         #expect(!FileManager.default.fileExists(atPath: oldModelURL.path))
 
         let newModelURL = directory
@@ -1093,7 +1093,7 @@ struct BackendContractTests {
         #expect(ProfileImageDataDecoder.decode("https://example.com/avatar.png") == nil)
     }
 
-    @Test func imgTo3DOptionsMatchLatestFrontendAndFastAPI() {
+    @Test func imgTo3DOptionsMatchSpringGatewayAndFastAPI() {
         #expect(ImgTo3DCategory.allCases.map(\.code) == [
             "figure", "bathtub", "bed", "chair", "dishwasher", "fireplace", "oven",
             "refrigerator", "sink", "sofa", "stairs", "storage", "stove",
@@ -1104,6 +1104,47 @@ struct BackendContractTests {
             "local_triposr", "local_stable_fast_3d"
         ])
         #expect(ImgTo3DRemesh.allCases.map(\.rawValue) == ["none", "triangle", "quad"])
+    }
+
+    @Test func imgTo3DUsesSpringGatewayAndDecodesBinaryMetadataHeader() throws {
+        #expect(ImgTo3DService.removeBackgroundPath == "/api/ai/remove-background")
+        #expect(ImgTo3DService.imageTo3DPath == "/api/ai/image-to-3d")
+
+        let json = """
+        {"segmentation_provider":"grounded_sam2","segmented_object":"의자","translated_query":"chair","confidence":0.9321}
+        """.data(using: .utf8)!
+        let header = json.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let metadata = try #require(ImgTo3DAIMetadata.decodeHeader(header))
+
+        #expect(metadata.segmentationProvider == "grounded_sam2")
+        #expect(metadata.segmentedObject == "의자")
+        #expect(metadata.translatedQuery == "chair")
+        #expect(metadata.confidence == 0.9321)
+        #expect(ImgTo3DAIMetadata.decodeHeader("not-base64!") == nil)
+    }
+
+    @Test func onlySpringFurnitureModelURLsReceiveAPIAuthentication() {
+        let apiBaseURL = URL(string: "http://210.119.12.115:8080")!
+
+        #expect(FurnitureService.protectedModelAPIPath(
+            from: "/api/furniture/usr_123/model",
+            apiBaseURL: apiBaseURL
+        ) == "/api/furniture/usr_123/model")
+        #expect(FurnitureService.protectedModelAPIPath(
+            from: "http://210.119.12.115:8080/api/furniture/usr_123/model",
+            apiBaseURL: apiBaseURL
+        ) == "/api/furniture/usr_123/model")
+        #expect(FurnitureService.protectedModelAPIPath(
+            from: "http://210.119.12.115:3000/api/furniture/usr_123/model",
+            apiBaseURL: apiBaseURL
+        ) == nil)
+        #expect(FurnitureService.protectedModelAPIPath(
+            from: "/data/3d_models/chair.glb",
+            apiBaseURL: apiBaseURL
+        ) == nil)
     }
 
     @Test func springFurnitureMultipartUsesFileAndJSONParts() throws {

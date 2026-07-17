@@ -54,7 +54,7 @@ struct EmptyScanView: View {
             EmptyStateCard(
                 systemImage: "camera.metering.center.weighted",
                 title: "검토할 스캔이 없습니다",
-                message: "새 방을 스캔하면 RoomPlan 결과를 확인하고 서버로 업로드할 수 있습니다."
+                message: "새 방을 스캔하면 RoomPlan 결과를 확인하고 파일로 내보낼 수 있습니다."
             )
 
             ActionCTAButton(
@@ -77,6 +77,7 @@ struct ScanReviewView: View {
     var uploading: Bool
     var exportError: String?
     var uploadMessage: String?
+    var isGuestMode: Bool = false
     var onStartScan: () -> Void
     var onExport: () -> Void
     var onUpload: () -> Void
@@ -108,6 +109,7 @@ struct ScanReviewView: View {
                 uploading: uploading,
                 exportError: exportError,
                 uploadMessage: uploadMessage,
+                isGuestMode: isGuestMode,
                 onExport: onExport,
                 onUpload: onUpload,
                 onOpenSettings: onOpenSettings
@@ -379,6 +381,7 @@ private struct ExportCard: View {
     var uploading: Bool
     var exportError: String?
     var uploadMessage: String?
+    var isGuestMode: Bool
     var onExport: () -> Void
     var onUpload: () -> Void
     var onOpenSettings: () -> Void
@@ -420,11 +423,22 @@ private struct ExportCard: View {
                 )
                 .disabled(exporting || uploading)
 
+                if isGuestMode {
+                    Label(
+                        "게스트 모드에서는 서버 업로드를 사용할 수 없어요. 로그인 후 이용해 주세요.",
+                        systemImage: "person.crop.circle.badge.exclamationmark"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(SpatiumTheme.coral)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("guest-scan-upload-restriction")
+                }
+
                 Button(action: onUpload) {
                     HStack(spacing: 10) {
                         Image(systemName: "arrow.up.doc")
                             .font(.headline.weight(.bold))
-                        Text(uploading ? "업로드 중..." : "서버로 업로드")
+                        Text(uploading ? "업로드 중..." : isGuestMode ? "로그인 후 서버 업로드" : "서버로 업로드")
                             .font(.headline.weight(.bold))
                         Spacer()
                         if uploading {
