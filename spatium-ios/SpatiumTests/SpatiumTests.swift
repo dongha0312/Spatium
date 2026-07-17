@@ -1054,7 +1054,7 @@ struct UserFurnitureStoreTests {
             storageDirectory: directory,
             accessTokenProvider: { nil }
         )
-        let cached = try store.add(
+        let cached = try await store.add(
             id: "usr_cached_server_item",
             name: "나의 의자",
             normalizedName: "my chair",
@@ -1096,13 +1096,13 @@ struct UserFurnitureStoreTests {
         )))
     }
 
-    @Test func userFurniturePersistsAndJoinsRenderingCatalog() throws {
+    @Test func userFurniturePersistsAndJoinsRenderingCatalog() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("spatium-user-furniture-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let store = UserFurnitureStore(storageDirectory: directory)
-        let furniture = try store.add(
+        let furniture = try await store.add(
             name: "나의 캣타워",
             normalizedName: "cat tower",
             category: "other",
@@ -1128,7 +1128,7 @@ struct UserFurnitureStoreTests {
         #expect(FurnitureCatalog.items.contains { $0.id == "default_stairs" })
     }
 
-    @Test func importedGLBIsCopiedIntoUserFurnitureStorage() throws {
+    @Test func importedGLBIsCopiedIntoUserFurnitureStorage() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("spatium-user-model-\(UUID().uuidString)", isDirectory: true)
         let directory = root.appendingPathComponent("catalog", isDirectory: true)
@@ -1138,7 +1138,7 @@ struct UserFurnitureStoreTests {
         try Data([0x67, 0x6C, 0x54, 0x46]).write(to: source)
 
         let store = UserFurnitureStore(storageDirectory: directory)
-        let furniture = try store.add(
+        let furniture = try await store.add(
             name: "사용자 의자",
             normalizedName: "custom chair",
             category: "chair",
@@ -1165,7 +1165,7 @@ struct UserFurnitureStoreTests {
         try glbData.write(to: source)
 
         let store = UserFurnitureStore(storageDirectory: directory)
-        let local = try store.add(
+        let local = try await store.add(
             name: "나의 협탁",
             normalizedName: "side table",
             category: "table",
@@ -1214,6 +1214,95 @@ struct UserFurnitureStoreTests {
         #expect(persisted.serverModelPath == synchronized.serverModelPath)
         // API JSON 코더가 ISO-8601 초 단위로 날짜를 저장하므로 하위 초는 제거된다.
         #expect(abs(persisted.createdAt.timeIntervalSince(synchronized.createdAt)) < 1)
+    }
+
+    @Test func concurrentUserFurnitureAddsPreserveEveryCatalogEntry() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-concurrent-furniture-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = UserFurnitureStore(storageDirectory: directory)
+        let firstTask = Task { @MainActor in
+            try await store.add(
+                id: "usr_concurrent_first",
+                name: "첫 번째 가구",
+                normalizedName: "first furniture",
+                category: "chair",
+                categoryLabel: "의자",
+                width: 0.5,
+                height: 0.8,
+                depth: 0.5,
+                sourceModelURL: nil
+            )
+        }
+        let secondTask = Task { @MainActor in
+            try await store.add(
+                id: "usr_concurrent_second",
+                name: "두 번째 가구",
+                normalizedName: "second furniture",
+                category: "table",
+                categoryLabel: "테이블",
+                width: 1.2,
+                height: 0.75,
+                depth: 0.65,
+                sourceModelURL: nil
+            )
+        }
+
+        let first = try await firstTask.value
+        let second = try await secondTask.value
+        let expectedIDs = Set([first.id, second.id])
+
+        #expect(Set(store.items.map(\.id)) == expectedIDs)
+        let reloaded = UserFurnitureStore(storageDirectory: directory)
+        #expect(Set(reloaded.items.map(\.id)) == expectedIDs)
+    }
+
+    @Test func failedCatalogWriteRestoresExistingModelAndPublishedItems() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-furniture-rollback-\(UUID().uuidString)", isDirectory: true)
+        let directory = root.appendingPathComponent("catalog", isDirectory: true)
+        let source = root.appendingPathComponent("replacement.glb")
+        let modelURL = directory
+            .appendingPathComponent("usr_existing_model")
+            .appendingPathExtension("glb")
+        let metadataURL = directory.appendingPathComponent("catalog.json", isDirectory: true)
+        let previousModel = Data([0x67, 0x6C, 0x54, 0x46, 0x01])
+        let replacementModel = Data([0x67, 0x6C, 0x54, 0x46, 0x02])
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try previousModel.write(to: modelURL)
+        try replacementModel.write(to: source)
+        // catalog.json을 디렉터리로 만들어 모델 복사 후 JSON 원자 쓰기만 실패하게 한다.
+        try FileManager.default.createDirectory(at: metadataURL, withIntermediateDirectories: true)
+
+        let store = UserFurnitureStore(storageDirectory: directory)
+        var receivedError: Error?
+        do {
+            _ = try await store.add(
+                id: "usr_existing_model",
+                name: "교체 가구",
+                normalizedName: "replacement furniture",
+                category: "other",
+                categoryLabel: "기타",
+                width: 0.6,
+                height: 0.7,
+                depth: 0.8,
+                sourceModelURL: source
+            )
+        } catch {
+            receivedError = error
+        }
+
+        #expect(receivedError != nil)
+        #expect(store.items.isEmpty)
+        #expect(try Data(contentsOf: modelURL) == previousModel)
+        #expect(try Data(contentsOf: source) == replacementModel)
+        let leftoverTransactionFiles = try FileManager.default
+            .contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix(".model-staging-") || $0.hasPrefix(".model-backup-") }
+        #expect(leftoverTransactionFiles.isEmpty)
     }
 }
 
