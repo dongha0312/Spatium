@@ -1771,7 +1771,7 @@ struct BackendContractTests {
     }
 
     @Test func avatarMultipartUsesBackendImageField() throws {
-        let form = MultipartFormData(parts: [
+        let form = try MultipartFormData(parts: [
             .init(name: "image", data: Data([0xFF, 0xD8]), fileName: "avatar.jpg", contentType: "image/jpeg")
         ], boundary: "avatar-contract")
         let body = try #require(String(data: form.body, encoding: .isoLatin1))
@@ -1779,6 +1779,35 @@ struct BackendContractTests {
         #expect(body.contains("name=\"image\"; filename=\"avatar.jpg\""))
         #expect(body.contains("Content-Type: image/jpeg"))
         #expect(!body.contains("name=\"avatar\""))
+    }
+
+    /// 대용량 USDZ/GLB 파일 파트가 실수로 메모리 바디 경로에 올라가지 않도록,
+    /// 파일 파트는 스트리밍 `writeBodyFile`만 허용하고 메모리 init은 거부한다.
+    @Test func multipartMemoryBodyRejectsFileParts() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("multipart-guard-\(UUID().uuidString).bin")
+        try Data([0x01, 0x02, 0x03]).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        #expect(throws: MultipartFormDataError.self) {
+            _ = try MultipartFormData(parts: [
+                .init(name: "text", data: Data("value".utf8)),
+                .init(name: "model", fileURL: fileURL, contentType: "model/gltf-binary")
+            ], boundary: "file-guard-contract")
+        }
+
+        // 같은 파트 구성이라도 스트리밍 경로는 정상 동작해야 한다.
+        let bodyURL = try MultipartFormData.writeBodyFile(
+            parts: [
+                .init(name: "text", data: Data("value".utf8)),
+                .init(name: "model", fileURL: fileURL, contentType: "model/gltf-binary")
+            ],
+            boundary: "file-guard-contract"
+        )
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+        let body = try #require(String(data: Data(contentsOf: bodyURL), encoding: .isoLatin1))
+        #expect(body.contains("name=\"model\""))
+        #expect(body.contains("--file-guard-contract--"))
     }
 
     @Test func profileImageDecoderSupportsBackendDataURL() {
@@ -2023,5 +2052,31 @@ struct BackendContractTests {
         data.append(UInt8(truncatingIfNeeded: value >> 8))
         data.append(UInt8(truncatingIfNeeded: value >> 16))
         data.append(UInt8(truncatingIfNeeded: value >> 24))
+    }
+}
+
+@MainActor
+struct HomeAmbientAnimationTests {
+    /// 홈 반복 애니메이션은 "홈 탭 표시 + 앱 포그라운드 + Reduce Motion 꺼짐"이
+    /// 모두 만족될 때만 실행된다. (숨겨진 탭·백그라운드·접근성 설정에서 유휴 전력 사용 방지)
+    @Test func ambientAnimationsRunOnlyWhenHomeIsVisibleAndActive() {
+        #expect(HomeDashboardView.shouldRunAmbientAnimations(
+            isActive: true, scenePhase: .active, reduceMotion: false
+        ))
+        // 가구 만들기 탭으로 이동해 홈이 숨겨진 상태.
+        #expect(!HomeDashboardView.shouldRunAmbientAnimations(
+            isActive: false, scenePhase: .active, reduceMotion: false
+        ))
+        // 앱이 백그라운드/인액티브로 전환된 상태.
+        #expect(!HomeDashboardView.shouldRunAmbientAnimations(
+            isActive: true, scenePhase: .background, reduceMotion: false
+        ))
+        #expect(!HomeDashboardView.shouldRunAmbientAnimations(
+            isActive: true, scenePhase: .inactive, reduceMotion: false
+        ))
+        // 사용자가 동작 줄이기(Reduce Motion)를 켠 상태.
+        #expect(!HomeDashboardView.shouldRunAmbientAnimations(
+            isActive: true, scenePhase: .active, reduceMotion: true
+        ))
     }
 }

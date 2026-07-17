@@ -2,16 +2,38 @@ import SwiftUI
 
 struct HomeDashboardView: View {
     let projects: [SpatiumProject]
+    /// 홈 탭이 실제로 보이는지 여부. 가구 만들기 탭 전환 시 홈은 opacity 0으로
+    /// 뷰 계층에 남아 있으므로, 숨겨진 동안 반복 애니메이션이 CPU/GPU를 쓰지 않게 정지한다.
+    var isActive: Bool = true
     var onStartScan: () -> Void
     var onOpenRooms: () -> Void
     var onOpenSettings: () -> Void
     var onOpenProject: (SpatiumProject) -> Void
 
-    @State private var isPulseAnimating = false
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animateItems = false
 
     private var totalRooms: Int {
         projects.reduce(0) { $0 + $1.displayRoomCount }
+    }
+
+    /// 반복(ambient) 애니메이션 실행 조건: 홈 탭이 보이고, 앱이 포그라운드이며,
+    /// 사용자가 동작 줄이기(Reduce Motion)를 켜지 않았을 때만 실행한다.
+    static func shouldRunAmbientAnimations(
+        isActive: Bool,
+        scenePhase: ScenePhase,
+        reduceMotion: Bool
+    ) -> Bool {
+        isActive && scenePhase == .active && !reduceMotion
+    }
+
+    private var ambientAnimationsActive: Bool {
+        Self.shouldRunAmbientAnimations(
+            isActive: isActive,
+            scenePhase: scenePhase,
+            reduceMotion: reduceMotion
+        )
     }
 
     var body: some View {
@@ -41,7 +63,11 @@ struct HomeDashboardView: View {
             .opacity(animateItems ? 1.0 : 0.0)
 
             // Main Scan Banner (ScanCommandCard)
-            ScanCommandCard(projects: projects, onStartScan: onStartScan)
+            ScanCommandCard(
+                projects: projects,
+                animationsActive: ambientAnimationsActive,
+                onStartScan: onStartScan
+            )
                 .offset(y: animateItems ? 0 : 16)
                 .opacity(animateItems ? 1.0 : 0.0)
 
@@ -95,7 +121,8 @@ struct HomeDashboardView: View {
             .opacity(animateItems ? 1.0 : 0.0)
         }
         .onAppear {
-            withAnimation(.spring(response: 0.52, dampingFraction: 0.82)) {
+            // Reduce Motion이 켜져 있으면 진입 슬라이드 없이 즉시 최종 상태로 보여준다.
+            withAnimation(reduceMotion ? nil : .spring(response: 0.52, dampingFraction: 0.82)) {
                 animateItems = true
             }
         }
@@ -104,6 +131,7 @@ struct HomeDashboardView: View {
 
 private struct ScanCommandCard: View {
     let projects: [SpatiumProject]
+    var animationsActive: Bool = true
     var onStartScan: () -> Void
 
     @State private var isPulsing = false
@@ -113,7 +141,7 @@ private struct ScanCommandCard: View {
             HStack(alignment: .top, spacing: 14) {
                 commandCopy
                 Spacer(minLength: 8)
-                SpatialScannerGraphic()
+                SpatialScannerGraphic(isAnimating: animationsActive)
             }
 
             Button(action: onStartScan) {
@@ -158,7 +186,14 @@ private struct ScanCommandCard: View {
                     .fill(.white)
                     .frame(width: 6, height: 6)
                     .scaleEffect(isPulsing ? 1.3 : 0.8)
-                    .animation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true), value: isPulsing)
+                    // 정지 전환에 repeatForever를 다시 붙이면 애니메이션이 끝나지 않으므로,
+                    // 시작할 때만 반복 애니메이션을 쓰고 정지할 때는 짧게 원상 복귀한다.
+                    .animation(
+                        isPulsing
+                            ? .easeInOut(duration: 1.2).repeatForever(autoreverses: true)
+                            : .easeInOut(duration: 0.2),
+                        value: isPulsing
+                    )
                 Text(projects.isEmpty ? "READY TO SCAN" : "\(projects.count)개 프로젝트 진행 중")
                     .font(.system(size: 10, weight: .black))
                     .foregroundStyle(.white.opacity(0.9))
@@ -168,7 +203,10 @@ private struct ScanCommandCard: View {
             .background(Color.white.opacity(0.15))
             .clipShape(Capsule())
             .onAppear {
-                isPulsing = true
+                isPulsing = animationsActive
+            }
+            .onChange(of: animationsActive) { _, isActive in
+                isPulsing = isActive
             }
 
             Text("새 프로젝트 만들기")
@@ -188,6 +226,10 @@ private struct ScanCommandCard: View {
 }
 
 struct SpatialScannerGraphic: View {
+    /// false면 반복 애니메이션을 모두 정지하고 정적 상태로 표시한다.
+    /// (숨겨진 탭·백그라운드·Reduce Motion에서 유휴 CPU/GPU 사용 방지)
+    var isAnimating: Bool = true
+
     @State private var rotationDegree: Double = 0.0
     @State private var pulseState: CGFloat = 0.0
     @State private var scanPulseState: CGFloat = 0.0
@@ -247,20 +289,39 @@ struct SpatialScannerGraphic: View {
         }
         .frame(width: 96, height: 96)
         .onAppear {
-            // 1. Continuous Linear rotation for scanner sweep (No jump on loop boundary)
-            withAnimation(.linear(duration: 5.0).repeatForever(autoreverses: false)) {
-                rotationDegree = 360.0
-            }
-            
-            // 2. Smooth bouncing pulse (Autoreverses) for sparkles, cube, and viewfinder
-            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
-                pulseState = 1.0
-            }
-            
-            // 3. Continuous fade out pulse for concentric circles
-            withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
-                scanPulseState = 1.0
-            }
+            setAnimations(running: isAnimating)
+        }
+        .onChange(of: isAnimating) { _, running in
+            setAnimations(running: running)
+        }
+    }
+
+    /// 반복 애니메이션의 유일한 시작·정지 지점. 시작 전 항상 정지 상태 값으로 리셋해,
+    /// 탭 복귀·포그라운드 복귀가 반복돼도 애니메이션이 중복 시작되거나 속도가 누적되지 않는다.
+    private func setAnimations(running: Bool) {
+        // 진행 중인 repeatForever 애니메이션을 트랜지션 없이 끊고 초기값으로 되돌린다.
+        var reset = Transaction()
+        reset.disablesAnimations = true
+        withTransaction(reset) {
+            rotationDegree = 0.0
+            pulseState = 0.0
+            scanPulseState = 0.0
+        }
+        guard running else { return }
+
+        // 1. Continuous Linear rotation for scanner sweep (No jump on loop boundary)
+        withAnimation(.linear(duration: 5.0).repeatForever(autoreverses: false)) {
+            rotationDegree = 360.0
+        }
+
+        // 2. Smooth bouncing pulse (Autoreverses) for sparkles, cube, and viewfinder
+        withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+            pulseState = 1.0
+        }
+
+        // 3. Continuous fade out pulse for concentric circles
+        withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
+            scanPulseState = 1.0
         }
     }
 }

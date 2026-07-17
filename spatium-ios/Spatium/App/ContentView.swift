@@ -358,6 +358,9 @@ struct MainTabView: View {
         case .home:
             HomeDashboardView(
                 projects: projectStore.projects,
+                // 가구 만들기 탭에서는 홈이 opacity 0으로 계층에 남는다. 숨겨진 동안
+                // 반복 애니메이션이 CPU/GPU를 계속 쓰지 않도록 실제 표시 여부를 내려준다.
+                isActive: selectedTab == .home,
                 onStartScan: startNewProjectFlow,
                 onOpenRooms: { selectedTab = .rooms },
                 onOpenSettings: { selectedTab = .settings },

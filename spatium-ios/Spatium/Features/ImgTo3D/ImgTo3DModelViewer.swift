@@ -1,4 +1,5 @@
 import GLTFKit2
+import OSLog
 import SceneKit
 import simd
 import SwiftUI
@@ -282,6 +283,9 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
             }
 
             do {
+                let signposter = PerformanceSignposts.imgTo3D
+                let parseInterval = signposter.beginInterval("imgTo3D.model.parse", id: signposter.makeSignpostID())
+                defer { signposter.endInterval("imgTo3D.model.parse", parseInterval) }
                 let asset = try GLTFAsset(url: url, options: [:])
                 let scene = SCNScene(gltfAsset: asset)
                 let root = SCNNode()
@@ -322,6 +326,10 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
         func autoAlignIfNeeded(token: Int, transform: ImgTo3DModelTransform) {
             guard token != renderedAutoAlignToken, !modelLocalSamples.isEmpty else { return }
             renderedAutoAlignToken = token
+
+            let signposter = PerformanceSignposts.imgTo3D
+            let alignInterval = signposter.beginInterval("imgTo3D.autoAlign", id: signposter.makeSignpostID())
+            defer { signposter.endInterval("imgTo3D.autoAlign", alignInterval) }
 
             let scale = Float(transform.scale)
             let currentOrientation = modelContainer.simdOrientation

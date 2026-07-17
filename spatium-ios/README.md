@@ -134,6 +134,10 @@ SceneKit 가구 모델 템플릿 캐시는 최근 사용 순서(LRU)로 최대 8
 
 가구 만들기 진행 단계와 서버 작업 결과는 탭을 이동해도 유지하되, 탭이 숨겨지거나 앱이 백그라운드로 가면 화면용 디코딩 이미지와 보정 단계의 SceneKit 씬을 해제합니다. 다시 활성화하면 보관한 압축 이미지 데이터와 GLB URL에서 필요한 표시 리소스만 복원해, 진행 상태를 잃지 않으면서 숨은 탭의 메모리 점유를 줄입니다.
 
+홈 화면의 반복(스캐너 회전·pulse) 애니메이션은 홈 탭이 실제로 보이고 앱이 포그라운드일 때만 실행합니다. 가구 만들기 탭 전환으로 홈이 opacity 0으로 계층에 남아 있거나 앱이 백그라운드로 가면 애니메이션을 정지해 유휴 CPU·GPU·배터리 사용을 줄이고, 복귀 시 항상 초기 상태에서 다시 시작해 중복 시작·속도 누적이 없습니다. 시스템 동작 줄이기(Reduce Motion)가 켜져 있으면 반복 애니메이션과 진입 슬라이드를 생략하고 정적 상태로 표시합니다.
+
+성능 기준선 측정을 위해 Instruments용 os_signpost 계측(`PerformanceSignposts`)이 들어 있습니다. 에디터 씬 전체 생성(`editor.load`)·USDZ 셸 콜드 파싱(`editor.shell.parse`)·GLB 템플릿 콜드 파싱(`editor.furniture.template.parse`)·가구 노드 재생성(`editor.furniture.nodes.rebuild`)·첫 렌더 프레임(`editor.firstFrame`), 서버 룸 씬 다운로드·USDZ 복원(`roomScene.download`/`roomScene.materialize`), ImgTo3D GLB 파싱·자동 정렬(`imgTo3D.model.parse`/`imgTo3D.autoAlign`) 구간을 Time Profiler·Hangs 계측과 함께 구분해 볼 수 있습니다. Instruments가 붙지 않은 실행에서는 비용이 거의 없어 Release 빌드에도 유지합니다.
+
 - **Debug** 빌드에서는 숨겨진 개발자 설정으로 서버 주소를 변경할 수 있습니다.
 - **Release** 빌드에서는 배포 주소로 고정됩니다.
 - 현재 서버가 IP + 평문 HTTP로 서비스되어 `Info.plist`에서 ATS(`NSAllowsArbitraryLoads`)를 허용해 둔 상태이며, 백엔드 HTTPS 전환 후 도메인 예외로 좁힐 예정입니다.
@@ -171,7 +175,7 @@ Spatium/
 
 ## 🧪 테스트
 
-- **SpatiumTests** — 유닛 테스트 75개 (Swift Testing): 백엔드 API 계약과 파일 기반 multipart 구성, 에디터 undo·redo와 복구본의 백그라운드 읽기·저장·삭제·revision 순서, SceneKit 증분 렌더링·모델 템플릿 LRU·뷰어 리소스 해제, 서버 룸 USDZ의 백그라운드 Base64 복원·손상 응답 처리, 로컬 스캔 JSON의 백그라운드 읽기·디코딩·항목 집계·캐시 삭제, 스캔 생명주기, GLB 보정 스트리밍·가구 치수·프로필 이미지 다운샘플링·변환, 사용자 가구의 백그라운드 초기 로드·초기화 경합·동시 저장·파일 롤백, 설정 캐시 작업 범위, 프로젝트 캐시의 백그라운드 초기 읽기·저장·최신 스냅샷 순서·실패 복구·게스트 위험 계산
+- **SpatiumTests** — 유닛 테스트 77개 (Swift Testing): 백엔드 API 계약과 파일 기반 multipart 구성(메모리 multipart의 파일 파트 거부 포함), 에디터 undo·redo와 복구본의 백그라운드 읽기·저장·삭제·revision 순서, SceneKit 증분 렌더링·모델 템플릿 LRU·뷰어 리소스 해제, 서버 룸 USDZ의 백그라운드 Base64 복원·손상 응답 처리, 로컬 스캔 JSON의 백그라운드 읽기·디코딩·항목 집계·캐시 삭제, 스캔 생명주기, GLB 보정 스트리밍·가구 치수·프로필 이미지 다운샘플링·변환, 사용자 가구의 백그라운드 초기 로드·초기화 경합·동시 저장·파일 롤백, 설정 캐시 작업 범위, 프로젝트 캐시의 백그라운드 초기 읽기·저장·최신 스냅샷 순서·실패 복구·게스트 위험 계산, 홈 반복 애니메이션 실행 조건(탭 표시·포그라운드·Reduce Motion)
 - **SpatiumUITests** — UI 테스트 23개 + 런치 테스트 1개 (XCUITest): 게스트 기능 제한 안내, 에디터·꾸미기·카탈로그 회귀, 가로모드 레이아웃 스위트, 접근성 큰 글씨, 런치 성능
 
 DEBUG 빌드는 로그인 없이 특정 화면·상태로 바로 진입하는 `-UITest…` 실행 인자를 20여 개 지원합니다(스크린샷·UI 테스트용). 대표적으로 `-UITestEditor`(3D 에디터 직행), `-UITestImgTo3D`, `-UITestGuestRestrictions`, `-UITestOnboarding`, `-UITestGuestCreate` 등 — 전체 목록은 `ContentView.swift`와 각 Feature 뷰에서 확인할 수 있습니다.
@@ -181,6 +185,8 @@ DEBUG 빌드는 로그인 없이 특정 화면·상태로 바로 진입하는 `-
 ## 📚 문서
 
 앱 전체 아키텍처·데이터 흐름·함정 노트는 [이번 앱 프로젝트 정리본.md](이번%20앱%20프로젝트%20정리본.md)에 상세히 정리돼 있습니다.
+
+현재 최적화 이후 남은 성능·메모리·배터리·백엔드 계약 개선 후보와 우선순위, 검증 기준은 [앱 후속 개선 계획.md](앱%20후속%20개선%20계획.md)에 정리돼 있습니다.
 
 ---
 

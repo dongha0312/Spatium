@@ -1,5 +1,6 @@
 import Foundation
 import GLTFKit2
+import OSLog
 import SceneKit
 import simd
 import UIKit
@@ -222,6 +223,11 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
         _ = Self.memoryWarningObserver // 첫 로드 때 옵저버 등록을 보장한다(lazy static).
         let key = url.path
         if let template = Self.nodeCache.value(forKey: key) { return template }
+
+        // 콜드 캐시 GLB 파싱만 계측한다. LRU 적중은 위에서 이미 반환됐다.
+        let signposter = PerformanceSignposts.editor
+        let parseInterval = signposter.beginInterval("editor.furniture.template.parse", id: signposter.makeSignpostID())
+        defer { signposter.endInterval("editor.furniture.template.parse", parseInterval) }
 
         guard let asset = try? GLTFAsset(url: url, options: [:]) else { return nil }
         let scene = SCNScene(gltfAsset: asset)

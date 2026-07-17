@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 // MARK: - 백엔드 응답 DTO (공통 페이지 래퍼)
 
@@ -268,12 +269,17 @@ struct ProjectService {
     }
 
     func fetchRoomScene(roomID: String) async throws -> RoomSceneResult {
-        let envelope: SpatiumAPIEnvelope<RoomSceneData> = try await client.send(
-            method: "GET", path: "/api/rooms/\(roomID)/scene"
-        )
+        let signposter = PerformanceSignposts.roomScene
+        let envelope: SpatiumAPIEnvelope<RoomSceneData> = try await {
+            let downloadInterval = signposter.beginInterval("roomScene.download", id: signposter.makeSignpostID())
+            defer { signposter.endInterval("roomScene.download", downloadInterval) }
+            return try await client.send(method: "GET", path: "/api/rooms/\(roomID)/scene")
+        }()
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
 
         let items = data.metadata?.items() ?? []
+        let materializeInterval = signposter.beginInterval("roomScene.materialize", id: signposter.makeSignpostID())
+        defer { signposter.endInterval("roomScene.materialize", materializeInterval) }
         let usdzURL = try await Self.roomSceneModelDiskStore.materialize(
             base64: data.model?.dataBase64,
             roomID: roomID

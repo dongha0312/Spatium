@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import SceneKit
 import UIKit
 
@@ -6,6 +7,10 @@ import UIKit
 
 extension RoomEditorSceneView.Coordinator {
     func rebuildFurnitureNodes(for layout: RoomLayout) {
+        let signposter = PerformanceSignposts.editor
+        let rebuildInterval = signposter.beginInterval("editor.furniture.nodes.rebuild", id: signposter.makeSignpostID())
+        defer { signposter.endInterval("editor.furniture.nodes.rebuild", rebuildInterval) }
+
         let roomCenter = SCNVector3(roomBounds.centerX, 0, roomBounds.centerZ)
         let requestedIDs = Set(layout.furnitures.map(\.itemId))
         // 프런트엔드처럼 기존 GLB 인스턴스를 유지한다. 추가/삭제/교체된 모델만 다시

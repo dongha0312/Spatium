@@ -1,3 +1,4 @@
+import OSLog
 import QuartzCore
 import SceneKit
 import SwiftUI
@@ -266,6 +267,10 @@ struct RoomEditorSceneView: UIViewRepresentable {
         // MARK: - Scene construction
 
         func buildScene(for layout: RoomLayout) -> SCNScene {
+            let signposter = PerformanceSignposts.editor
+            let loadInterval = signposter.beginInterval("editor.load", id: signposter.makeSignpostID())
+            defer { signposter.endInterval("editor.load", loadInterval) }
+
             let scene = SCNScene()
 
             // These nodes are reused across rebuilds; detach from any previous scene first.
@@ -476,6 +481,10 @@ struct RoomEditorSceneView: UIViewRepresentable {
         func shellTemplate(for usdzURL: URL) -> SCNNode? {
             let key = usdzURL.path
             if let cached = shellCache[key] { return cached }
+            // 콜드 캐시 파싱만 계측한다. 캐시 적중은 위에서 이미 반환됐다.
+            let signposter = PerformanceSignposts.editor
+            let parseInterval = signposter.beginInterval("editor.shell.parse", id: signposter.makeSignpostID())
+            defer { signposter.endInterval("editor.shell.parse", parseInterval) }
             guard let roomScene = try? SCNScene(url: usdzURL) else { return nil }
             let template = SCNNode()
             template.name = "room-shell"
@@ -1467,6 +1476,8 @@ final class WallFacingUpdater: NSObject, SCNSceneRendererDelegate {
     private var walls: [Wall] = []
     private var wallsRevision = 0
     private var enabled = true
+    /// 에디터 첫 프레임 signpost(1회). 렌더 콜백은 SceneKit 렌더 스레드 한 곳에서만 오므로 락 불필요.
+    private var didEmitFirstFrameSignpost = false
     /// 렌더 콜백은 ProMotion 기기에서 초당 120번 들어올 수 있지만 벽 투명도는
     /// 30Hz면 충분하다. 카메라·벽 목록·활성 상태가 그대로면 계산 자체를 생략한다.
     private let minimumEvaluationInterval: TimeInterval = 1.0 / 30.0
@@ -1501,6 +1512,10 @@ final class WallFacingUpdater: NSObject, SCNSceneRendererDelegate {
     }
 
     func renderer(_ renderer: SCNSceneRenderer, updateAtTime time: TimeInterval) {
+        if !didEmitFirstFrameSignpost {
+            didEmitFirstFrameSignpost = true
+            PerformanceSignposts.editor.emitEvent("editor.firstFrame")
+        }
         guard let pointOfView = renderer.pointOfView else { return }
         let cameraPosition = pointOfView.presentation.simdWorldPosition
         let cameraXZ = SIMD2<Float>(cameraPosition.x, cameraPosition.z)
