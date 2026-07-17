@@ -82,29 +82,34 @@ nonisolated struct MultipartFormData {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
             throw CocoaError(.fileWriteUnknown)
         }
-        let handle = try FileHandle(forWritingTo: url)
-        defer { try? handle.close() }
+        do {
+            let handle = try FileHandle(forWritingTo: url)
+            defer { try? handle.close() }
 
-        func write(_ string: String) throws {
-            try handle.write(contentsOf: Data(string.utf8))
-        }
-
-        for part in parts {
-            try write("--\(boundary)\r\n")
-            try write(partHeader(for: part))
-            switch part.source {
-            case let .data(data):
-                try handle.write(contentsOf: data)
-            case let .file(fileURL):
-                let reader = try FileHandle(forReadingFrom: fileURL)
-                defer { try? reader.close() }
-                while let chunk = try reader.read(upToCount: 1_048_576), !chunk.isEmpty {
-                    try handle.write(contentsOf: chunk)
-                }
+            func write(_ string: String) throws {
+                try handle.write(contentsOf: Data(string.utf8))
             }
-            try write("\r\n")
+
+            for part in parts {
+                try write("--\(boundary)\r\n")
+                try write(partHeader(for: part))
+                switch part.source {
+                case let .data(data):
+                    try handle.write(contentsOf: data)
+                case let .file(fileURL):
+                    let reader = try FileHandle(forReadingFrom: fileURL)
+                    defer { try? reader.close() }
+                    while let chunk = try reader.read(upToCount: 1_048_576), !chunk.isEmpty {
+                        try handle.write(contentsOf: chunk)
+                    }
+                }
+                try write("\r\n")
+            }
+            try write("--\(boundary)--\r\n")
+            return url
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            throw error
         }
-        try write("--\(boundary)--\r\n")
-        return url
     }
 }

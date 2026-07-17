@@ -70,7 +70,7 @@ struct UserFurniture: Codable, Identifiable, Equatable {
 @MainActor
 final class UserFurnitureStore: ObservableObject {
     typealias FurnitureUploader = (
-        _ glbData: Data,
+        _ glbFileURL: URL,
         _ fileName: String,
         _ metadata: FurnitureCreateMetadata
     ) async throws -> FurnitureCreateResponse
@@ -124,7 +124,6 @@ final class UserFurnitureStore: ObservableObject {
 
         let accessed = sourceModelURL.startAccessingSecurityScopedResource()
         defer { if accessed { sourceModelURL.stopAccessingSecurityScopedResource() } }
-        let glbData = try Data(contentsOf: sourceModelURL)
         let dimensions = UserFurnitureMetricDimensions.meters(
             width: width,
             height: height,
@@ -144,7 +143,7 @@ final class UserFurnitureStore: ObservableObject {
         let response: FurnitureCreateResponse
         do {
             response = try await FurnitureService().createUserFurniture(
-                glbData: glbData,
+                modelFileURL: sourceModelURL,
                 fileName: sourceModelURL.lastPathComponent.isEmpty ? "furniture.glb" : sourceModelURL.lastPathComponent,
                 metadata: metadata
             )
@@ -207,9 +206,9 @@ final class UserFurnitureStore: ObservableObject {
 
         // 이전에 서버가 404를 반환해 기기에만 저장했던 GLB를 먼저 업로드한다.
         // 업로드가 성공하면 서버가 발급한 id/modelUrl로 로컬 항목을 교체한다.
-        _ = await synchronizePendingFurniture { data, fileName, metadata in
+        _ = await synchronizePendingFurniture { fileURL, fileName, metadata in
             try await FurnitureService().createUserFurniture(
-                glbData: data,
+                modelFileURL: fileURL,
                 fileName: fileName,
                 metadata: metadata
             )
@@ -241,11 +240,12 @@ final class UserFurnitureStore: ObservableObject {
             )
             if Self.modelURL(for: remote.id, storageDirectory: storageDirectory) == nil,
                let modelPath = remote.modelUrl,
-               let data = try? await FurnitureService().downloadModel(path: modelPath) {
+               let temporaryURL = try? await FurnitureService().downloadModel(path: modelPath) {
+                defer { try? FileManager.default.removeItem(at: temporaryURL) }
                 try? FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
-                try? data.write(
-                    to: storageDirectory.appendingPathComponent(remote.id).appendingPathExtension("glb"),
-                    options: .atomic
+                try? FileManager.default.moveItem(
+                    at: temporaryURL,
+                    to: storageDirectory.appendingPathComponent(remote.id).appendingPathExtension("glb")
                 )
             }
             synchronized.append(furniture)
@@ -274,9 +274,8 @@ final class UserFurnitureStore: ObservableObject {
             }
 
             do {
-                let glbData = try Data(contentsOf: sourceURL)
                 let response = try await uploader(
-                    glbData,
+                    sourceURL,
                     sourceURL.lastPathComponent,
                     Self.createMetadata(for: furniture)
                 )

@@ -1110,8 +1110,9 @@ struct UserFurnitureStoreTests {
             .appendingPathComponent(local.modelFileName)
             .appendingPathExtension("glb")
 
-        let count = await store.synchronizePendingFurniture { data, fileName, metadata in
-            #expect(data == glbData)
+        let count = await store.synchronizePendingFurniture { fileURL, fileName, metadata in
+            #expect(fileURL.standardizedFileURL == oldModelURL.standardizedFileURL)
+            #expect((try? Data(contentsOf: fileURL)) == glbData)
             #expect(fileName == "\(local.id).glb")
             #expect(metadata.nameKr == "나의 협탁")
             #expect(metadata.name == "side table")
@@ -1242,6 +1243,10 @@ struct BackendContractTests {
     }
 
     @Test func springFurnitureMultipartUsesFileAndJSONParts() throws {
+        let modelURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("multipart-contract-\(UUID().uuidString).glb")
+        defer { try? FileManager.default.removeItem(at: modelURL) }
+        try Data("glTF".utf8).write(to: modelURL)
         let metadata = FurnitureCreateMetadata(
             nameKr: "의자",
             name: "chair",
@@ -1250,11 +1255,16 @@ struct BackendContractTests {
             dimensions: .init(x: 0.5, y: 0.8, z: 0.5)
         )
         let metadataData = try JSONEncoder.spatiumAPI.encode(metadata)
-        let form = MultipartFormData(parts: [
-            .init(name: "file", data: Data("glTF".utf8), fileName: "chair.glb", contentType: "model/gltf-binary"),
-            .init(name: "metadata", data: metadataData, contentType: "application/json")
-        ], boundary: "contract-test")
-        let body = try #require(String(data: form.body, encoding: .utf8))
+        let bodyURL = try MultipartFormData.writeBodyFile(
+            parts: [
+                .init(name: "file", fileURL: modelURL, fileName: "chair.glb", contentType: "model/gltf-binary"),
+                .init(name: "metadata", data: metadataData, contentType: "application/json")
+            ],
+            boundary: "contract-test"
+        )
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+        let bodyData = try Data(contentsOf: bodyURL)
+        let body = try #require(String(data: bodyData, encoding: .utf8))
 
         #expect(body.contains("name=\"file\"; filename=\"chair.glb\""))
         #expect(body.contains("Content-Type: model/gltf-binary"))

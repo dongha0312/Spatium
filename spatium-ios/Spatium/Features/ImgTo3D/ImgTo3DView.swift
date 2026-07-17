@@ -666,6 +666,7 @@ struct ImgTo3DView: View {
                 textureResolution: textureResolution,
                 remesh: remesh
             )
+            defer { try? FileManager.default.removeItem(at: result.temporaryModelURL) }
             try Task.checkCancellation()
             let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
                 .appendingPathComponent("Spatium/GeneratedModels", isDirectory: true)
@@ -673,7 +674,14 @@ struct ImgTo3DView: View {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             let safeName = URL(fileURLWithPath: result.fileName).lastPathComponent
             let modelURL = directory.appendingPathComponent(safeName.isEmpty ? "\(result.id).glb" : safeName)
-            try result.modelData.write(to: modelURL, options: .atomic)
+            if FileManager.default.fileExists(atPath: modelURL.path) {
+                _ = try FileManager.default.replaceItemAt(
+                    modelURL,
+                    withItemAt: result.temporaryModelURL
+                )
+            } else {
+                try FileManager.default.moveItem(at: result.temporaryModelURL, to: modelURL)
+            }
             importedModelURL = modelURL
             importedModelName = modelURL.lastPathComponent
             generationProgress = 100
