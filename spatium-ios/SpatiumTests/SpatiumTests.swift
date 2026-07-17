@@ -1211,6 +1211,49 @@ private final class DiskOperationThreadRecorder: @unchecked Sendable {
 }
 
 @MainActor
+struct RoomSceneModelDiskStoreTests {
+    @Test func roomSceneBase64DecodingAndWritingRunOutsideMainThread() async throws {
+        let testDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-room-scene-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: testDirectory) }
+
+        let expectedData = Data((0..<4_096).map { UInt8($0 % 251) })
+        let recorder = DiskOperationThreadRecorder()
+        let store = RoomSceneModelDiskStore(
+            directoryURL: testDirectory,
+            operationObserver: { recorder.record(isMainThread: $0) }
+        )
+
+        let optionalURL = try await store.materialize(
+            base64: expectedData.base64EncodedString(),
+            roomID: "room/test"
+        )
+        let fileURL = try #require(optionalURL)
+        let observedThreads = recorder.recordedMainThreadValues
+
+        #expect(fileURL.lastPathComponent == "scene-room_test.usdz")
+        #expect(try Data(contentsOf: fileURL) == expectedData)
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func invalidRoomSceneBase64DoesNotCreateACacheFile() async throws {
+        let testDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-invalid-room-scene-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: testDirectory) }
+
+        let store = RoomSceneModelDiskStore(directoryURL: testDirectory)
+        let fileURL = try await store.materialize(
+            base64: "not-valid-base64!",
+            roomID: "room-invalid"
+        )
+
+        #expect(fileURL == nil)
+        #expect(!FileManager.default.fileExists(atPath: testDirectory.path))
+    }
+}
+
+@MainActor
 struct UserFurnitureStoreTests {
     @Test func initialCatalogReadDecodingMigrationAndSortingRunOutsideMainThread() async throws {
         let directory = FileManager.default.temporaryDirectory

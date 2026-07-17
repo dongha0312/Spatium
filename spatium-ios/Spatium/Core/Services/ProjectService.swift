@@ -30,6 +30,52 @@ private struct CreateProjectRequest: Encodable {
     var projectName: String
 }
 
+/// 서버가 base64로 내려준 USDZ를 메인 스레드 밖에서 캐시 파일로 복원한다.
+/// 직렬 큐를 사용해 같은 방을 동시에 열더라도 atomic 교체 작업이 서로 겹치지 않게 한다.
+nonisolated final class RoomSceneModelDiskStore: @unchecked Sendable {
+    private let directoryURL: URL
+    private let operationObserver: (@Sendable (Bool) -> Void)?
+    private let queue = DispatchQueue(
+        label: "com.spatium.room-scene-model-disk-store",
+        qos: .utility
+    )
+
+    init(
+        directoryURL: URL? = nil,
+        operationObserver: (@Sendable (Bool) -> Void)? = nil
+    ) {
+        self.directoryURL = directoryURL ?? FileManager.default
+            .urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("RoomScenes", isDirectory: true)
+        self.operationObserver = operationObserver
+    }
+
+    func materialize(base64: String?, roomID: String) async throws -> URL? {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                do {
+                    operationObserver?(Thread.isMainThread)
+                    guard let base64, let bytes = Data(base64Encoded: base64) else {
+                        continuation.resume(returning: nil)
+                        return
+                    }
+
+                    try FileManager.default.createDirectory(
+                        at: directoryURL,
+                        withIntermediateDirectories: true
+                    )
+                    let safeID = roomID.replacingOccurrences(of: "/", with: "_")
+                    let fileURL = directoryURL.appendingPathComponent("scene-\(safeID).usdz")
+                    try bytes.write(to: fileURL, options: .atomic)
+                    continuation.resume(returning: fileURL)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+}
+
 // GET /api/projects/{id}/rooms → PageResponseDTO<ResponseRoomSummaryDTO>
 private struct RoomSummaryItem: Decodable {
     var roomId: String
@@ -47,6 +93,7 @@ private struct CreateRoomResponseData: Decodable {
 
 struct ProjectService {
     private let client = SpatiumAPIClient.shared
+    nonisolated private static let roomSceneModelDiskStore = RoomSceneModelDiskStore()
 
     // MARK: - 프로젝트
 
@@ -227,25 +274,16 @@ struct ProjectService {
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
 
         let items = data.metadata?.items() ?? []
-        let usdzURL = try Self.writeSceneModel(base64: data.model?.dataBase64, roomID: roomID)
+        let usdzURL = try await Self.roomSceneModelDiskStore.materialize(
+            base64: data.model?.dataBase64,
+            roomID: roomID
+        )
         return RoomSceneResult(
             roomName: data.roomName,
             items: items,
             usdzURL: usdzURL,
             floorColor: data.metadata?.floorColor
         )
-    }
-
-    /// base64 usdz를 캐시에 파일로 복원해 편집기 메시로 쓸 수 있게 합니다.
-    private static func writeSceneModel(base64: String?, roomID: String) throws -> URL? {
-        guard let base64, let bytes = Data(base64Encoded: base64) else { return nil }
-        let safeID = roomID.replacingOccurrences(of: "/", with: "_")
-        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("RoomScenes", isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent("scene-\(safeID).usdz")
-        try bytes.write(to: url, options: .atomic)
-        return url
     }
 
     // MARK: - Multipart 전송 공통
