@@ -147,7 +147,9 @@ struct RoomEditorView: View {
                     isSaving: viewModel.isSaving,
                     onDiscard: discardAndClose,
                     onSave: saveEditor,
-                    onRetryDraftSave: viewModel.retryDraftSave
+                    onRetryDraftSave: {
+                        Task { await viewModel.retryDraftSave() }
+                    }
                 )
             }
         }
@@ -160,7 +162,7 @@ struct RoomEditorView: View {
         .task { await viewModel.loadLayout() }
         .onDisappear {
             placementNoticeTask?.cancel()
-            viewModel.persistDraftImmediately()
+            Task { await viewModel.persistDraftImmediately() }
         }
         .onChange(of: viewModel.viewMode) { _, viewMode in
             if viewMode == .person {
@@ -246,8 +248,10 @@ struct RoomEditorView: View {
                 confirmTitle: "이동하기",
                 confirmSystemImage: "arrow.right",
                 onConfirm: {
-                    viewModel.discardCurrentDraft()
-                    onSelectRoom?(room)
+                    Task {
+                        await viewModel.discardCurrentDraft()
+                        onSelectRoom?(room)
+                    }
                 }
             )
         }
@@ -257,7 +261,7 @@ struct RoomEditorView: View {
                 get: { viewModel.hasRecoverableDraft },
                 set: { isPresented in
                     if !isPresented, viewModel.hasRecoverableDraft {
-                        viewModel.discardRecoverableDraft()
+                        Task { await viewModel.discardRecoverableDraft() }
                     }
                 }
             )
@@ -266,7 +270,7 @@ struct RoomEditorView: View {
                 viewModel.restoreRecoverableDraft()
             }
             Button("새로 시작", role: .destructive) {
-                viewModel.discardRecoverableDraft()
+                Task { await viewModel.discardRecoverableDraft() }
             }
         } message: {
             Text("이 기기에 자동으로 저장된 편집 내용이 있습니다. 복구하면 마지막 작업 상태부터 이어갈 수 있어요.")
@@ -274,14 +278,18 @@ struct RoomEditorView: View {
         .alert("임시 저장에 실패했어요", isPresented: $showDraftSaveExitWarning) {
             Button("다시 시도") {
                 Haptics.selection()
-                viewModel.retryDraftSave()
-                if viewModel.draftSaveState.failureMessage == nil {
-                    dismiss()
+                Task {
+                    await viewModel.retryDraftSave()
+                    if viewModel.draftSaveState.failureMessage == nil {
+                        dismiss()
+                    }
                 }
             }
             Button("저장하지 않고 나가기", role: .destructive) {
-                viewModel.discardCurrentDraft()
-                dismiss()
+                Task {
+                    await viewModel.discardCurrentDraft()
+                    dismiss()
+                }
             }
             Button("계속 편집", role: .cancel) {}
         } message: {
@@ -326,13 +334,17 @@ struct RoomEditorView: View {
                     systemImage: "arrow.uturn.backward",
                     accessibilityLabel: "실행 취소",
                     isEnabled: viewModel.canUndo,
-                    action: viewModel.undo
+                    action: {
+                        Task { await viewModel.undo() }
+                    }
                 )
                 historyButton(
                     systemImage: "arrow.uturn.forward",
                     accessibilityLabel: "다시 실행",
                     isEnabled: viewModel.canRedo,
-                    action: viewModel.redo
+                    action: {
+                        Task { await viewModel.redo() }
+                    }
                 )
             }
         }
@@ -350,18 +362,22 @@ struct RoomEditorView: View {
     }
 
     private func closeEditor() {
-        // 화면이 사라진 뒤가 아니라 닫기 전에 즉시 쓰기를 완료해야 실패 안내를 보여줄 수 있다.
-        viewModel.persistDraftImmediately()
-        if viewModel.hasUnsavedChanges, viewModel.draftSaveState.failureMessage != nil {
-            showDraftSaveExitWarning = true
-        } else {
-            dismiss()
+        Task {
+            // 화면이 사라진 뒤가 아니라 닫기 전에 쓰기를 완료해야 실패 안내를 보여줄 수 있다.
+            await viewModel.persistDraftImmediately()
+            if viewModel.hasUnsavedChanges, viewModel.draftSaveState.failureMessage != nil {
+                showDraftSaveExitWarning = true
+            } else {
+                dismiss()
+            }
         }
     }
 
     private func discardAndClose() {
-        viewModel.discardCurrentDraft()
-        dismiss()
+        Task {
+            await viewModel.discardCurrentDraft()
+            dismiss()
+        }
     }
 
     private func saveEditor() {

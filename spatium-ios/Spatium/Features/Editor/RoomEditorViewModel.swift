@@ -106,24 +106,18 @@ final class RoomEditorViewModel: ObservableObject {
         var isMovingSelectedFurniture: Bool
     }
 
-    struct EditorDraft: Codable {
-        static let currentVersion = 1
-
-        var version: Int
-        var savedAt: Date
-        var layout: RoomLayout
-    }
-
     static let historyLimit = 30
     static let draftSaveFailureMessage = "이 기기에 임시 저장하지 못했어요. 저장 공간을 확인한 후 다시 시도해 주세요."
     var undoHistory: [EditorSnapshot] = []
     var redoHistory: [EditorSnapshot] = []
     var historyTransactionStart: EditorSnapshot?
-    var savedLayoutFingerprint = Data()
+    var savedLayout: RoomLayout
     var pendingRecoverableDraft: EditorDraft?
     var draftSaveTask: Task<Void, Never>?
     let draftDirectoryURL: URL
+    let draftDiskStore: RoomEditorDraftDiskStore
     var draftFileName: String
+    var draftOperationRevision: UInt64 = 0
 
     var selectedFurniture: PlacedFurniture? {
         guard let selectedItemID else { return nil }
@@ -138,21 +132,27 @@ final class RoomEditorViewModel: ObservableObject {
         room: RoomRecord,
         projectID: String? = nil,
         projectName: String? = nil,
-        draftDirectoryURL: URL? = nil
+        draftDirectoryURL: URL? = nil,
+        draftOperationObserver: (@Sendable (Bool) -> Void)? = nil
     ) {
         self.roomID = room.id
         self.projectID = projectID
         self.projectName = projectName
         self.usdzURL = nil
         self.loadsRemoteLayout = true
-        self.draftDirectoryURL = draftDirectoryURL ?? Self.defaultDraftDirectoryURL()
+        let draftDirectoryURL = draftDirectoryURL ?? Self.defaultDraftDirectoryURL()
+        self.draftDirectoryURL = draftDirectoryURL
+        self.draftDiskStore = RoomEditorDraftDiskStore(
+            directoryURL: draftDirectoryURL,
+            operationObserver: draftOperationObserver
+        )
         Self.clearDraftDirectoryForUITestingIfRequested(self.draftDirectoryURL)
         self.draftFileName = Self.makeDraftFileName(
             projectID: projectID,
             roomID: room.id,
             roomName: room.roomType
         )
-        self.layout = RoomLayout(
+        let initialLayout = RoomLayout(
             roomId: room.id,
             roomName: room.roomType,
             viewMode: .threeD,
@@ -165,7 +165,8 @@ final class RoomEditorViewModel: ObservableObject {
             ),
             furnitures: []
         )
-        self.savedLayoutFingerprint = Self.layoutFingerprint(self.layout)
+        self.layout = initialLayout
+        self.savedLayout = initialLayout
     }
 
     /// 스캔 결과로 바로 여는 3D 에디터. 실제 스캔 메시(usdzURL) 위에
@@ -180,14 +181,20 @@ final class RoomEditorViewModel: ObservableObject {
         roomID: String? = nil,
         projectID: String? = nil,
         projectName: String? = nil,
-        draftDirectoryURL: URL? = nil
+        draftDirectoryURL: URL? = nil,
+        draftOperationObserver: (@Sendable (Bool) -> Void)? = nil
     ) {
         self.roomID = roomID ?? "local-scan"
         self.projectID = projectID
         self.projectName = projectName
         self.usdzURL = usdzURL
         self.loadsRemoteLayout = false
-        self.draftDirectoryURL = draftDirectoryURL ?? Self.defaultDraftDirectoryURL()
+        let draftDirectoryURL = draftDirectoryURL ?? Self.defaultDraftDirectoryURL()
+        self.draftDirectoryURL = draftDirectoryURL
+        self.draftDiskStore = RoomEditorDraftDiskStore(
+            directoryURL: draftDirectoryURL,
+            operationObserver: draftOperationObserver
+        )
         Self.clearDraftDirectoryForUITestingIfRequested(self.draftDirectoryURL)
         self.draftFileName = Self.makeDraftFileName(
             projectID: projectID,
@@ -196,7 +203,7 @@ final class RoomEditorViewModel: ObservableObject {
         )
         // 서버 룸(projectID 있음)을 씬으로 열면 온라인 저장이 가능하므로 오프라인 표시하지 않는다.
         self.isOffline = (projectID == nil)
-        self.layout = RoomLayout(
+        var initialLayout = RoomLayout(
             roomId: roomID ?? "local-scan",
             roomName: roomName,
             viewMode: .threeD,
@@ -212,7 +219,7 @@ final class RoomEditorViewModel: ObservableObject {
         )
         // 문/창문도 모델이 있으므로 별도 렌더 대상으로 올립니다. 개구부는 열린 공간이라 제외합니다.
         var nextID = -1
-        self.layout.furnitures = scanItems.filter { $0.sourceType != "개구부" }.map { item in
+        initialLayout.furnitures = scanItems.filter { $0.sourceType != "개구부" }.map { item in
             defer { nextID -= 1 }
             let category = item.detectedCategory.isEmpty ? item.sourceType : item.detectedCategory
             return PlacedFurniture(
@@ -230,17 +237,18 @@ final class RoomEditorViewModel: ObservableObject {
                 decorations: item.decorations
             )
         }
+        self.layout = initialLayout
+        self.savedLayout = initialLayout
         self.nextLocalItemID = nextID
         // 저장된 피규어 decorId와 새로 올릴 피규어 id가 겹치지 않게 이어서 발급한다.
-        self.nextDecorID = (self.layout.furnitures
+        self.nextDecorID = (initialLayout.furnitures
             .compactMap { $0.decorations?.map(\.decorId).max() }
             .max() ?? 0) + 1
         // 감지된 가구들의 바닥면(= 스캔 바닥 높이)을 새 가구 배치 기준으로 삼습니다.
         // 씬이 방 메시에서 실제 바닥을 찾으면 adoptFloorY로 이 값을 교정합니다.
         // (가구를 모두 띄워 저장한 방에서 띄운 높이가 새 바닥으로 굳는 것 방지)
         // 벽 밀착/충돌은 씬(RoomEditorSceneView)의 벽 시스템이 렌더·드래그 모두에서 일관되게 처리합니다.
-        self.floorY = self.layout.furnitures.map { $0.position.y }.min() ?? 0
-        self.savedLayoutFingerprint = Self.layoutFingerprint(self.layout)
+        self.floorY = initialLayout.furnitures.map { $0.position.y }.min() ?? 0
 
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("-UITestMeasure") {
@@ -259,7 +267,7 @@ final class RoomEditorViewModel: ObservableObject {
         // 스캔에서 바로 연 편집기는 실제 스캔 메시 + 감지 가구로 이미 구성돼 있으니 서버 조회를 건너뜁니다.
         guard loadsRemoteLayout else {
             sceneRevision += 1
-            inspectRecoverableDraft()
+            await inspectRecoverableDraft()
             return
         }
         // 백엔드에는 별도 레이아웃 조회 API가 없다. 서버 룸의 실제 배치는 scene(metadata)
@@ -269,7 +277,7 @@ final class RoomEditorViewModel: ObservableObject {
         isOffline = true
         statusMessage = "방 데이터를 불러오지 못해 이 기기에서만 편집합니다."
         sceneRevision += 1
-        inspectRecoverableDraft()
+        await inspectRecoverableDraft()
     }
 
     /// 벽 색상 변경(4종 팝오버). 씬을 다시 지어 벽/배경에 반영합니다.
@@ -391,9 +399,9 @@ final class RoomEditorViewModel: ObservableObject {
                     roomID: created.id,
                     roomName: layout.roomName
                 )
-                try? FileManager.default.removeItem(at: localDraftURL)
+                await removeDraftFile(at: localDraftURL, updatesState: false)
                 isOffline = false
-                markCurrentLayoutSaved()
+                await markCurrentLayoutSaved()
                 statusMessage = "스캔이 업로드되어 저장되었습니다."
                 onServerRoomCreated?(created)
                 return
@@ -408,7 +416,7 @@ final class RoomEditorViewModel: ObservableObject {
             // 서버 메타데이터가 바뀌었으므로 로컬 스캔 캐시를 비워, 방 목록의 항목 수와
             // 다음 렌더가 최신 편집 상태를 반영하게 한다.
             RoomScanAssetService().invalidateCache(forRoomID: roomID)
-            markCurrentLayoutSaved()
+            await markCurrentLayoutSaved()
             statusMessage = "저장되었습니다."
         } catch {
             statusMessage = "저장 실패: \(error.localizedDescription)"

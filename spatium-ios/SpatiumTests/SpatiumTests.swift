@@ -221,7 +221,7 @@ struct SpatiumTests {
         #expect(abs(levels[2].height - 1.37) < 0.02)
     }
 
-    @Test func replacingDecorKeepsItsSupportPointRotationAndIdentity() throws {
+    @Test func replacingDecorKeepsItsSupportPointRotationAndIdentity() async throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: draftDirectory) }
@@ -281,10 +281,10 @@ struct SpatiumTests {
         )
         #expect(abs(constrained.x) < bookcase.width / 2)
         #expect(abs(constrained.z) < bookcase.depth / 2)
-        viewModel.discardCurrentDraft()
+        await viewModel.discardCurrentDraft()
     }
 
-    @Test func decorAccessibilityControlsPlaceMoveAndDescribeFigure() throws {
+    @Test func decorAccessibilityControlsPlaceMoveAndDescribeFigure() async throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: draftDirectory) }
@@ -336,10 +336,10 @@ struct SpatiumTests {
         viewModel.moveSelectedDecor(to: topShelf)
         #expect(viewModel.selectedDecoration?.position.y == topShelf.height)
         #expect(viewModel.selectedDecorAccessibilitySummary.contains("위 선반"))
-        viewModel.discardCurrentDraft()
+        await viewModel.discardCurrentDraft()
     }
 
-    @Test func decorRejectsNonFigureItemsAndPersonViewRejectsFurniturePlacement() throws {
+    @Test func decorRejectsNonFigureItemsAndPersonViewRejectsFurniturePlacement() async throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: draftDirectory) }
@@ -384,10 +384,10 @@ struct SpatiumTests {
         viewModel.place(catalogItem: chair)
         #expect(viewModel.layout.furnitures.count == furnitureCount)
         #expect(viewModel.statusMessage == "1인칭 시점에서는 가구를 추가할 수 없어요")
-        viewModel.discardCurrentDraft()
+        await viewModel.discardCurrentDraft()
     }
 
-    @Test func editorHistoryCoalescesSliderGestureAndSupportsRedo() throws {
+    @Test func editorHistoryCoalescesSliderGestureAndSupportsRedo() async throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: draftDirectory) }
@@ -409,13 +409,13 @@ struct SpatiumTests {
         viewModel.endHistoryTransaction()
 
         #expect(viewModel.selectedRotationDegrees == 40)
-        viewModel.undo()
+        await viewModel.undo()
         #expect(viewModel.layout.furnitures.count == 1)
         #expect(viewModel.selectedRotationDegrees == 0)
 
-        viewModel.redo()
+        await viewModel.redo()
         #expect(viewModel.selectedRotationDegrees == 40)
-        viewModel.discardCurrentDraft()
+        await viewModel.discardCurrentDraft()
     }
 
     @Test func editorDraftPersistsAndRestoresLatestLayout() async throws {
@@ -433,7 +433,7 @@ struct SpatiumTests {
         )
         let chair = try #require(FurnitureCatalog.items.first)
         original.place(catalogItem: chair)
-        original.persistDraftImmediately()
+        await original.persistDraftImmediately()
         #expect(original.draftSavedAt != nil)
 
         let reopened = RoomEditorViewModel(
@@ -450,10 +450,83 @@ struct SpatiumTests {
         reopened.restoreRecoverableDraft()
         #expect(reopened.layout.furnitures.count == 1)
         #expect(reopened.hasUnsavedChanges)
-        reopened.discardCurrentDraft()
+        await reopened.discardCurrentDraft()
     }
 
-    @Test func editorDraftSaveFailureIsVisibleAndCanBeRetried() throws {
+    @Test func editorDraftReadEncodingWritingAndRemovalRunOutsideMainThread() async throws {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let recorder = DiskOperationThreadRecorder()
+        let original = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "복구본 스레드 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory,
+            draftOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+        let chair = try #require(FurnitureCatalog.items.first)
+        original.place(catalogItem: chair)
+        await original.persistDraftImmediately()
+
+        let reopened = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "복구본 스레드 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory,
+            draftOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+        await reopened.loadLayout()
+        #expect(reopened.hasRecoverableDraft)
+        await reopened.discardCurrentDraft()
+
+        let observedThreads = recorder.recordedMainThreadValues
+        #expect(observedThreads.count >= 3)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func newerDraftRemovalRejectsAnOlderDelayedWrite() async throws {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let diskStore = RoomEditorDraftDiskStore(directoryURL: draftDirectory)
+        let draftFileURL = draftDirectory.appendingPathComponent("revision-order.json")
+        let olderWriteRevision = diskStore.reserveRevision()
+        let newerRemovalRevision = diskStore.reserveRevision()
+        let draft = EditorDraft(
+            version: EditorDraft.currentVersion,
+            savedAt: Date(),
+            layout: RoomLayout(
+                roomId: "revision-order",
+                roomName: "복구본 순서 테스트",
+                viewMode: .threeD,
+                space: nil,
+                furnitures: []
+            )
+        )
+
+        let removed = await diskStore.remove(
+            at: draftFileURL,
+            revision: newerRemovalRevision
+        )
+        let staleWriteApplied = try await diskStore.write(
+            draft,
+            to: draftFileURL,
+            revision: olderWriteRevision
+        )
+
+        #expect(removed)
+        #expect(!staleWriteApplied)
+        #expect(!FileManager.default.fileExists(atPath: draftFileURL.path))
+    }
+
+    @Test func editorDraftSaveFailureIsVisibleAndCanBeRetried() async throws {
         let testRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let blockedDraftDirectory = testRoot.appendingPathComponent("not-a-directory")
@@ -471,7 +544,7 @@ struct SpatiumTests {
         )
         let chair = try #require(FurnitureCatalog.items.first)
         viewModel.place(catalogItem: chair)
-        viewModel.persistDraftImmediately()
+        await viewModel.persistDraftImmediately()
 
         #expect(viewModel.hasUnsavedChanges)
         #expect(
@@ -480,11 +553,11 @@ struct SpatiumTests {
         )
 
         try FileManager.default.removeItem(at: blockedDraftDirectory)
-        viewModel.retryDraftSave()
+        await viewModel.retryDraftSave()
 
         #expect(viewModel.draftSavedAt != nil)
         #expect(viewModel.draftSaveState.failureMessage == nil)
-        viewModel.discardCurrentDraft()
+        await viewModel.discardCurrentDraft()
     }
 
     @Test func otherRoomTwoIncludesBundledUserGeneratedFurniture() throws {

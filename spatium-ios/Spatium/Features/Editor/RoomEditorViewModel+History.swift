@@ -22,29 +22,29 @@ extension RoomEditorViewModel {
     func endHistoryTransaction() {
         guard let start = historyTransactionStart else { return }
         historyTransactionStart = nil
-        guard Self.layoutFingerprint(start.layout) != Self.layoutFingerprint(layout) else { return }
+        guard start.layout != layout else { return }
         appendUndoSnapshot(start)
     }
 
-    func undo() {
+    func undo() async {
         endHistoryTransaction()
         guard let previous = undoHistory.popLast() else { return }
         redoHistory.append(currentSnapshot)
         if redoHistory.count > Self.historyLimit {
             redoHistory.removeFirst(redoHistory.count - Self.historyLimit)
         }
-        applyHistorySnapshot(previous, message: "이전 편집으로 되돌렸어요.")
+        await applyHistorySnapshot(previous, message: "이전 편집으로 되돌렸어요.")
         updateHistoryAvailability()
     }
 
-    func redo() {
+    func redo() async {
         endHistoryTransaction()
         guard let next = redoHistory.popLast() else { return }
         undoHistory.append(currentSnapshot)
         if undoHistory.count > Self.historyLimit {
             undoHistory.removeFirst(undoHistory.count - Self.historyLimit)
         }
-        applyHistorySnapshot(next, message: "편집을 다시 적용했어요.")
+        await applyHistorySnapshot(next, message: "편집을 다시 적용했어요.")
         updateHistoryAvailability()
     }
 
@@ -62,7 +62,7 @@ extension RoomEditorViewModel {
         updateHistoryAvailability()
     }
 
-    private func applyHistorySnapshot(_ snapshot: EditorSnapshot, message: String) {
+    private func applyHistorySnapshot(_ snapshot: EditorSnapshot, message: String) async {
         layout = snapshot.layout
         selectedItemID = snapshot.selectedItemID.flatMap { id in
             layout.furnitures.contains(where: { $0.itemId == id }) ? id : nil
@@ -77,7 +77,7 @@ extension RoomEditorViewModel {
         pendingWallResolveItemID = nil
         rebuildLocalIdentifiers()
         sceneRevision += 1
-        refreshUnsavedState()
+        await refreshUnsavedState()
         statusMessage = message
     }
 

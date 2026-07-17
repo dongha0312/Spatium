@@ -8,7 +8,7 @@ struct UserFurnitureMetricDimensions: Equatable, Sendable {
 
     /// 현재 계약은 m단위지만 예전 저장분에는 cm/mm 숫자가 그대로 남아 있을 수 있다.
     /// 일반 가구의 최대 축이 10m를 넘으면 단위가 다른 레거시 데이터로 판단한다.
-    static func meters(width: Double, height: Double, depth: Double) -> Self {
+    nonisolated static func meters(width: Double, height: Double, depth: Double) -> Self {
         let source = [width, height, depth].map { value in
             value.isFinite && value > 0 ? value : 0.04
         }
