@@ -87,6 +87,10 @@ extension RoomEditorSceneView.Coordinator {
             controller.automaticTarget = false
             controller.inertiaEnabled = true
         }
+        if viewModel.isMeasuring {
+            // 3D와 스카이뷰는 치수선 구성이 다르므로 모드 전환 때만 다시 만든다.
+            rebuildMeasurementNodes()
+        }
     }
 
     // MARK: - 사람 뷰 조작 (시선 / 걷기 / 충돌)

@@ -62,6 +62,9 @@ extension RoomEditorSceneView.Coordinator {
                     .flatMap { WallCollider(node: $0, roomCenter: roomCenter) }
             }
         applySelection(itemID: viewModel.selectedItemID)
+        if viewModel.isMeasuring {
+            rebuildMeasurementNodes()
+        }
         refreshViewFacingTransparencyTargets()
     }
 

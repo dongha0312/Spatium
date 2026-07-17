@@ -160,6 +160,14 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
         weak var sceneView: SCNView?
         var movePanGesture: UIPanGestureRecognizer?
+        /// SwiftUI의 넓은 ObservableObject 갱신이 들어와도 같은 선택 노드의
+        /// 하이라이트 geometry를 매번 지웠다가 만들지 않도록 현재 대상을 기억한다.
+        weak var highlightedFurnitureNode: SCNNode?
+        var renderedSelectedItemID: Int?
+        /// 측정 모드에서 드래그 이벤트가 120Hz로 들어와도 치수 노드는 60Hz까지만
+        /// 다시 만든다. 제스처 종료 시에는 마지막 위치를 강제로 한 번 반영한다.
+        var lastInteractiveMeasurementRefreshTime: CFTimeInterval = 0
+        let interactiveMeasurementRefreshInterval: CFTimeInterval = 1.0 / 60.0
         /// 드래그 시작 시 "손가락이 짚은 바닥 지점 → 가구 중심" 오프셋.
         /// 이걸 유지해야 가구의 잡은 부분이 손가락에 붙어 따라온다. (없으면 중심이 손가락으로 점프)
         var dragGrabOffset = SIMD2<Float>(0, 0)
@@ -518,10 +526,18 @@ struct RoomEditorSceneView: UIViewRepresentable {
             guard let selectedID,
                   let item = layout.furnitures.first(where: { $0.itemId == selectedID }),
                   let node = furnitureContainer.childNode(withName: "furniture-\(selectedID)", recursively: false) else { return }
-            node.eulerAngles.y = Float(item.rotation.y)
+            let rotationY = Float(item.rotation.y)
+            let positionY = Float(item.position.y)
+            let didChange = abs(node.eulerAngles.y - rotationY) > 0.0001
+                || abs(node.position.y - positionY) > 0.0001
+            guard didChange else { return }
+            node.eulerAngles.y = rotationY
             // 높이(수직) 슬라이더 값을 바로 반영. x/z는 드래그가 관리하므로 y만 맞춘다.
-            node.position.y = Float(item.position.y)
+            node.position.y = positionY
             syncDecorContainer(forItemID: selectedID)
+            if viewModel.isMeasuring {
+                rebuildMeasurementNodes()
+            }
         }
 
         /// 크기 슬라이더 값을 리빌드 없이 반영한다. 노드 생성 시점의 (치수, 스케일)을 기준으로
@@ -547,15 +563,24 @@ struct RoomEditorSceneView: UIViewRepresentable {
         }
 
         func applySelection(itemID: Int?) {
-            for node in furnitureContainer.childNodes {
-                removeSelectionHighlight(from: node)
-                // itemID가 nil일 때 이름 없는 노드(피규어 컨테이너 등)의 nil과 겹쳐
-                // 하이라이트가 붙지 않도록 선택이 있을 때만 비교한다.
-                guard let itemID else { continue }
-                if Self.furnitureID(fromNodeOrAncestors: node) == itemID {
-                    addSelectionHighlight(to: node)
-                }
+            let selectedNode = itemID.flatMap {
+                furnitureContainer.childNode(withName: "furniture-\($0)", recursively: false)
             }
+            if renderedSelectedItemID == itemID {
+                if itemID == nil, highlightedFurnitureNode == nil { return }
+                if let selectedNode, highlightedFurnitureNode === selectedNode { return }
+            }
+
+            highlightedFurnitureNode?.childNode(
+                withName: selectionHighlightName,
+                recursively: false
+            )?.removeFromParentNode()
+            highlightedFurnitureNode = nil
+            renderedSelectedItemID = itemID
+
+            guard let selectedNode else { return }
+            addSelectionHighlight(to: selectedNode)
+            highlightedFurnitureNode = selectedNode
         }
 
         func removeSelectionHighlight(from node: SCNNode) {
@@ -588,6 +613,7 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
         func setMeasurementVisible(_ isVisible: Bool) {
             let didChange = measurementContainer.isHidden == isVisible
+            guard didChange else { return }
             if isVisible {
                 rebuildMeasurementNodes()
             }
@@ -595,6 +621,21 @@ struct RoomEditorSceneView: UIViewRepresentable {
             if didChange, viewModel.viewMode == .skyView {
                 applyCamera(mode: viewModel.viewMode, animated: true)
             }
+        }
+
+        /// 가구 드래그 중 실시간 치수 표시를 유지하되, 매 터치 샘플마다 텍스트/선 geometry를
+        /// 전부 재생성하지 않는다. 종료 이벤트는 force로 최종 위치를 빠짐없이 반영한다.
+        func rebuildMeasurementsDuringInteraction(
+            at timestamp: CFTimeInterval = CACurrentMediaTime(),
+            force: Bool = false
+        ) {
+            guard viewModel.isMeasuring else { return }
+            guard force
+                    || timestamp - lastInteractiveMeasurementRefreshTime >= interactiveMeasurementRefreshInterval else {
+                return
+            }
+            lastInteractiveMeasurementRefreshTime = timestamp
+            rebuildMeasurementNodes()
         }
 
         func rebuildMeasurementNodes() {
@@ -1424,8 +1465,28 @@ final class WallFacingUpdater: NSObject, SCNSceneRendererDelegate {
 
     private let lock = NSLock()
     private var walls: [Wall] = []
+    private var wallsRevision = 0
+    private var enabled = true
+    /// 렌더 콜백은 ProMotion 기기에서 초당 120번 들어올 수 있지만 벽 투명도는
+    /// 30Hz면 충분하다. 카메라·벽 목록·활성 상태가 그대로면 계산 자체를 생략한다.
+    private let minimumEvaluationInterval: TimeInterval = 1.0 / 30.0
+    private var lastEvaluationTime: TimeInterval = -.infinity
+    private var lastCameraXZ: SIMD2<Float>?
+    private var lastWallsRevision = -1
+    private var lastEnabled = true
     /// 벽 투명화 on/off. 스카이뷰(탑다운)에서는 꺼서 벽이 사라져 보이지 않게 합니다.
-    var isEnabled = true
+    var isEnabled: Bool {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return enabled
+        }
+        set {
+            lock.lock()
+            enabled = newValue
+            lock.unlock()
+        }
+    }
 
     func setWalls(_ newWalls: [Wall]) {
         lock.lock()
@@ -1435,6 +1496,7 @@ final class WallFacingUpdater: NSObject, SCNSceneRendererDelegate {
             wall.node.opacity = 1
         }
         walls = newWalls
+        wallsRevision &+= 1
         lock.unlock()
     }
 
@@ -1445,7 +1507,20 @@ final class WallFacingUpdater: NSObject, SCNSceneRendererDelegate {
 
         lock.lock()
         let snapshot = walls
+        let revision = wallsRevision
+        let isEnabled = enabled
         lock.unlock()
+
+        let stateChanged = revision != lastWallsRevision || isEnabled != lastEnabled
+        let cameraMoved = lastCameraXZ.map { simd_distance_squared($0, cameraXZ) > 0.000_004 } ?? true
+        guard stateChanged
+                || (cameraMoved && time - lastEvaluationTime >= minimumEvaluationInterval) else {
+            return
+        }
+        lastEvaluationTime = time
+        lastCameraXZ = cameraXZ
+        lastWallsRevision = revision
+        lastEnabled = isEnabled
 
         // 스카이뷰 등 투명화가 꺼진 모드에서는 벽을 전부 불투명으로 복원만 한다.
         guard isEnabled else {

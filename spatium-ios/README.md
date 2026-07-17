@@ -151,7 +151,7 @@ Spatium/
 
 ## 🧪 테스트
 
-- **SpatiumTests** — 유닛 테스트 50개 (Swift Testing): 백엔드 API 계약(요청/응답 스키마 고정), 에디터 undo·redo/draft, 스캔 생명주기, 가구 치수·이미지 변환, 로컬 캐시 저장 실패 복구
+- **SpatiumTests** — 유닛 테스트 53개 (Swift Testing): 백엔드 API 계약(요청/응답 스키마 고정), 에디터 undo·redo/draft, SceneKit 증분 렌더링, 스캔 생명주기, 가구 치수·이미지 변환, 로컬 캐시 저장 실패 복구
 - **SpatiumUITests** — UI 테스트 23개 + 런치 테스트 1개 (XCUITest): 게스트 기능 제한 안내, 에디터·꾸미기·카탈로그 회귀, 가로모드 레이아웃 스위트, 접근성 큰 글씨, 런치 성능
 
 DEBUG 빌드는 로그인 없이 특정 화면·상태로 바로 진입하는 `-UITest…` 실행 인자를 20여 개 지원합니다(스크린샷·UI 테스트용). 대표적으로 `-UITestEditor`(3D 에디터 직행), `-UITestImgTo3D`, `-UITestGuestRestrictions`, `-UITestOnboarding`, `-UITestGuestCreate` 등 — 전체 목록은 `ContentView.swift`와 각 Feature 뷰에서 확인할 수 있습니다.

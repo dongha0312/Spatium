@@ -148,6 +148,50 @@ struct SpatiumTests {
         )
     }
 
+    @Test func editorSceneReusesSelectionAndMeasurementNodesForUnchangedState() throws {
+        let room = RoomRecord(
+            id: "performance-room",
+            roomType: "성능 테스트 방",
+            itemCount: 0,
+            photoCount: 0,
+            uploadedAt: Date(),
+            fileName: "",
+            area: 16
+        )
+        let viewModel = RoomEditorViewModel(room: room)
+        let coordinator = RoomEditorSceneView.Coordinator(
+            viewModel: viewModel,
+            modelLoader: TestDataFurnitureModelLoader()
+        )
+
+        let furniture = SCNNode(
+            geometry: SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0)
+        )
+        furniture.name = "furniture-1"
+        coordinator.furnitureContainer.addChildNode(furniture)
+
+        coordinator.applySelection(itemID: 1)
+        let firstHighlight = try #require(
+            furniture.childNode(withName: coordinator.selectionHighlightName, recursively: false)
+        )
+        coordinator.applySelection(itemID: 1)
+        let reusedHighlight = try #require(
+            furniture.childNode(withName: coordinator.selectionHighlightName, recursively: false)
+        )
+        #expect(firstHighlight === reusedHighlight)
+
+        coordinator.measurementContainer.isHidden = true
+        coordinator.setMeasurementVisible(true)
+        let firstMeasurementNodes = coordinator.measurementContainer.childNodes.map(ObjectIdentifier.init)
+        #expect(!firstMeasurementNodes.isEmpty)
+        coordinator.setMeasurementVisible(true)
+        let reusedMeasurementNodes = coordinator.measurementContainer.childNodes.map(ObjectIdentifier.init)
+        #expect(firstMeasurementNodes == reusedMeasurementNodes)
+
+        coordinator.applySelection(itemID: nil)
+        #expect(furniture.childNode(withName: coordinator.selectionHighlightName, recursively: false) == nil)
+    }
+
     @Test func shelfDetectorFindsSeparateHorizontalSupportLevels() {
         let scene = SCNScene()
         let bookcase = SCNNode()

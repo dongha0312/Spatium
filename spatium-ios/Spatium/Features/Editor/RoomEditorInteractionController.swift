@@ -289,11 +289,10 @@ extension RoomEditorSceneView.Coordinator {
             isSnapEngaged = false
         }
 
-        if viewModel.isMeasuring {
-            rebuildMeasurementNodes()
-        }
+        let didFinishDrag = gesture.state == .ended || gesture.state == .cancelled
+        rebuildMeasurementsDuringInteraction(force: didFinishDrag)
 
-        if gesture.state == .ended || gesture.state == .cancelled {
+        if didFinishDrag {
             // 벽 투명도 대상은 드래그 중엔 바뀔 일이 거의 없으니, 매 이벤트 대신 종료 시 한 번만 갱신.
             refreshViewFacingTransparencyTargets()
             guard let item else { return }
