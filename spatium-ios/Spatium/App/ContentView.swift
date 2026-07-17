@@ -154,7 +154,7 @@ struct MainTabView: View {
                             onLogin: { showGuestLogin = true }
                         )
                     } else {
-                        ImgTo3DView {
+                        ImgTo3DView(isActive: selectedTab == .imgTo3D) {
                             selectedProjectID = nil
                             selectedTab = .rooms
                         }

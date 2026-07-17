@@ -116,6 +116,8 @@ xcodebuild \
 
 가구 사진은 선택 직후 메인 스레드 밖에서 ImageIO로 전처리합니다. 업로드용 긴 변은 최대 2048px·파일은 서버 계약과 같은 10MiB 이하로 제한하고, 화면에는 최대 1024px 미리보기만 유지합니다. 이미 제한 안에 있는 PNG/JPEG는 원본 바이트를 보존하며 HEIC 등 비호환 형식만 PNG로 변환합니다.
 
+가구 만들기 진행 단계와 서버 작업 결과는 탭을 이동해도 유지하되, 탭이 숨겨지거나 앱이 백그라운드로 가면 화면용 디코딩 이미지와 보정 단계의 SceneKit 씬을 해제합니다. 다시 활성화하면 보관한 압축 이미지 데이터와 GLB URL에서 필요한 표시 리소스만 복원해, 진행 상태를 잃지 않으면서 숨은 탭의 메모리 점유를 줄입니다.
+
 - **Debug** 빌드에서는 숨겨진 개발자 설정으로 서버 주소를 변경할 수 있습니다.
 - **Release** 빌드에서는 배포 주소로 고정됩니다.
 - 현재 서버가 IP + 평문 HTTP로 서비스되어 `Info.plist`에서 ATS(`NSAllowsArbitraryLoads`)를 허용해 둔 상태이며, 백엔드 HTTPS 전환 후 도메인 예외로 좁힐 예정입니다.
@@ -153,7 +155,7 @@ Spatium/
 
 ## 🧪 테스트
 
-- **SpatiumTests** — 유닛 테스트 54개 (Swift Testing): 백엔드 API 계약(요청/응답 스키마 고정), 에디터 undo·redo/draft, SceneKit 증분 렌더링, 스캔 생명주기, 가구 치수·이미지 다운샘플링·변환, 로컬 캐시 저장 실패 복구
+- **SpatiumTests** — 유닛 테스트 55개 (Swift Testing): 백엔드 API 계약(요청/응답 스키마 고정), 에디터 undo·redo/draft, SceneKit 증분 렌더링·뷰어 리소스 해제, 스캔 생명주기, 가구 치수·이미지 다운샘플링·변환, 로컬 캐시 저장 실패 복구
 - **SpatiumUITests** — UI 테스트 23개 + 런치 테스트 1개 (XCUITest): 게스트 기능 제한 안내, 에디터·꾸미기·카탈로그 회귀, 가로모드 레이아웃 스위트, 접근성 큰 글씨, 런치 성능
 
 DEBUG 빌드는 로그인 없이 특정 화면·상태로 바로 진입하는 `-UITest…` 실행 인자를 20여 개 지원합니다(스크린샷·UI 테스트용). 대표적으로 `-UITestEditor`(3D 에디터 직행), `-UITestImgTo3D`, `-UITestGuestRestrictions`, `-UITestOnboarding`, `-UITestGuestCreate` 등 — 전체 목록은 `ContentView.swift`와 각 Feature 뷰에서 확인할 수 있습니다.

@@ -7,15 +7,19 @@ import UIKit
 struct ImgTo3DView: View {
     var onFurnitureSaved: () -> Void
     private let initialCategory: ImgTo3DCategory
+    private let isActive: Bool
 
     @EnvironmentObject private var userFurnitureStore: UserFurnitureStore
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
     @State private var step: ImgTo3DStep = .upload
     @State private var photoItem: PhotosPickerItem?
     @State private var image: UIImage?
     /// 서버 전송용으로 정규화된 이미지(HEIC → PNG 변환 포함).
     @State private var uploadImage: ImgTo3DUploadImage.Normalized?
     @State private var isPreparingImage = false
+    @State private var isRestoringImages = false
+    @State private var imageRestorationID: UUID?
     @State private var imagePreparationID: UUID?
     @State private var imagePreparationTask: Task<Void, Never>?
     @State private var showCamera = false
@@ -72,12 +76,24 @@ struct ImgTo3DView: View {
         verticalSizeClass == .compact
     }
 
+    /// 메인 탭은 전환 애니메이션과 진행 상태 유지를 위해 이 화면을 ZStack에 계속 보관합니다.
+    /// 실제로 보이는 동안에만 디코딩 이미지와 SceneKit 뷰를 유지해 숨은 탭의 메모리 점유를 줄입니다.
+    private var keepsTransientResourcesActive: Bool {
+        isActive && scenePhase == .active
+    }
+
+    private var transientImageTaskID: String {
+        "\(step.rawValue)-\(keepsTransientResourcesActive)"
+    }
+
     init(
         initialCategory: ImgTo3DCategory = .bathtub,
+        isActive: Bool = true,
         onFurnitureSaved: @escaping () -> Void = {}
     ) {
         self.onFurnitureSaved = onFurnitureSaved
         self.initialCategory = initialCategory
+        self.isActive = isActive
         _category = State(initialValue: initialCategory)
     }
 
@@ -115,6 +131,15 @@ struct ImgTo3DView: View {
         }
         .task(id: step) {
             await prepareCurrentStep()
+        }
+        .task(id: transientImageTaskID) {
+            guard keepsTransientResourcesActive else { return }
+            await restoreTransientImagesIfNeeded(for: step)
+        }
+        .onChange(of: keepsTransientResourcesActive) { _, isActive in
+            if !isActive {
+                releaseTransientResources()
+            }
         }
         .sheet(isPresented: $showCamera) {
             CameraImagePicker { selectedImage in
@@ -158,7 +183,7 @@ struct ImgTo3DView: View {
             Text("가구 사진을 선택하려면 설정에서 Spatium의 사진 접근을 허용해주세요.")
         }
         .onDisappear {
-            imagePreparationTask?.cancel()
+            releaseTransientResources(cancelImagePreparation: true)
         }
         #if DEBUG
         .onAppear {
@@ -221,7 +246,7 @@ struct ImgTo3DView: View {
         case .upload:
             ImgTo3DUploadStep(
                 image: image,
-                isPreparingImage: isPreparingImage,
+                isPreparingImage: isPreparingImage || isRestoringImages,
                 convertedFromIncompatibleFormat: uploadImage?.convertedFromIncompatibleFormat == true,
                 canUseCamera: UIImagePickerController.isSourceTypeAvailable(.camera),
                 onChoosePhoto: openGalleryWithPermission,
@@ -262,34 +287,39 @@ struct ImgTo3DView: View {
                 onRetry: retryGeneration
             )
         case .correction:
-            ImgTo3DCorrectionStep(
-                modelTransform: $modelTransform,
-                floorSnap: $floorSnap,
-                viewerMode: $viewerMode,
-                activeTransformAxis: $activeTransformAxis,
-                cameraPreset: $cameraPreset,
-                cameraResetToken: $cameraResetToken,
-                importedModelURL: $importedModelURL,
-                importedModelName: $importedModelName,
-                modelSize: $modelSize,
-                showModelImporter: $showModelImporter,
-                autoAlignToken: autoAlignToken,
-                canUndo: !undoHistory.isEmpty,
-                canRedo: !redoHistory.isEmpty,
-                usesCompactHeight: usesCompactHeight,
-                onCheckpoint: recordCorrectionCheckpoint,
-                onAutoAlign: autoAlign,
-                onUndo: undoCorrection,
-                onRedo: redoCorrection,
-                onReset: resetModel,
-                onRotate: { axis, degrees in
-                    rotate(axis: axis, degrees: degrees)
-                },
-                onSelectMode: selectViewerMode,
-                onModelLoadFailure: {
-                    alertMessage = "GLB 파일을 불러오지 못했어요. 파일을 확인해주세요."
-                }
-            )
+            if keepsTransientResourcesActive {
+                ImgTo3DCorrectionStep(
+                    modelTransform: $modelTransform,
+                    floorSnap: $floorSnap,
+                    viewerMode: $viewerMode,
+                    activeTransformAxis: $activeTransformAxis,
+                    cameraPreset: $cameraPreset,
+                    cameraResetToken: $cameraResetToken,
+                    importedModelURL: $importedModelURL,
+                    importedModelName: $importedModelName,
+                    modelSize: $modelSize,
+                    showModelImporter: $showModelImporter,
+                    autoAlignToken: autoAlignToken,
+                    canUndo: !undoHistory.isEmpty,
+                    canRedo: !redoHistory.isEmpty,
+                    usesCompactHeight: usesCompactHeight,
+                    onCheckpoint: recordCorrectionCheckpoint,
+                    onAutoAlign: autoAlign,
+                    onUndo: undoCorrection,
+                    onRedo: redoCorrection,
+                    onReset: resetModel,
+                    onRotate: { axis, degrees in
+                        rotate(axis: axis, degrees: degrees)
+                    },
+                    onSelectMode: selectViewerMode,
+                    onModelLoadFailure: {
+                        alertMessage = "GLB 파일을 불러오지 못했어요. 파일을 확인해주세요."
+                    }
+                )
+            } else {
+                Color.clear
+                    .accessibilityHidden(true)
+            }
         case .save:
             ImgTo3DSaveStep(
                 saveName: $saveName,
@@ -337,7 +367,7 @@ struct ImgTo3DView: View {
 
     private var canAdvance: Bool {
         switch step {
-        case .upload: image != nil && uploadImage != nil && !isPreparingImage
+        case .upload: image != nil && uploadImage != nil && !isPreparingImage && !isRestoringImages
         case .name: !objectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         case .segmentation: segmentationReady
         case .generation: generated
@@ -437,7 +467,7 @@ struct ImgTo3DView: View {
     }
 
     private func applyPreparedImage(_ prepared: ImgTo3DUploadImage.Prepared) {
-        image = prepared.previewImage
+        image = keepsTransientResourcesActive ? prepared.previewImage : nil
         uploadImage = prepared.upload
         normalizedName = nil
         segmentationReady = false
@@ -456,6 +486,68 @@ struct ImgTo3DView: View {
         isPreparingImage = false
         imagePreparationID = nil
         imagePreparationTask = nil
+    }
+
+    /// 탭 이동·백그라운드 진입 때 화면 표시용 UIImage만 해제합니다.
+    /// 서버 전송용 압축 Data와 처리 결과, 생성된 GLB URL은 남겨 진행 상태를 그대로 복원합니다.
+    private func releaseTransientResources(cancelImagePreparation: Bool = false) {
+        if cancelImagePreparation {
+            imagePreparationTask?.cancel()
+            imagePreparationTask = nil
+            imagePreparationID = nil
+            isPreparingImage = false
+        }
+        imageRestorationID = nil
+        isRestoringImages = false
+        image = nil
+        segmentedImage = nil
+    }
+
+    /// 필요한 단계에서만 보관 중인 압축 Data를 작은 화면용 이미지로 다시 디코딩합니다.
+    /// 복원 중 탭이나 단계가 바뀌면 오래된 작업의 결과를 적용하지 않습니다.
+    private func restoreTransientImagesIfNeeded(for requestedStep: ImgTo3DStep) async {
+        let originalData: Data? = {
+            guard image == nil,
+                  requestedStep == .upload || requestedStep == .segmentation else { return nil }
+            return uploadImage?.data
+        }()
+        let resultData: Data? = {
+            guard segmentedImage == nil, requestedStep == .segmentation else { return nil }
+            return segmentedPNG ?? segmentationResult?.imageData
+        }()
+        guard originalData != nil || resultData != nil else { return }
+
+        let requestID = UUID()
+        imageRestorationID = requestID
+        isRestoringImages = true
+        defer {
+            if imageRestorationID == requestID {
+                imageRestorationID = nil
+                isRestoringImages = false
+            }
+        }
+
+        if let originalData {
+            let restored = await ImgTo3DUploadImage.previewInBackground(rawData: originalData)
+            guard !Task.isCancelled,
+                  imageRestorationID == requestID,
+                  keepsTransientResourcesActive,
+                  step == requestedStep else { return }
+            if image == nil {
+                image = restored
+            }
+        }
+
+        if let resultData {
+            let restored = await ImgTo3DUploadImage.previewInBackground(rawData: resultData)
+            guard !Task.isCancelled,
+                  imageRestorationID == requestID,
+                  keepsTransientResourcesActive,
+                  step == requestedStep else { return }
+            if segmentedImage == nil {
+                segmentedImage = restored
+            }
+        }
     }
 
     /// 사진·이름·선택 객체가 바뀌면 그 입력으로 만들었던 이후 결과는 모두 무효입니다.
@@ -509,7 +601,6 @@ struct ImgTo3DView: View {
 
     private func runSegmentation() async {
         guard !segmentationReady, !isSegmenting,
-              image != nil,
               !objectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         guard let payload = uploadImage else {
             segmentationError = "업로드 이미지를 준비하지 못했습니다."
@@ -525,12 +616,17 @@ struct ImgTo3DView: View {
                 provider: segmentationProvider
             )
             try Task.checkCancellation()
-            guard let resultImage = UIImage(data: result.imageData) else {
-                throw ImgTo3DServiceError.invalidResponse
+            var resultImage: UIImage?
+            if keepsTransientResourcesActive {
+                resultImage = await ImgTo3DUploadImage.previewInBackground(rawData: result.imageData)
+                try Task.checkCancellation()
+                if keepsTransientResourcesActive, resultImage == nil {
+                    throw ImgTo3DServiceError.invalidResponse
+                }
             }
             segmentationResult = result
             segmentedPNG = result.imageData
-            segmentedImage = resultImage
+            segmentedImage = keepsTransientResourcesActive ? resultImage : nil
             normalizedName = ImgTo3DNormalizedName(
                 input: objectName,
                 english: result.translatedQuery ?? result.segmentedObject,
@@ -719,6 +815,8 @@ struct ImgTo3DView: View {
         imagePreparationTask = nil
         imagePreparationID = nil
         isPreparingImage = false
+        imageRestorationID = nil
+        isRestoringImages = false
         step = .upload
         photoItem = nil
         image = nil

@@ -790,6 +790,27 @@ struct ImgTo3DModelViewerTests {
         #expect(abs(scaled.depth - 1.2) < 0.001)
     }
 
+    @Test func dismantlingViewerReleasesSceneAndCachedModelResources() {
+        let viewer = makeViewer()
+        let coordinator = viewer.makeCoordinator()
+        let sceneView = SCNView()
+        sceneView.scene = coordinator.makeScene()
+        sceneView.pointOfView = coordinator.cameraNode
+        coordinator.sceneView = sceneView
+
+        #expect(coordinator.retainedModelNodeCountForTesting > 0)
+        #expect(coordinator.cachedModelSampleCountForTesting > 0)
+        #expect(sceneView.scene != nil)
+
+        ImgTo3DModelViewer.dismantleUIView(sceneView, coordinator: coordinator)
+
+        #expect(sceneView.scene == nil)
+        #expect(sceneView.pointOfView == nil)
+        #expect(coordinator.sceneView == nil)
+        #expect(coordinator.retainedModelNodeCountForTesting == 0)
+        #expect(coordinator.cachedModelSampleCountForTesting == 0)
+    }
+
     private func makeViewer(
         onBoundsChanged: @escaping (ImgTo3DModelSize) -> Void = { _ in },
         onAutoAlignment: @escaping (ImgTo3DModelTransform) -> Void = { _ in }

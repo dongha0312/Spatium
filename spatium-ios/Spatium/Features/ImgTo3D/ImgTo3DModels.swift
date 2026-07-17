@@ -42,6 +42,33 @@ enum ImgTo3DUploadImage {
         }
     }
 
+    /// 이미 서버 전송용 Data를 보관하고 있는 화면이 다시 활성화될 때, 업로드용 재인코딩 없이
+    /// 화면에 필요한 작은 디코딩 버퍼만 복원한다.
+    nonisolated static func previewInBackground(
+        rawData: Data,
+        maximumPixelDimension: Int = ImgTo3DUploadImage.maximumPreviewPixelDimension
+    ) async -> UIImage? {
+        let worker: Task<UIImage?, Never> = Task.detached(priority: .userInitiated) {
+            autoreleasepool {
+                guard !Task.isCancelled,
+                      maximumPixelDimension > 0,
+                      let source = CGImageSourceCreateWithData(rawData as CFData, nil),
+                      let previewCGImage = downsample(
+                        source: source,
+                        maximumPixelDimension: maximumPixelDimension
+                      ) else {
+                    return nil
+                }
+                return decodedImage(from: previewCGImage)
+            }
+        }
+        return await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+    }
+
     /// 카메라가 반환한 UIImage는 picker에서 이미 디코딩됐으므로, 읽기 전용으로 전달해
     /// 다운샘플링과 PNG 인코딩만 백그라운드에서 수행한다.
     nonisolated static func prepareInBackground(cameraImage: UIImage) async -> Prepared? {
