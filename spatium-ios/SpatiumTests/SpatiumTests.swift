@@ -1389,7 +1389,76 @@ struct BackendContractTests {
         #expect(abs(matrix[14] - 3) < 0.001)
     }
 
-    private func minimalGLB() throws -> Data {
+    @Test func correctedTransformFileStreamingPreservesBinaryPayload() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("glb-streaming-baker-\(UUID().uuidString)", isDirectory: true)
+        let sourceURL = directory.appendingPathComponent("source.glb")
+        let destinationURL = directory.appendingPathComponent("corrected.glb")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let binary = Data(
+            repeating: 0xA5,
+            count: GLBTransformBaker.streamingBufferSize * 2 + 128
+        )
+        let source = try minimalGLB(binaryPayload: binary)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try source.write(to: sourceURL)
+
+        let resultURL = try await GLBTransformBaker.bakeFileInBackground(
+            sourceURL: sourceURL,
+            destinationURL: destinationURL,
+            transform: .init(xPosition: 1, yPosition: 2, zPosition: 3)
+        )
+        let result = try Data(contentsOf: resultURL)
+        let jsonLength = Int(readUInt32(result, at: 12))
+        let binaryHeaderOffset = 20 + jsonLength
+        let binaryLength = Int(readUInt32(result, at: binaryHeaderOffset))
+        let binaryType = readUInt32(result, at: binaryHeaderOffset + 4)
+        let outputBinary = result.subdata(
+            in: (binaryHeaderOffset + 8)..<(binaryHeaderOffset + 8 + binaryLength)
+        )
+
+        #expect(resultURL == destinationURL)
+        #expect(result.prefix(4) == Data("glTF".utf8))
+        #expect(readUInt32(result, at: 8) == UInt32(result.count))
+        #expect(binaryType == 0x004E4942)
+        #expect(outputBinary == binary)
+        #expect(try Data(contentsOf: sourceURL) == source)
+        let remainingFiles = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )
+        #expect(!remainingFiles.contains { $0.pathExtension == "tmp" })
+    }
+
+    @Test func invalidGLBStreamingBakeLeavesNoDestinationOrTemporaryFile() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("glb-streaming-failure-\(UUID().uuidString)", isDirectory: true)
+        let sourceURL = directory.appendingPathComponent("invalid.glb")
+        let destinationURL = directory.appendingPathComponent("corrected.glb")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("invalid-glb".utf8).write(to: sourceURL)
+
+        do {
+            _ = try await GLBTransformBaker.bakeFileInBackground(
+                sourceURL: sourceURL,
+                destinationURL: destinationURL,
+                transform: .initial
+            )
+            Issue.record("손상된 GLB는 보정 파일을 만들지 않아야 합니다.")
+        } catch {
+            #expect(!FileManager.default.fileExists(atPath: destinationURL.path))
+        }
+
+        let remainingFiles = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )
+        #expect(remainingFiles.map(\.lastPathComponent) == [sourceURL.lastPathComponent])
+    }
+
+    private func minimalGLB(binaryPayload: Data = Data()) throws -> Data {
         var json = try JSONSerialization.data(withJSONObject: [
             "asset": ["version": "2.0"],
             "scene": 0,
@@ -1397,12 +1466,18 @@ struct BackendContractTests {
             "nodes": [["name": "Root"]]
         ])
         json.append(contentsOf: repeatElement(UInt8(0x20), count: (4 - json.count % 4) % 4))
+        let binaryChunkLength = binaryPayload.isEmpty ? 0 : 8 + binaryPayload.count
         var result = Data("glTF".utf8)
         appendUInt32(2, to: &result)
-        appendUInt32(UInt32(20 + json.count), to: &result)
+        appendUInt32(UInt32(20 + json.count + binaryChunkLength), to: &result)
         appendUInt32(UInt32(json.count), to: &result)
         appendUInt32(0x4E4F534A, to: &result)
         result.append(json)
+        if !binaryPayload.isEmpty {
+            appendUInt32(UInt32(binaryPayload.count), to: &result)
+            appendUInt32(0x004E4942, to: &result)
+            result.append(binaryPayload)
+        }
         return result
     }
 

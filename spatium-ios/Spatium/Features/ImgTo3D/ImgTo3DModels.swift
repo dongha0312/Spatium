@@ -496,7 +496,7 @@ enum ImgTo3DCameraPreset: String, CaseIterable, Identifiable {
     }
 }
 
-struct ImgTo3DModelTransform: Equatable {
+struct ImgTo3DModelTransform: Equatable, Sendable {
     var xDegrees: Double = 14
     var yDegrees: Double = -32
     var zDegrees: Double = 9

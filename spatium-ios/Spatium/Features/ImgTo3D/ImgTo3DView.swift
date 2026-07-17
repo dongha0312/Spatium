@@ -771,7 +771,12 @@ struct ImgTo3DView: View {
         saveNotice = nil
         Task {
             do {
-                let correctedModelURL = try makeCorrectedModelURL()
+                let correctedModelURL = try await makeCorrectedModelURL()
+                defer {
+                    if let correctedModelURL {
+                        try? FileManager.default.removeItem(at: correctedModelURL)
+                    }
+                }
                 let furniture = try await userFurnitureStore.save(
                     name: saveName,
                     normalizedName: normalizedName?.english ?? saveName,
@@ -800,22 +805,24 @@ struct ImgTo3DView: View {
         }
     }
 
-    private func makeCorrectedModelURL() throws -> URL? {
+    private func makeCorrectedModelURL() async throws -> URL? {
         guard let importedModelURL else { return nil }
-        let accessed = importedModelURL.startAccessingSecurityScopedResource()
-        defer { if accessed { importedModelURL.stopAccessingSecurityScopedResource() } }
-        let source = try Data(contentsOf: importedModelURL)
-        let corrected = try GLBTransformBaker.bake(data: source, transform: modelTransform)
         let directory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
             .appendingPathComponent("Spatium/CorrectedModels", isDirectory: true)
             ?? FileManager.default.temporaryDirectory.appendingPathComponent("SpatiumCorrectedModels", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let baseName = importedModelURL.deletingPathExtension().lastPathComponent
         let destination = directory
-            .appendingPathComponent(baseName.isEmpty ? UUID().uuidString : "\(baseName)-corrected")
+            .appendingPathComponent(
+                baseName.isEmpty
+                    ? UUID().uuidString
+                    : "\(baseName)-corrected-\(UUID().uuidString)"
+            )
             .appendingPathExtension("glb")
-        try corrected.write(to: destination, options: .atomic)
-        return destination
+        return try await GLBTransformBaker.bakeFileInBackground(
+            sourceURL: importedModelURL,
+            destinationURL: destination,
+            transform: modelTransform
+        )
     }
 
     private func resetWizard() {

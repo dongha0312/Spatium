@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-struct UserFurnitureMetricDimensions: Equatable {
+struct UserFurnitureMetricDimensions: Equatable, Sendable {
     let width: Double
     let height: Double
     let depth: Double
@@ -29,7 +29,7 @@ struct UserFurnitureMetricDimensions: Equatable {
     }
 }
 
-struct UserFurniture: Codable, Identifiable, Equatable {
+struct UserFurniture: Codable, Identifiable, Equatable, Sendable {
     let id: String
     var name: String
     var normalizedName: String
@@ -67,6 +67,213 @@ struct UserFurniture: Codable, Identifiable, Equatable {
     }
 }
 
+/// GLB 복사와 카탈로그 JSON 인코딩처럼 동기식인 파일 작업을 전용 직렬 큐에서 처리한다.
+/// 같은 저장소의 작업 순서를 보존해 모델 파일과 catalog.json의 트랜잭션 경계도 유지한다.
+private nonisolated final class UserFurnitureDiskStore: @unchecked Sendable {
+    private struct ModelReplacement {
+        let destination: URL
+        let backup: URL?
+    }
+
+    private let storageDirectory: URL
+    private let metadataURL: URL
+    private let queue = DispatchQueue(
+        label: "com.spatium.user-furniture-disk-store",
+        qos: .utility
+    )
+
+    init(storageDirectory: URL, metadataURL: URL) {
+        self.storageDirectory = storageDirectory
+        self.metadataURL = metadataURL
+    }
+
+    func add(
+        sourceModelURL: URL?,
+        modelFileName: String,
+        catalog: [UserFurniture]
+    ) async throws {
+        try await perform { [self] in
+            try createStorageDirectory()
+            let replacement: ModelReplacement?
+            if let sourceModelURL {
+                replacement = try replaceModel(
+                    at: sourceModelURL,
+                    modelFileName: modelFileName
+                )
+            } else {
+                replacement = nil
+            }
+            do {
+                try writeCatalog(catalog)
+                commit(replacement)
+            } catch {
+                rollback(replacement)
+                throw error
+            }
+        }
+    }
+
+    func promote(
+        sourceModelURL: URL,
+        modelFileName: String,
+        catalog: [UserFurniture]
+    ) async throws {
+        try await perform { [self] in
+            try createStorageDirectory()
+            let destination = modelURL(for: modelFileName)
+            let usesNewFileName = sourceModelURL.standardizedFileURL
+                != destination.standardizedFileURL
+            let replacement = usesNewFileName
+                ? try replaceModel(at: sourceModelURL, modelFileName: modelFileName)
+                : nil
+            do {
+                try writeCatalog(catalog)
+                commit(replacement)
+                if usesNewFileName {
+                    try? FileManager.default.removeItem(at: sourceModelURL)
+                }
+            } catch {
+                rollback(replacement)
+                throw error
+            }
+        }
+    }
+
+    func remove(modelFileName: String, catalog: [UserFurniture]) async throws {
+        try await perform { [self] in
+            try createStorageDirectory()
+            try writeCatalog(catalog)
+            let modelURL = modelURL(for: modelFileName)
+            if FileManager.default.fileExists(atPath: modelURL.path) {
+                try? FileManager.default.removeItem(at: modelURL)
+            }
+        }
+    }
+
+    func persist(_ catalog: [UserFurniture]) async throws {
+        try await perform { [self] in
+            try createStorageDirectory()
+            try writeCatalog(catalog)
+        }
+    }
+
+    func containsModel(fileName: String) async -> Bool {
+        await performWithoutThrowing { [self] in
+            FileManager.default.fileExists(atPath: modelURL(for: fileName).path)
+        }
+    }
+
+    func installDownloadedModel(at temporaryURL: URL, fileName: String) async throws {
+        try await perform { [self] in
+            try createStorageDirectory()
+            let destination = modelURL(for: fileName)
+            guard !FileManager.default.fileExists(atPath: destination.path) else { return }
+
+            do {
+                try FileManager.default.moveItem(at: temporaryURL, to: destination)
+            } catch {
+                try FileManager.default.copyItem(at: temporaryURL, to: destination)
+                try? FileManager.default.removeItem(at: temporaryURL)
+            }
+        }
+    }
+
+    private func perform<T>(
+        _ operation: @escaping @Sendable () throws -> T
+    ) async throws -> T {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                do {
+                    continuation.resume(returning: try operation())
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func performWithoutThrowing<T>(
+        _ operation: @escaping @Sendable () -> T
+    ) async -> T {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                continuation.resume(returning: operation())
+            }
+        }
+    }
+
+    private func createStorageDirectory() throws {
+        try FileManager.default.createDirectory(
+            at: storageDirectory,
+            withIntermediateDirectories: true
+        )
+    }
+
+    private func writeCatalog(_ catalog: [UserFurniture]) throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(catalog)
+        try data.write(to: metadataURL, options: .atomic)
+    }
+
+    private func replaceModel(at sourceURL: URL, modelFileName: String) throws -> ModelReplacement? {
+        let destination = modelURL(for: modelFileName)
+        guard sourceURL.standardizedFileURL != destination.standardizedFileURL else { return nil }
+
+        let stagingURL = storageDirectory
+            .appendingPathComponent(".model-staging-\(UUID().uuidString)")
+            .appendingPathExtension("glb")
+        let backupURL = storageDirectory
+            .appendingPathComponent(".model-backup-\(UUID().uuidString)")
+            .appendingPathExtension("glb")
+        let accessed = sourceURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { sourceURL.stopAccessingSecurityScopedResource() }
+            try? FileManager.default.removeItem(at: stagingURL)
+        }
+
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: stagingURL)
+            let hadExistingDestination = FileManager.default.fileExists(atPath: destination.path)
+            if hadExistingDestination {
+                try FileManager.default.moveItem(at: destination, to: backupURL)
+            }
+            do {
+                try FileManager.default.moveItem(at: stagingURL, to: destination)
+            } catch {
+                if hadExistingDestination {
+                    try? FileManager.default.moveItem(at: backupURL, to: destination)
+                }
+                throw error
+            }
+            return ModelReplacement(
+                destination: destination,
+                backup: hadExistingDestination ? backupURL : nil
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: stagingURL)
+            throw error
+        }
+    }
+
+    private func commit(_ replacement: ModelReplacement?) {
+        guard let backup = replacement?.backup else { return }
+        try? FileManager.default.removeItem(at: backup)
+    }
+
+    private func rollback(_ replacement: ModelReplacement?) {
+        guard let replacement else { return }
+        try? FileManager.default.removeItem(at: replacement.destination)
+        if let backup = replacement.backup {
+            try? FileManager.default.moveItem(at: backup, to: replacement.destination)
+        }
+    }
+
+    private func modelURL(for fileName: String) -> URL {
+        storageDirectory.appendingPathComponent(fileName).appendingPathExtension("glb")
+    }
+}
+
 @MainActor
 final class UserFurnitureStore: ObservableObject {
     typealias FurnitureUploader = (
@@ -80,15 +287,25 @@ final class UserFurnitureStore: ObservableObject {
 
     private let storageDirectory: URL
     private let metadataURL: URL
+    private let diskStore: UserFurnitureDiskStore
     private let accessTokenProvider: (() -> String?)?
     private var isRefreshingFromBackend = false
+    private var isMutationInProgress = false
+    private var mutationWaiters: [CheckedContinuation<Void, Never>] = []
+    private var initialPersistenceTask: Task<Void, Never>?
 
     init(
         storageDirectory: URL? = nil,
         accessTokenProvider: (() -> String?)? = nil
     ) {
-        self.storageDirectory = storageDirectory ?? Self.defaultStorageDirectory
-        metadataURL = self.storageDirectory.appendingPathComponent("catalog.json")
+        let storageDirectory = storageDirectory ?? Self.defaultStorageDirectory
+        let metadataURL = storageDirectory.appendingPathComponent("catalog.json")
+        self.storageDirectory = storageDirectory
+        self.metadataURL = metadataURL
+        diskStore = UserFurnitureDiskStore(
+            storageDirectory: storageDirectory,
+            metadataURL: metadataURL
+        )
         self.accessTokenProvider = accessTokenProvider
         load()
     }
@@ -110,7 +327,7 @@ final class UserFurnitureStore: ObservableObject {
         guard let sourceModelURL,
               let token = AuthTokenStore.shared.accessToken,
               !token.hasPrefix("mock_") else {
-            return try add(
+            return try await add(
                 name: name,
                 normalizedName: normalizedName,
                 category: category,
@@ -151,7 +368,7 @@ final class UserFurnitureStore: ObservableObject {
             // 배포된 Spring 서버에 사용자 가구 생성 엔드포인트가 아직 없더라도,
             // 보정한 GLB를 잃지 않고 이 기기의 내 가구/에디터 카탈로그에서 사용한다.
             // 이 항목은 다음 카탈로그 새로고침 때 동일한 서버 계약으로 재시도된다.
-            return try add(
+            return try await add(
                 name: name,
                 normalizedName: normalizedName,
                 category: category,
@@ -162,7 +379,7 @@ final class UserFurnitureStore: ObservableObject {
                 sourceModelURL: sourceModelURL
             )
         }
-        return try add(
+        return try await add(
             id: response.id,
             name: name,
             normalizedName: normalizedName,
@@ -216,42 +433,44 @@ final class UserFurnitureStore: ObservableObject {
 
         guard let remoteUsers = try? await FurnitureService().fetchUserCatalog() else { return }
 
-        let localOnlyItems = items.filter { $0.serverModelPath == nil }
-        var synchronized: [UserFurniture] = []
         for remote in remoteUsers {
-            let existing = items.first { $0.id == remote.id }
-            let dimensions = UserFurnitureMetricDimensions.meters(
-                width: remote.dimensions.x,
-                height: remote.dimensions.y,
-                depth: remote.dimensions.z
-            )
-            let furniture = UserFurniture(
-                id: remote.id,
-                name: remote.name,
-                normalizedName: existing?.normalizedName ?? remote.name,
-                category: remote.category,
-                categoryLabel: remote.group,
-                width: dimensions.width,
-                height: dimensions.height,
-                depth: dimensions.depth,
-                modelFileName: remote.id,
-                serverModelPath: remote.modelUrl,
-                createdAt: existing?.createdAt ?? .distantPast
-            )
-            if Self.modelURL(for: remote.id, storageDirectory: storageDirectory) == nil,
+            if !(await diskStore.containsModel(fileName: remote.id)),
                let modelPath = remote.modelUrl,
                let temporaryURL = try? await FurnitureService().downloadModel(path: modelPath) {
                 defer { try? FileManager.default.removeItem(at: temporaryURL) }
-                try? FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
-                try? FileManager.default.moveItem(
-                    at: temporaryURL,
-                    to: storageDirectory.appendingPathComponent(remote.id).appendingPathExtension("glb")
+                try? await diskStore.installDownloadedModel(at: temporaryURL, fileName: remote.id)
+            }
+        }
+
+        try? await withMutationLock {
+            let localOnlyItems = items.filter { $0.serverModelPath == nil }
+            let synchronized = remoteUsers.map { remote in
+                let existing = items.first { $0.id == remote.id }
+                let dimensions = UserFurnitureMetricDimensions.meters(
+                    width: remote.dimensions.x,
+                    height: remote.dimensions.y,
+                    depth: remote.dimensions.z
+                )
+                return UserFurniture(
+                    id: remote.id,
+                    name: remote.name,
+                    normalizedName: existing?.normalizedName ?? remote.name,
+                    category: remote.category,
+                    categoryLabel: remote.group,
+                    width: dimensions.width,
+                    height: dimensions.height,
+                    depth: dimensions.depth,
+                    modelFileName: remote.id,
+                    serverModelPath: remote.modelUrl,
+                    createdAt: existing?.createdAt ?? .distantPast
                 )
             }
-            synchronized.append(furniture)
+            let refreshedItems = (localOnlyItems + synchronized).sorted {
+                $0.createdAt > $1.createdAt
+            }
+            try await diskStore.persist(refreshedItems)
+            items = refreshedItems
         }
-        items = (localOnlyItems + synchronized).sorted { $0.createdAt > $1.createdAt }
-        try? persist()
     }
 
     /// 404 폴백으로 기기에만 남은 가구를 백엔드와 동기화한다.
@@ -279,7 +498,7 @@ final class UserFurnitureStore: ObservableObject {
                     sourceURL.lastPathComponent,
                     Self.createMetadata(for: furniture)
                 )
-                try promotePendingFurniture(
+                try await promotePendingFurniture(
                     furniture,
                     response: response,
                     sourceURL: sourceURL
@@ -338,52 +557,35 @@ final class UserFurnitureStore: ObservableObject {
         _ furniture: UserFurniture,
         response: FurnitureCreateResponse,
         sourceURL: URL
-    ) throws {
-        guard !response.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              let index = items.firstIndex(where: {
-                  $0.id == furniture.id && $0.serverModelPath == nil
-              }) else {
-            throw CocoaError(.fileReadCorruptFile)
-        }
-
-        let destination = storageDirectory
-            .appendingPathComponent(response.id)
-            .appendingPathExtension("glb")
-        let usesNewFileName = sourceURL.standardizedFileURL != destination.standardizedFileURL
-
-        if usesNewFileName {
-            if FileManager.default.fileExists(atPath: destination.path) {
-                try FileManager.default.removeItem(at: destination)
+    ) async throws {
+        try await withMutationLock {
+            guard !response.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  let index = items.firstIndex(where: {
+                      $0.id == furniture.id && $0.serverModelPath == nil
+                  }) else {
+                throw CocoaError(.fileReadCorruptFile)
             }
-            try FileManager.default.copyItem(at: sourceURL, to: destination)
-        }
 
-        let previous = items[index]
-        items[index] = UserFurniture(
-            id: response.id,
-            name: furniture.name,
-            normalizedName: furniture.normalizedName,
-            category: furniture.category,
-            categoryLabel: furniture.categoryLabel,
-            width: furniture.width,
-            height: furniture.height,
-            depth: furniture.depth,
-            modelFileName: response.id,
-            serverModelPath: response.modelUrl,
-            createdAt: furniture.createdAt
-        )
-
-        do {
-            try persist()
-            if usesNewFileName {
-                try? FileManager.default.removeItem(at: sourceURL)
-            }
-        } catch {
-            items[index] = previous
-            if usesNewFileName {
-                try? FileManager.default.removeItem(at: destination)
-            }
-            throw error
+            var synchronizedItems = items
+            synchronizedItems[index] = UserFurniture(
+                id: response.id,
+                name: furniture.name,
+                normalizedName: furniture.normalizedName,
+                category: furniture.category,
+                categoryLabel: furniture.categoryLabel,
+                width: furniture.width,
+                height: furniture.height,
+                depth: furniture.depth,
+                modelFileName: response.id,
+                serverModelPath: response.modelUrl,
+                createdAt: furniture.createdAt
+            )
+            try await diskStore.promote(
+                sourceModelURL: sourceURL,
+                modelFileName: response.id,
+                catalog: synchronizedItems
+            )
+            items = synchronizedItems
         }
     }
 
@@ -399,69 +601,47 @@ final class UserFurnitureStore: ObservableObject {
         depth: Double,
         sourceModelURL: URL?,
         serverModelPath: String? = nil
-    ) throws -> UserFurniture {
-        try FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
-
-        let id = id ?? "usr_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
-        let modelFileName = id
-        let destination = storageDirectory.appendingPathComponent(modelFileName).appendingPathExtension("glb")
-        let dimensions = UserFurnitureMetricDimensions.meters(
-            width: width,
-            height: height,
-            depth: depth
-        )
-
-        if let sourceModelURL {
-            let accessed = sourceModelURL.startAccessingSecurityScopedResource()
-            defer {
-                if accessed { sourceModelURL.stopAccessingSecurityScopedResource() }
-            }
-            do {
-                if FileManager.default.fileExists(atPath: destination.path) {
-                    try FileManager.default.removeItem(at: destination)
-                }
-                try FileManager.default.copyItem(at: sourceModelURL, to: destination)
-            } catch {
-                try? FileManager.default.removeItem(at: destination)
-                throw error
-            }
+    ) async throws -> UserFurniture {
+        try await withMutationLock {
+            let id = id ?? "usr_\(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased())"
+            let modelFileName = id
+            let dimensions = UserFurnitureMetricDimensions.meters(
+                width: width,
+                height: height,
+                depth: depth
+            )
+            let furniture = UserFurniture(
+                id: id,
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                normalizedName: normalizedName.trimmingCharacters(in: .whitespacesAndNewlines),
+                category: category,
+                categoryLabel: categoryLabel,
+                width: dimensions.width,
+                height: dimensions.height,
+                depth: dimensions.depth,
+                modelFileName: modelFileName,
+                serverModelPath: serverModelPath,
+                createdAt: Date()
+            )
+            let updatedItems = [furniture] + items
+            try await diskStore.add(
+                sourceModelURL: sourceModelURL,
+                modelFileName: modelFileName,
+                catalog: updatedItems
+            )
+            items = updatedItems
+            return furniture
         }
-
-        let furniture = UserFurniture(
-            id: id,
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            normalizedName: normalizedName.trimmingCharacters(in: .whitespacesAndNewlines),
-            category: category,
-            categoryLabel: categoryLabel,
-            width: dimensions.width,
-            height: dimensions.height,
-            depth: dimensions.depth,
-            modelFileName: modelFileName,
-            serverModelPath: serverModelPath,
-            createdAt: Date()
-        )
-        items.insert(furniture, at: 0)
-        do {
-            try persist()
-        } catch {
-            items.removeAll { $0.id == furniture.id }
-            try? FileManager.default.removeItem(at: destination)
-            throw error
-        }
-        return furniture
     }
 
-    func remove(_ furniture: UserFurniture) throws {
-        let previous = items
-        items.removeAll { $0.id == furniture.id }
-        do {
-            try persist()
-            if let modelURL = Self.modelURL(for: furniture.modelFileName, storageDirectory: storageDirectory) {
-                try? FileManager.default.removeItem(at: modelURL)
-            }
-        } catch {
-            items = previous
-            throw error
+    func remove(_ furniture: UserFurniture) async throws {
+        try await withMutationLock {
+            let updatedItems = items.filter { $0.id != furniture.id }
+            try await diskStore.remove(
+                modelFileName: furniture.modelFileName,
+                catalog: updatedItems
+            )
+            items = updatedItems
         }
     }
 
@@ -472,7 +652,7 @@ final class UserFurnitureStore: ObservableObject {
            token?.hasPrefix("mock_") == false {
             try await FurnitureService().deleteUserFurniture(id: furniture.id)
         }
-        try remove(furniture)
+        try await remove(furniture)
     }
 
     nonisolated static func modelURL(for fileName: String) -> URL? {
@@ -499,14 +679,48 @@ final class UserFurnitureStore: ObservableObject {
         }
         items = migrated.sorted { $0.createdAt > $1.createdAt }
         if migrated != decoded {
-            try? persist()
+            let migratedItems = items
+            initialPersistenceTask = Task { [diskStore] in
+                try? await diskStore.persist(migratedItems)
+            }
         }
     }
 
-    private func persist() throws {
-        try FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
-        let data = try JSONEncoder.spatiumAPI.encode(items)
-        try data.write(to: metadataURL, options: .atomic)
+    private func withMutationLock<T>(
+        _ operation: () async throws -> T
+    ) async throws -> T {
+        await acquireMutationLock()
+        do {
+            if let initialPersistenceTask {
+                await initialPersistenceTask.value
+                self.initialPersistenceTask = nil
+            }
+            try Task.checkCancellation()
+            let result = try await operation()
+            releaseMutationLock()
+            return result
+        } catch {
+            releaseMutationLock()
+            throw error
+        }
+    }
+
+    private func acquireMutationLock() async {
+        guard isMutationInProgress else {
+            isMutationInProgress = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            mutationWaiters.append(continuation)
+        }
+    }
+
+    private func releaseMutationLock() {
+        guard !mutationWaiters.isEmpty else {
+            isMutationInProgress = false
+            return
+        }
+        mutationWaiters.removeFirst().resume()
     }
 
     private nonisolated static var defaultStorageDirectory: URL {
