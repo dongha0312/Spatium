@@ -382,6 +382,8 @@ enum ImgTo3DCategory: String, CaseIterable, Identifiable {
     case television = "TV"
     case toilet = "변기"
     case washerDryer = "세탁기·건조기"
+    // 프런트엔드 SaveStep의 "수납/편집 가능" 카테고리 대응 (선반형 수납 등 편집 가능한 가구).
+    case storageEditable = "수납/편집 가능"
     case other = "기타"
 
     var id: String { rawValue }
@@ -405,6 +407,7 @@ enum ImgTo3DCategory: String, CaseIterable, Identifiable {
         case .television: "television"
         case .toilet: "toilet"
         case .washerDryer: "washerDryer"
+        case .storageEditable: "storage/editable"
         case .other: "other"
         }
     }

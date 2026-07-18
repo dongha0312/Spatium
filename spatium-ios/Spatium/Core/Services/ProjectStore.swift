@@ -371,22 +371,50 @@ final class ProjectStore: ObservableObject {
         }
     }
 
+    /// 방·프로젝트 수만큼 네트워크 요청을 한꺼번에 실행하지 않기 위한 개수 집계 동시성 상한.
+    static let maxConcurrentCountRequests = 5
+
+    /// 제한된 동시성의 병렬 처리. 처음 `limit`개만 시작하고 하나가 끝날 때마다
+    /// 다음 요소를 이어 실행하는 슬라이딩 윈도 방식이라, 데이터 규모가 커져도
+    /// 순간 동시 요청 수가 `limit`을 넘지 않는다. 결과는 완료 순서대로 `process`에 전달된다.
+    static func withBoundedConcurrency<Element: Sendable, Value: Sendable>(
+        elements: [Element],
+        limit: Int = ProjectStore.maxConcurrentCountRequests,
+        operation: @escaping @Sendable (Element) async -> Value,
+        process: (Value) -> Void
+    ) async {
+        await withTaskGroup(of: Value.self) { group in
+            var iterator = elements.makeIterator()
+            var started = 0
+            while started < max(limit, 1), let element = iterator.next() {
+                group.addTask { await operation(element) }
+                started += 1
+            }
+            for await value in group {
+                if let element = iterator.next() {
+                    group.addTask { await operation(element) }
+                }
+                process(value)
+            }
+        }
+    }
+
     /// 방별 스캔 JSON(가벼움)을 병렬로 받아 항목 개수를 갱신합니다. 도착하는 대로 행이 갱신됩니다.
     private func refreshItemCounts(projectID: String, rooms: [RoomRecord]) async {
         let assetService = RoomScanAssetService()
-        await withTaskGroup(of: (String, Int?).self) { group in
-            for room in rooms where room.hasScanRenderFiles {
-                group.addTask {
-                    (room.id, await assetService.loadItemCount(for: room))
-                }
-            }
-            for await (roomID, count) in group {
-                guard let count else { continue }
+        await Self.withBoundedConcurrency(
+            elements: rooms.filter(\.hasScanRenderFiles),
+            operation: { room in
+                (room.id, await assetService.loadItemCount(for: room))
+            },
+            process: { result in
+                let (roomID, count) = result
+                guard let count else { return }
                 updateRoom(roomID: roomID, projectID: projectID, shouldPersist: false) {
                     $0.itemCount = count
                 }
             }
-        }
+        )
     }
 
     func renameProject(projectID: String, newName: String) async {
@@ -529,21 +557,21 @@ final class ProjectStore: ObservableObject {
         guard !projectIDs.isEmpty else { return }
 
         var firstErrorMessage: String?
-        await withTaskGroup(of: (String, Result<Int, Error>).self) { group in
-            for projectID in projectIDs {
-                group.addTask { [service] in
-                    do {
-                        return (projectID, .success(try await service.fetchRoomCount(projectID: projectID)))
-                    } catch {
-                        return (projectID, .failure(error))
-                    }
+        await Self.withBoundedConcurrency(
+            elements: projectIDs,
+            operation: { [service] projectID -> (String, Result<Int, Error>) in
+                do {
+                    return (projectID, .success(try await service.fetchRoomCount(projectID: projectID)))
+                } catch {
+                    return (projectID, .failure(error))
                 }
-            }
-            for await (projectID, result) in group {
+            },
+            process: { entry in
+                let (projectID, result) = entry
                 switch result {
                 case let .success(count):
                     guard let index = projects.firstIndex(where: { $0.id == projectID }),
-                          projects[index].roomCount != count else { continue }
+                          projects[index].roomCount != count else { return }
                     projects[index].roomCount = count
                 case let .failure(error):
                     if firstErrorMessage == nil, !(error is CancellationError) {
@@ -551,7 +579,7 @@ final class ProjectStore: ObservableObject {
                     }
                 }
             }
-        }
+        )
         if let firstErrorMessage {
             if !silently {
                 lastErrorMessage = firstErrorMessage

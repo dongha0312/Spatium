@@ -160,8 +160,7 @@ final class RoomEditorViewModel: ObservableObject {
                 spaceId: room.id,
                 name: room.roomType,
                 area: room.area ?? 16,
-                ceilingHeight: 2.4,
-                wallColor: "#F2EDE5"
+                ceilingHeight: 2.4
             ),
             furnitures: []
         )
@@ -212,7 +211,6 @@ final class RoomEditorViewModel: ObservableObject {
                 name: roomName,
                 area: max(area, 4),
                 ceilingHeight: ceilingHeight,
-                wallColor: "#F2EDE5",
                 floorColor: initialFloorColor
             ),
             furnitures: []
@@ -280,22 +278,48 @@ final class RoomEditorViewModel: ObservableObject {
         await inspectRecoverableDraft()
     }
 
-    /// 벽 색상 변경(4종 팝오버). 씬을 다시 지어 벽/배경에 반영합니다.
-    func setWallColor(_ hex: String) {
-        guard layout.space?.wallColor.caseInsensitiveCompare(hex) != .orderedSame else { return }
+    /// 측정 모드 면적 배지용 실제 바닥 면적(m²). 씬이 방 셸에서 계산해 게시한다.
+    /// (프런트엔드 room-area 배지 대응 — 바닥 mesh가 없으면 폭×깊이 근사값)
+    @Published private(set) var roomAreaSquareMeters: Double?
+
+    func adoptRoomArea(_ area: Double?) {
+        guard roomAreaSquareMeters != area else { return }
+        roomAreaSquareMeters = area
+    }
+
+    /// 두 색상 선택값이 같은지(둘 다 nil 포함) 비교한다.
+    private static func isSameSurfaceColor(_ lhs: String?, _ rhs: String?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): true
+        case let (lhs?, rhs?): lhs.caseInsensitiveCompare(rhs) == .orderedSame
+        default: false
+        }
+    }
+
+    /// 벽 색상 변경(4종 팝오버 + 기본 색상 되돌리기). 씬을 다시 지어 벽/배경에 반영합니다.
+    /// 프런트엔드 applyRoomWallColor 대응 — nil이면 스캔 원본 벽 재질로 복원합니다.
+    func setWallColor(_ hex: String?) {
+        guard layout.space != nil,
+              !Self.isSameSurfaceColor(layout.space?.wallColor, hex) else { return }
         recordHistoryStep()
         layout.space?.wallColor = hex
         markLayoutChanged()
         sceneRevision += 1
     }
 
-    var wallColorHex: String { layout.space?.wallColor ?? "#F2EDE5" }
+    /// 사용자가 고른 벽 색. nil이면 스캔 원본 벽 재질(박스 방은 기본 벽색)을 유지합니다.
+    var wallColorHex: String? { layout.space?.wallColor }
+
+    /// 벽 메우기 패널처럼 실제 색값이 필요한 곳에서 쓰는 벽 색. (원본 유지 상태면 기본 크림색)
+    var resolvedWallColorHex: String { layout.space?.wallColor ?? "#F2EDE5" }
 
     /// 프런트엔드 FLOOR_COLORS 선택값. nil이면 스캔 원본 바닥 재질을 유지합니다.
     var floorColorHex: String? { layout.space?.floorColor }
 
-    func setFloorColor(_ hex: String) {
-        guard layout.space?.floorColor?.caseInsensitiveCompare(hex) != .orderedSame else { return }
+    /// 바닥 색상 변경. 프런트엔드 applyRoomFloorColor 대응 — nil이면 원본 재질로 복원합니다.
+    func setFloorColor(_ hex: String?) {
+        guard layout.space != nil,
+              !Self.isSameSurfaceColor(layout.space?.floorColor, hex) else { return }
         recordHistoryStep()
         layout.space?.floorColor = hex
         markLayoutChanged()

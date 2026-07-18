@@ -45,7 +45,9 @@ nonisolated struct RoomSpace: Codable, Identifiable, Equatable, Sendable {
     var name: String
     var area: Double
     var ceilingHeight: Double
-    var wallColor: String
+    /// 사용자가 고른 벽 색상. 프런트엔드 applyRoomWallColor 대응 —
+    /// nil이면 스캔 원본 벽 재질(박스 방은 기본 벽색)을 유지합니다.
+    var wallColor: String? = nil
     /// 스캔 metadata의 _spatiumFloorColor에서 복원한 선택 바닥 색상.
     /// nil이면 스캔 원본 재질(박스 방은 기본 바닥색)을 유지합니다.
     var floorColor: String? = nil

@@ -86,7 +86,7 @@ extension RoomEditorSceneView.Coordinator {
             furniture.scale.x.description,
             furniture.scale.y.description,
             furniture.scale.z.description,
-            RoomEditorViewModel.isWallInfill(source) ? "infill:\(viewModel.wallColorHex)" : ""
+            RoomEditorViewModel.isWallInfill(source) ? "infill:\(viewModel.resolvedWallColorHex)" : ""
         ].joined(separator: "|")
     }
 
@@ -120,7 +120,7 @@ extension RoomEditorSceneView.Coordinator {
         let depth = CGFloat(max(Float(furniture.depth ?? 0.1), 0.05) * max(Float(furniture.scale.z), 0.001))
         let box = SCNBox(width: width, height: height, length: depth, chamferRadius: 0)
         let material = SCNMaterial()
-        material.diffuse.contents = UIColor(hexString: viewModel.wallColorHex)
+        material.diffuse.contents = UIColor(hexString: viewModel.resolvedWallColorHex)
         material.locksAmbientWithDiffuse = true
         box.materials = [material]
 

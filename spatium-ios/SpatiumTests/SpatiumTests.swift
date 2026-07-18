@@ -163,6 +163,12 @@ struct SpatiumTests {
             viewModel: viewModel,
             modelLoader: TestDataFurnitureModelLoader()
         )
+        // 측정 노드는 씬 빌드 때 계산한 방 치수(roomMeasurements)를 사용한다.
+        coordinator.roomMeasurements = RoomEditorSceneView.Coordinator.fallbackRoomMeasurements(
+            bounds: .defaultRoom,
+            floorY: 0,
+            height: 2.4
+        )
 
         let furniture = SCNNode(
             geometry: SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0)
@@ -1839,7 +1845,7 @@ struct BackendContractTests {
         #expect(ImgTo3DCategory.allCases.map(\.code) == [
             "figure", "bathtub", "bed", "chair", "dishwasher", "fireplace", "oven",
             "refrigerator", "sink", "sofa", "stairs", "storage", "stove",
-            "table", "television", "toilet", "washerDryer", "other"
+            "table", "television", "toilet", "washerDryer", "storage/editable", "other"
         ])
         #expect(ImgTo3DSegmentationProvider.allCases.map(\.rawValue) == ["grounded_sam2", "yolo"])
         #expect(ImgTo3DGenerationProvider.allCases.map(\.rawValue) == [
@@ -2078,5 +2084,183 @@ struct HomeAmbientAnimationTests {
         #expect(!HomeDashboardView.shouldRunAmbientAnimations(
             isActive: true, scenePhase: .active, reduceMotion: true
         ))
+    }
+}
+
+@MainActor
+struct BoundedConcurrencyTests {
+    /// 방·프로젝트 개수 집계가 데이터 규모와 무관하게 순간 동시 요청 수를
+    /// `maxConcurrentCountRequests` 이하로 유지하면서 모든 요소를 처리하는지 검증한다.
+    @Test func boundedConcurrencyKeepsWindowAndProcessesEveryElement() async {
+        actor ConcurrencyTracker {
+            private var current = 0
+            private(set) var peak = 0
+            func begin() {
+                current += 1
+                peak = max(peak, current)
+            }
+            func end() {
+                current -= 1
+            }
+        }
+
+        let tracker = ConcurrencyTracker()
+        var processed: [Int] = []
+        await ProjectStore.withBoundedConcurrency(
+            elements: Array(1...23),
+            limit: 5,
+            operation: { value in
+                await tracker.begin()
+                try? await Task.sleep(for: .milliseconds(15))
+                await tracker.end()
+                return value
+            },
+            process: { processed.append($0) }
+        )
+
+        #expect(processed.sorted() == Array(1...23))
+        #expect(await tracker.peak <= 5)
+
+        // 기본 상한이 문서 권장 범위(4~6) 안에 있는지도 고정한다.
+        #expect((4...6).contains(ProjectStore.maxConcurrentCountRequests))
+    }
+}
+
+@MainActor
+struct SurfaceTintRestoreTests {
+    /// 프런트엔드 applyRoomWallColor/applyRoomFloorColor 대응 회귀:
+    /// 색을 칠하기 전 원본 diffuse를 기록하고, 선택 해제(nil) 시 스캔 원본 재질로 복원한다.
+    @Test func clearingWallAndFloorColorRestoresOriginalScanMaterials() throws {
+        let room = RoomRecord(
+            id: "tint-restore-room",
+            roomType: "틴트 복원 방",
+            itemCount: 0,
+            photoCount: 0,
+            uploadedAt: Date(),
+            fileName: "",
+            area: 16
+        )
+        let viewModel = RoomEditorViewModel(room: room)
+        let coordinator = RoomEditorSceneView.Coordinator(
+            viewModel: viewModel,
+            modelLoader: TestDataFurnitureModelLoader()
+        )
+
+        // 스캔 셸을 흉내 낸 벽/바닥 mesh — 원본 diffuse를 고유 색으로 구분해 둔다.
+        let shell = SCNNode()
+        let wall = SCNNode(geometry: SCNBox(width: 3, height: 2.4, length: 0.1, chamferRadius: 0))
+        wall.name = "Wall_0_grp"
+        wall.geometry?.firstMaterial?.diffuse.contents = UIColor.systemRed
+        let floor = SCNNode(geometry: SCNBox(width: 3, height: 0.05, length: 3, chamferRadius: 0))
+        floor.name = "Floor_grp"
+        floor.geometry?.firstMaterial?.diffuse.contents = UIColor.systemBlue
+        shell.addChildNode(wall)
+        shell.addChildNode(floor)
+
+        coordinator.tintWalls(in: shell, color: UIColor.white)
+        coordinator.tintFloors(in: shell, color: UIColor.black)
+        #expect(wall.geometry?.firstMaterial?.diffuse.contents as? UIColor == UIColor.white)
+        #expect(floor.geometry?.firstMaterial?.diffuse.contents as? UIColor == UIColor.black)
+
+        coordinator.tintWalls(in: shell, color: nil)
+        coordinator.tintFloors(in: shell, color: nil)
+        #expect(wall.geometry?.firstMaterial?.diffuse.contents as? UIColor == UIColor.systemRed)
+        #expect(floor.geometry?.firstMaterial?.diffuse.contents as? UIColor == UIColor.systemBlue)
+
+        // 한 번도 tint하지 않은 재질은 nil 적용이 원본을 건드리지 않아야 한다.
+        let untouched = SCNNode(geometry: SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0))
+        untouched.name = "Wall_1_grp"
+        untouched.geometry?.firstMaterial?.diffuse.contents = UIColor.systemGreen
+        coordinator.tintWalls(in: untouched, color: nil)
+        #expect(untouched.geometry?.firstMaterial?.diffuse.contents as? UIColor == UIColor.systemGreen)
+    }
+
+    /// 색을 고르지 않은 새 스캔 방은 벽을 기본색으로 덮지 않고 원본 재질을 유지한다.
+    @Test func newEditorStartsWithoutForcedWallColor() {
+        let room = RoomRecord(
+            id: "no-tint-room",
+            roomType: "원본 유지 방",
+            itemCount: 0,
+            photoCount: 0,
+            uploadedAt: Date(),
+            fileName: "",
+            area: 16
+        )
+        let viewModel = RoomEditorViewModel(room: room)
+        #expect(viewModel.wallColorHex == nil)
+        #expect(viewModel.resolvedWallColorHex == "#F2EDE5")
+
+        viewModel.setWallColor("#3A3A3A")
+        #expect(viewModel.wallColorHex == "#3A3A3A")
+        viewModel.setWallColor(nil)
+        #expect(viewModel.wallColorHex == nil)
+    }
+}
+
+@MainActor
+struct RoomMeasurementCalculationTests {
+    /// 프런트엔드 calculateRoomMeasurements 대응 회귀: 바닥 mesh 삼각형에서
+    /// 폭·깊이·실제 면적·외곽 edge(사용 횟수 1)·높이선을 계산한다.
+    @Test func floorPolygonProducesOutlineAreaAndHeightSegment() throws {
+        // 3m × 2m 바닥(삼각형 2개, y=0.1) + 높이 2.3m 벽 하나로 셸을 구성한다.
+        let floorY: Float = 0.1
+        let vertices = [
+            SCNVector3(0, floorY, 0),
+            SCNVector3(3, floorY, 0),
+            SCNVector3(3, floorY, 2),
+            SCNVector3(0, floorY, 2)
+        ]
+        let indices: [Int32] = [0, 1, 2, 0, 2, 3]
+        let geometry = SCNGeometry(
+            sources: [SCNGeometrySource(vertices: vertices)],
+            elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles)]
+        )
+        let floor = SCNNode(geometry: geometry)
+        floor.name = "Floor_grp"
+
+        let wall = SCNNode(geometry: SCNBox(width: 3, height: 2.3, length: 0.05, chamferRadius: 0))
+        wall.name = "Wall_0_grp"
+        wall.position = SCNVector3(1.5, floorY + 1.15, 0)
+
+        let shell = SCNNode()
+        shell.addChildNode(floor)
+        shell.addChildNode(wall)
+
+        let measurements = try #require(
+            RoomEditorSceneView.Coordinator.calculateRoomMeasurements(from: shell)
+        )
+
+        #expect(abs(measurements.width - 3) < 0.01)
+        #expect(abs(measurements.depth - 2) < 0.01)
+        // 실제 바닥 폴리곤 면적(3×2=6). bounding box가 아니라 삼각형 면적 합이어야 한다.
+        #expect(abs(measurements.area - 6) < 0.05)
+        // 외곽선은 사용 횟수 1인 edge 4개(대각선 제외), 길이는 3·2·3·2.
+        #expect(measurements.outlineSegments.count == 4)
+        let lengths = measurements.outlineSegments.map(\.length).sorted()
+        #expect(lengths.count == 4)
+        if lengths.count == 4 {
+            #expect(abs(lengths[0] - 2) < 0.01 && abs(lengths[1] - 2) < 0.01)
+            #expect(abs(lengths[2] - 3) < 0.01 && abs(lengths[3] - 3) < 0.01)
+        }
+        // 높이선은 바닥 테두리 바깥 모서리(maxX+0.18, minZ-0.18)에 수직으로 선다.
+        #expect(abs(measurements.heightSegment.start.x - 3.18) < 0.01)
+        #expect(abs(measurements.heightSegment.start.z - (-0.18)) < 0.01)
+        #expect(measurements.heightSegment.length > 2.2)
+        // 외곽선 Y는 바닥 평면 높이를 따른다.
+        #expect(abs((measurements.outlineSegments.first?.start.y ?? 0) - floorY) < 0.01)
+    }
+
+    /// 바닥 mesh가 없는 박스 방 폴백은 bounding box 직사각형 외곽선을 만든다.
+    @Test func fallbackMeasurementsUseRectangleOutline() {
+        let measurements = RoomEditorSceneView.Coordinator.fallbackRoomMeasurements(
+            bounds: HorizontalBounds(minX: -2, maxX: 2, minZ: -1.5, maxZ: 1.5),
+            floorY: 0,
+            height: 2.4
+        )
+        #expect(abs(measurements.width - 4) < 0.001)
+        #expect(abs(measurements.depth - 3) < 0.001)
+        #expect(abs(measurements.area - 12) < 0.001)
+        #expect(measurements.outlineSegments.count == 4)
+        #expect(abs(measurements.heightSegment.length - 2.4) < 0.001)
     }
 }
