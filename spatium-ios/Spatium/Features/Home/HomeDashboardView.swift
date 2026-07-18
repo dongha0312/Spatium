@@ -215,11 +215,11 @@ private struct ScanCommandCard: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
 
-            Text("AR 카메라를 사용하여 방 전체를 입체적으로 스캔하고 도면을 저장합니다.")
+            Text("한 번에 방 하나만 스캔해 주세요. 다른 방은 현재 스캔을 완료한 뒤 새로 시작하면 더 정확합니다.")
                 .font(.caption)
                 .lineSpacing(4)
                 .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(2)
+                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }

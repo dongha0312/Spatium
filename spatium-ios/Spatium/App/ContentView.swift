@@ -23,7 +23,10 @@ struct ContentView: View {
         let testScan = TestRoomData.scans.first(where: { $0.id == requestedScanID })
             ?? TestRoomData.scans.first
 
-        if arguments.contains("-UITestOnboarding") {
+        if arguments.contains("-UITestScanPreparation") {
+            // RoomPlan 지원 여부와 무관하게 방 단위 스캔 안내 문구를 검증한다.
+            ScanPreparationSheet(onStart: {})
+        } else if arguments.contains("-UITestOnboarding") {
             // 가로모드·큰 글씨 검증용: 저장된 첫 실행 여부와 무관하게 온보딩을 바로 연다.
             OnboardingView(onFinished: {})
         } else if arguments.contains("-UITestEditor"),
@@ -97,6 +100,8 @@ struct MainTabView: View {
     @State private var showNewProjectSheet = false
     @State private var shouldStartScanAfterProjectSheetDismiss = false
     @State private var scanProject: ScanProject?
+    @State private var showScanPreparation = false
+    @State private var shouldOpenScannerAfterPreparationDismiss = false
     @State private var showScanner = false
     @State private var isScanning = false
     @State private var scanReturnTab: AppTab = .home
@@ -206,6 +211,18 @@ struct MainTabView: View {
             }
         }) {
             NewProjectSheet(onCreate: handleProjectCreated)
+        }
+        .sheet(
+            isPresented: $showScanPreparation,
+            onDismiss: {
+                guard shouldOpenScannerAfterPreparationDismiss else { return }
+                shouldOpenScannerAfterPreparationDismiss = false
+                beginRoomScan()
+            }
+        ) {
+            ScanPreparationSheet {
+                shouldOpenScannerAfterPreparationDismiss = true
+            }
         }
         .sheet(isPresented: $showScanner) {
             ScanCaptureSheet(
@@ -501,6 +518,11 @@ struct MainTabView: View {
             flowErrorMessage = "이 기기는 RoomPlan 방 스캔을 지원하지 않아요. LiDAR가 탑재된 iPhone 또는 iPad에서 다시 시도해 주세요."
             return
         }
+        shouldOpenScannerAfterPreparationDismiss = false
+        showScanPreparation = true
+    }
+
+    private func beginRoomScan() {
         scanReturnTab = selectedTab
         // 주의: 여기서 scanProject를 nil로 만들면 안 된다. 리뷰 화면(ScanReviewView)이
         // Binding($scanProject) 강제 언래핑 바인딩을 들고 있어서, "다시 스캔"을 누르는 순간

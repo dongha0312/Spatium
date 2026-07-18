@@ -59,7 +59,7 @@ struct EmptyScanView: View {
 
             ActionCTAButton(
                 title: "방 스캔 시작",
-                subtitle: "카메라로 공간을 스캔해 3D 도면을 만드세요",
+                subtitle: "방마다 새 스캔을 시작해 정확한 3D 도면을 만드세요",
                 systemImage: "camera.viewfinder",
                 tint: SpatiumTheme.accent,
                 action: onStartScan
