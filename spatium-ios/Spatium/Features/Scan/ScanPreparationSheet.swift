@@ -45,7 +45,8 @@ struct ScanPreparationSheet: View {
                 .font(.title3.weight(.bold))
                 .foregroundStyle(SpatiumTheme.onCta)
                 .frame(width: 48, height: 48)
-                .background(SpatiumTheme.ctaFill, in: RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous))
+                .background(SpatiumTheme.ctaFill, in: Circle())
+                .shadow(color: SpatiumTheme.shadow.opacity(0.10), radius: 8, y: 4)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("한 방 = 스캔 1회")
@@ -96,10 +97,10 @@ struct ScanPreparationSheet: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(SpatiumTheme.warmPanel)
         .overlay(
-            RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous)
+            RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous)
                 .stroke(SpatiumTheme.border, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
@@ -135,10 +136,10 @@ struct ScanPreparationSheet: View {
             .padding(.horizontal, 14)
             .background(SpatiumTheme.surface)
             .overlay(
-                RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous)
+                RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous)
                     .stroke(SpatiumTheme.border, lineWidth: 1)
             )
-            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
         }
     }
 
@@ -164,10 +165,11 @@ struct ScanPreparationSheet: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 54)
                     .background(SpatiumTheme.ctaFill)
-                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                    .clipShape(Capsule())
                     .shadow(color: SpatiumTheme.shadow.opacity(0.14), radius: 10, y: 5)
             }
             .buttonStyle(.pressable)
+            .contentShape(Capsule())
             .accessibilityIdentifier("scan-preparation-start-button")
             .padding(.horizontal, SpatiumSpacing.lg)
             .padding(.top, 12)
