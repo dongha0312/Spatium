@@ -24,8 +24,8 @@ struct ContentView: View {
             ?? TestRoomData.scans.first
 
         if arguments.contains("-UITestScanPreparation") {
-            // RoomPlan 지원 여부와 무관하게 방 단위 스캔 안내 문구를 검증한다.
-            ScanPreparationSheet(onStart: {})
+            // 실제 하단 시트 높이와 고정 CTA까지 RoomPlan 지원 여부와 무관하게 검증한다.
+            ScanPreparationUITestHost()
         } else if arguments.contains("-UITestOnboarding") {
             // 가로모드·큰 글씨 검증용: 저장된 첫 실행 여부와 무관하게 온보딩을 바로 연다.
             OnboardingView(onFinished: {})
@@ -84,6 +84,24 @@ struct ContentView: View {
         }
     }
 }
+
+#if DEBUG
+/// UI 테스트가 준비 화면을 전체 화면 뷰가 아닌 실제 presentation detent로 검증하도록 한다.
+private struct ScanPreparationUITestHost: View {
+    @State private var showsPreparation = false
+
+    var body: some View {
+        SpatiumTheme.background
+            .ignoresSafeArea()
+            .task {
+                showsPreparation = true
+            }
+            .sheet(isPresented: $showsPreparation) {
+                ScanPreparationSheet(onStart: {})
+            }
+    }
+}
+#endif
 
 struct MainTabView: View {
     @StateObject private var projectStore = ProjectStore()
