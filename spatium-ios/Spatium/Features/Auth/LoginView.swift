@@ -20,6 +20,7 @@ struct LoginView: View {
     /// 게스트로 만든 로컬 프로젝트 수. 로그인하면 서버 목록이 캐시를 덮어써
     /// 사라지므로, 어떤 로그인 방식이든 진행하기 전에 미리 경고한다.
     @State private var guestProjectsAtRisk = 0
+    @State private var isCheckingGuestProjects = true
 
     var body: some View {
         NavigationStack {
@@ -48,7 +49,7 @@ struct LoginView: View {
                         systemImage: "arrow.right",
                         action: login
                     )
-                    .disabled(isLoading || email.isEmpty || password.isEmpty)
+                    .disabled(isLoading || isCheckingGuestProjects || email.isEmpty || password.isEmpty)
 
                     dividerWithLabel
 
@@ -98,10 +99,17 @@ struct LoginView: View {
                     dismiss()
                 }
             }
-            .onAppear {
-                guestProjectsAtRisk = AuthTokenStore.shared.isLoggedIn
-                    ? 0
-                    : ProjectStore.guestLocalProjectCount()
+            .task {
+                guard !AuthTokenStore.shared.isLoggedIn else {
+                    guestProjectsAtRisk = 0
+                    isCheckingGuestProjects = false
+                    return
+                }
+
+                let projectCount = await ProjectStore.guestLocalProjectCount()
+                guard !Task.isCancelled else { return }
+                guestProjectsAtRisk = projectCount
+                isCheckingGuestProjects = false
             }
         }
     }
@@ -177,8 +185,8 @@ struct LoginView: View {
             }
             .buttonStyle(.pressable)
             .contentShape(Capsule())
-            .disabled(isLoading)
         }
+        .disabled(isLoading || isCheckingGuestProjects)
     }
 
     // MARK: - 이메일 로그인

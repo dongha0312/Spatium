@@ -2,7 +2,7 @@ import Combine
 import Foundation
 import SwiftUI
 
-enum ProjectCachePersistenceState: Equatable {
+enum ProjectCachePersistenceState: Equatable, Sendable {
     case idle
     case saved(Date)
     case failed(message: String)
@@ -13,6 +13,106 @@ enum ProjectCachePersistenceState: Equatable {
     }
 }
 
+/// 프로젝트 캐시의 인코딩·파일 I/O를 메인 스레드 밖에서 순서대로 처리한다.
+/// revision이 더 큰 작업을 먼저 받았다면 뒤늦게 도착한 오래된 작업은 건너뛰어
+/// 연속 편집이나 로그아웃 중 이전 스냅샷이 최신 상태를 덮어쓰지 않게 한다.
+private nonisolated final class ProjectCacheDiskStore: @unchecked Sendable {
+    enum MutationResult: Sendable {
+        case applied(Date)
+        case superseded
+    }
+
+    private let cacheFileURL: URL
+    private let queue = DispatchQueue(
+        label: "com.spatium.project-cache-disk-store",
+        qos: .utility
+    )
+    private let operationObserver: (@Sendable (Bool) -> Void)?
+
+    /// 전용 직렬 큐에서만 접근한다.
+    private var highestAttemptedRevision: UInt64 = 0
+
+    init(
+        cacheFileURL: URL,
+        operationObserver: (@Sendable (Bool) -> Void)? = nil
+    ) {
+        self.cacheFileURL = cacheFileURL
+        self.operationObserver = operationObserver
+    }
+
+    func load() async throws -> [SpatiumProject] {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                do {
+                    operationObserver?(Thread.isMainThread)
+                    guard FileManager.default.fileExists(atPath: cacheFileURL.path) else {
+                        continuation.resume(returning: [])
+                        return
+                    }
+
+                    let data = try Data(contentsOf: cacheFileURL)
+                    let decoder = JSONDecoder()
+                    decoder.dateDecodingStrategy = .iso8601
+                    let projects = try decoder.decode([SpatiumProject].self, from: data)
+                    continuation.resume(returning: projects)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    func save(_ projects: [SpatiumProject], revision: UInt64) async throws -> MutationResult {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                do {
+                    guard revision > highestAttemptedRevision else {
+                        continuation.resume(returning: .superseded)
+                        return
+                    }
+                    // 실패하더라도 이보다 오래된 작업이 나중에 디스크를 되돌리지 못하게 한다.
+                    highestAttemptedRevision = revision
+                    operationObserver?(Thread.isMainThread)
+
+                    try FileManager.default.createDirectory(
+                        at: cacheFileURL.deletingLastPathComponent(),
+                        withIntermediateDirectories: true
+                    )
+                    let encoder = JSONEncoder()
+                    encoder.dateEncodingStrategy = .iso8601
+                    let data = try encoder.encode(projects)
+                    try data.write(to: cacheFileURL, options: .atomic)
+                    continuation.resume(returning: .applied(Date()))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    func clear(revision: UInt64) async throws -> MutationResult {
+        try await withCheckedThrowingContinuation { continuation in
+            queue.async { [self] in
+                do {
+                    guard revision > highestAttemptedRevision else {
+                        continuation.resume(returning: .superseded)
+                        return
+                    }
+                    highestAttemptedRevision = revision
+                    operationObserver?(Thread.isMainThread)
+
+                    if FileManager.default.fileExists(atPath: cacheFileURL.path) {
+                        try FileManager.default.removeItem(at: cacheFileURL)
+                    }
+                    continuation.resume(returning: .applied(Date()))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+}
+
 @MainActor
 final class ProjectStore: ObservableObject {
     @Published private(set) var projects: [SpatiumProject] = []
@@ -20,22 +120,32 @@ final class ProjectStore: ObservableObject {
     @Published private(set) var cachePersistenceState: ProjectCachePersistenceState = .idle
 
     private let service = ProjectService()
-    private let cacheFileURL: URL
+    private let cacheDiskStore: ProjectCacheDiskStore
     private let authenticationStateProvider: () -> Bool
+    private let automaticallyRefresh: Bool
     private var cancellables: Set<AnyCancellable> = []
     private var isRefreshing = false
+    private var cacheRevision: UInt64 = 0
 
     init(
         cacheFileURL: URL? = nil,
-        authenticationStateProvider: (() -> Bool)? = nil
+        authenticationStateProvider: (() -> Bool)? = nil,
+        cacheOperationObserver: (@Sendable (Bool) -> Void)? = nil,
+        automaticallyRefresh: Bool = true
     ) {
-        self.cacheFileURL = cacheFileURL ?? Self.defaultCacheFileURL()
+        let resolvedCacheFileURL = cacheFileURL ?? Self.defaultCacheFileURL()
+        self.cacheDiskStore = ProjectCacheDiskStore(
+            cacheFileURL: resolvedCacheFileURL,
+            operationObserver: cacheOperationObserver
+        )
         let resolvedAuthenticationStateProvider = authenticationStateProvider ?? {
             AuthTokenStore.shared.isLoggedIn
         }
         self.authenticationStateProvider = resolvedAuthenticationStateProvider
-        // 캐시는 로그인 세션 전용: 게스트/비로그인에게 이전 계정의 프로젝트를 보여주지 않는다.
-        projects = resolvedAuthenticationStateProvider() ? loadCache() : []
+        self.automaticallyRefresh = automaticallyRefresh
+        // 생성 시점의 인증 상태를 고정해, 게스트로 시작한 스토어가 로그인 전환 중
+        // 게스트 캐시를 계정 프로젝트처럼 뒤늦게 불러오지 않게 한다.
+        let shouldLoadInitialCache = resolvedAuthenticationStateProvider()
 
         // 로그아웃하면 이전 계정 데이터가 다음 사용자에게 남지 않도록 캐시를 비운다.
         AuthTokenStore.shared.$isLoggedIn
@@ -51,26 +161,34 @@ final class ProjectStore: ObservableObject {
             }
             .store(in: &cancellables)
 
-        Task { await refresh(silently: true) }
+        Task { [weak self] in
+            await self?.loadInitialCacheAndRefresh(shouldLoadCache: shouldLoadInitialCache)
+        }
     }
 
     /// 로그아웃/계정 전환 시 메모리와 디스크 캐시를 모두 비운다.
     private func clearLocalData() {
         projects = []
         lastErrorMessage = nil
-        guard FileManager.default.fileExists(atPath: cacheFileURL.path) else {
-            cachePersistenceState = .idle
-            return
-        }
-        do {
-            try FileManager.default.removeItem(at: cacheFileURL)
-            cachePersistenceState = .idle
-        } catch {
-            recordCachePersistenceFailure(error)
+        cachePersistenceState = .idle
+        let revision = nextCacheRevision()
+        let cacheDiskStore = cacheDiskStore
+
+        Task { [weak self] in
+            do {
+                let result = try await cacheDiskStore.clear(revision: revision)
+                guard let self, revision == cacheRevision else { return }
+                if case .applied = result {
+                    cachePersistenceState = .idle
+                }
+            } catch {
+                guard let self, revision == cacheRevision else { return }
+                recordCachePersistenceFailure(error)
+            }
         }
     }
 
-    private static func defaultCacheFileURL() -> URL {
+    private nonisolated static func defaultCacheFileURL() -> URL {
         let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return directory.appendingPathComponent("projects.json")
     }
@@ -78,12 +196,32 @@ final class ProjectStore: ObservableObject {
     /// 게스트(비로그인)로 만들어져 아직 서버에 없는 로컬 프로젝트 수.
     /// 로그인하면 서버 목록이 캐시를 덮어써 이 프로젝트들이 사라지므로,
     /// 로그인 화면이 사전 경고를 띄우는 데 사용한다.
-    static func guestLocalProjectCount() -> Int {
-        guard let data = try? Data(contentsOf: defaultCacheFileURL()),
-              let cached = try? JSONDecoder.spatiumAPI.decode([SpatiumProject].self, from: data) else {
-            return 0
-        }
+    nonisolated static func guestLocalProjectCount(
+        cacheFileURL: URL? = nil,
+        cacheOperationObserver: (@Sendable (Bool) -> Void)? = nil
+    ) async -> Int {
+        let diskStore = ProjectCacheDiskStore(
+            cacheFileURL: cacheFileURL ?? defaultCacheFileURL(),
+            operationObserver: cacheOperationObserver
+        )
+        let cached = (try? await diskStore.load()) ?? []
         return cached.filter { $0.id.hasPrefix("local-") }.count
+    }
+
+    private func loadInitialCacheAndRefresh(shouldLoadCache: Bool) async {
+        if shouldLoadCache {
+            let revisionBeforeLoad = cacheRevision
+            let cachedProjects = (try? await cacheDiskStore.load()) ?? []
+            guard !Task.isCancelled else { return }
+
+            // 로드 중 로그아웃·로컬 편집·새 저장이 발생했다면 이전 파일 스냅샷을 적용하지 않는다.
+            if authenticationStateProvider(), revisionBeforeLoad == cacheRevision {
+                projects = cachedProjects
+            }
+        }
+
+        guard automaticallyRefresh, !Task.isCancelled else { return }
+        await refresh(silently: true)
     }
 
     /// 서버에서 최신 프로젝트 목록을 받아옵니다. 실패 시 기존(캐시/로컬)을 유지합니다.
@@ -107,8 +245,8 @@ final class ProjectStore: ObservableObject {
                 return merged
             }
             lastErrorMessage = nil
-            saveCache()
             await refreshRoomCounts(silently: silently)
+            _ = await persistCurrentCache()
         } catch is CancellationError {
             return
         } catch {
@@ -128,7 +266,7 @@ final class ProjectStore: ObservableObject {
         if !authenticationStateProvider() {
             let local = SpatiumProject(id: Self.newLocalID(), name: trimmed)
             projects.insert(local, at: 0)
-            saveCache()
+            _ = await persistCurrentCache()
             return local
         }
 
@@ -136,7 +274,7 @@ final class ProjectStore: ObservableObject {
             let created = try await service.createProject(name: trimmed)
             projects.insert(created, at: 0)
             lastErrorMessage = nil
-            saveCache()
+            _ = await persistCurrentCache()
             return created
         } catch {
             lastErrorMessage = error.localizedDescription
@@ -196,7 +334,7 @@ final class ProjectStore: ObservableObject {
             projects[index].rooms.insert(created, at: 0)
         }
         projects[index].roomCount = max(projects[index].roomCount, projects[index].rooms.count)
-        saveCache()
+        _ = await persistCurrentCache()
         return created
     }
 
@@ -210,7 +348,7 @@ final class ProjectStore: ObservableObject {
             projects[index].rooms.insert(room, at: 0)
         }
         projects[index].roomCount = max(projects[index].roomCount, projects[index].rooms.count)
-        saveCache()
+        scheduleCachePersistence()
     }
 
     func loadRooms(projectID: String, silently: Bool = false) async {
@@ -221,9 +359,9 @@ final class ProjectStore: ObservableObject {
             projects[index].rooms = rooms
             projects[index].roomCount = rooms.count
             lastErrorMessage = nil
-            saveCache()
             // 목록 API에는 항목 수가 없으므로, 각 방의 스캔 JSON에서 실제 개수를 받아 채운다.
             await refreshItemCounts(projectID: projectID, rooms: rooms)
+            _ = await persistCurrentCache()
         } catch is CancellationError {
             return
         } catch {
@@ -233,20 +371,50 @@ final class ProjectStore: ObservableObject {
         }
     }
 
+    /// 방·프로젝트 수만큼 네트워크 요청을 한꺼번에 실행하지 않기 위한 개수 집계 동시성 상한.
+    static let maxConcurrentCountRequests = 5
+
+    /// 제한된 동시성의 병렬 처리. 처음 `limit`개만 시작하고 하나가 끝날 때마다
+    /// 다음 요소를 이어 실행하는 슬라이딩 윈도 방식이라, 데이터 규모가 커져도
+    /// 순간 동시 요청 수가 `limit`을 넘지 않는다. 결과는 완료 순서대로 `process`에 전달된다.
+    static func withBoundedConcurrency<Element: Sendable, Value: Sendable>(
+        elements: [Element],
+        limit: Int = ProjectStore.maxConcurrentCountRequests,
+        operation: @escaping @Sendable (Element) async -> Value,
+        process: (Value) -> Void
+    ) async {
+        await withTaskGroup(of: Value.self) { group in
+            var iterator = elements.makeIterator()
+            var started = 0
+            while started < max(limit, 1), let element = iterator.next() {
+                group.addTask { await operation(element) }
+                started += 1
+            }
+            for await value in group {
+                if let element = iterator.next() {
+                    group.addTask { await operation(element) }
+                }
+                process(value)
+            }
+        }
+    }
+
     /// 방별 스캔 JSON(가벼움)을 병렬로 받아 항목 개수를 갱신합니다. 도착하는 대로 행이 갱신됩니다.
     private func refreshItemCounts(projectID: String, rooms: [RoomRecord]) async {
         let assetService = RoomScanAssetService()
-        await withTaskGroup(of: (String, Int?).self) { group in
-            for room in rooms where room.hasScanRenderFiles {
-                group.addTask {
-                    (room.id, await assetService.loadItemCount(for: room))
+        await Self.withBoundedConcurrency(
+            elements: rooms.filter(\.hasScanRenderFiles),
+            operation: { room in
+                (room.id, await assetService.loadItemCount(for: room))
+            },
+            process: { result in
+                let (roomID, count) = result
+                guard let count else { return }
+                updateRoom(roomID: roomID, projectID: projectID, shouldPersist: false) {
+                    $0.itemCount = count
                 }
             }
-            for await (roomID, count) in group {
-                guard let count else { continue }
-                updateRoom(roomID: roomID, projectID: projectID) { $0.itemCount = count }
-            }
-        }
+        )
     }
 
     func renameProject(projectID: String, newName: String) async {
@@ -256,7 +424,7 @@ final class ProjectStore: ObservableObject {
 
         let previousName = projects[index].name
         projects[index].name = trimmed
-        saveCache()
+        _ = await persistCurrentCache()
 
         guard !projectID.hasPrefix("local-") else {
             lastErrorMessage = nil
@@ -269,7 +437,7 @@ final class ProjectStore: ObservableObject {
         } catch {
             if let currentIndex = projects.firstIndex(where: { $0.id == projectID }) {
                 projects[currentIndex].name = previousName
-                saveCache()
+                _ = await persistCurrentCache()
             }
             lastErrorMessage = error.localizedDescription
         }
@@ -282,7 +450,10 @@ final class ProjectStore: ObservableObject {
               let roomIndex = projects[projectIndex].rooms.firstIndex(where: { $0.id == roomID }) else { return }
 
         let previousName = projects[projectIndex].rooms[roomIndex].roomType
-        updateRoom(roomID: roomID, projectID: projectID) { $0.roomType = trimmed }
+        updateRoom(roomID: roomID, projectID: projectID, shouldPersist: false) {
+            $0.roomType = trimmed
+        }
+        _ = await persistCurrentCache()
 
         guard !projectID.hasPrefix("local-"), !roomID.hasPrefix("local-") else {
             lastErrorMessage = nil
@@ -293,7 +464,10 @@ final class ProjectStore: ObservableObject {
             try await service.renameRoom(roomID: roomID, newName: trimmed)
             lastErrorMessage = nil
         } catch {
-            updateRoom(roomID: roomID, projectID: projectID) { $0.roomType = previousName }
+            updateRoom(roomID: roomID, projectID: projectID, shouldPersist: false) {
+                $0.roomType = previousName
+            }
+            _ = await persistCurrentCache()
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -301,7 +475,7 @@ final class ProjectStore: ObservableObject {
     func deleteProject(projectID: String) async {
         guard let projectIndex = projects.firstIndex(where: { $0.id == projectID }) else { return }
         let removedProject = projects.remove(at: projectIndex)
-        saveCache()
+        _ = await persistCurrentCache()
 
         guard !projectID.hasPrefix("local-") else {
             lastErrorMessage = nil
@@ -314,7 +488,7 @@ final class ProjectStore: ObservableObject {
         } catch {
             let restoredIndex = min(projectIndex, projects.count)
             projects.insert(removedProject, at: restoredIndex)
-            saveCache()
+            _ = await persistCurrentCache()
             lastErrorMessage = error.localizedDescription
         }
     }
@@ -325,8 +499,8 @@ final class ProjectStore: ObservableObject {
 
         let removedRoom = projects[projectIndex].rooms.remove(at: roomIndex)
         projects[projectIndex].roomCount = max(0, projects[projectIndex].roomCount - 1)
-        saveCache()
-        RoomScanAssetService().invalidateCache(forRoomID: roomID)
+        _ = await persistCurrentCache()
+        await RoomScanAssetService().invalidateCache(forRoomID: roomID)
 
         guard !projectID.hasPrefix("local-"), !roomID.hasPrefix("local-") else {
             lastErrorMessage = nil
@@ -341,7 +515,7 @@ final class ProjectStore: ObservableObject {
                 let restoredIndex = min(roomIndex, projects[currentProjectIndex].rooms.count)
                 projects[currentProjectIndex].rooms.insert(removedRoom, at: restoredIndex)
                 projects[currentProjectIndex].roomCount = max(projects[currentProjectIndex].roomCount + 1, projects[currentProjectIndex].rooms.count)
-                saveCache()
+                _ = await persistCurrentCache()
             }
             lastErrorMessage = error.localizedDescription
         }
@@ -383,34 +557,29 @@ final class ProjectStore: ObservableObject {
         guard !projectIDs.isEmpty else { return }
 
         var firstErrorMessage: String?
-        var changed = false
-        await withTaskGroup(of: (String, Result<Int, Error>).self) { group in
-            for projectID in projectIDs {
-                group.addTask { [service] in
-                    do {
-                        return (projectID, .success(try await service.fetchRoomCount(projectID: projectID)))
-                    } catch {
-                        return (projectID, .failure(error))
-                    }
+        await Self.withBoundedConcurrency(
+            elements: projectIDs,
+            operation: { [service] projectID -> (String, Result<Int, Error>) in
+                do {
+                    return (projectID, .success(try await service.fetchRoomCount(projectID: projectID)))
+                } catch {
+                    return (projectID, .failure(error))
                 }
-            }
-            for await (projectID, result) in group {
+            },
+            process: { entry in
+                let (projectID, result) = entry
                 switch result {
                 case let .success(count):
                     guard let index = projects.firstIndex(where: { $0.id == projectID }),
-                          projects[index].roomCount != count else { continue }
+                          projects[index].roomCount != count else { return }
                     projects[index].roomCount = count
-                    changed = true
                 case let .failure(error):
                     if firstErrorMessage == nil, !(error is CancellationError) {
                         firstErrorMessage = error.localizedDescription
                     }
                 }
             }
-        }
-        if changed {
-            saveCache()
-        }
+        )
         if let firstErrorMessage {
             if !silently {
                 lastErrorMessage = firstErrorMessage
@@ -424,23 +593,25 @@ final class ProjectStore: ObservableObject {
         guard let index = projects.firstIndex(where: { $0.id == projectID }) else { return }
         projects[index].rooms.insert(room, at: 0)
         projects[index].roomCount = max(projects[index].roomCount, projects[index].rooms.count)
-        saveCache()
+        scheduleCachePersistence()
     }
 
-    private func updateRoom(roomID: String, projectID: String, mutate: (inout RoomRecord) -> Void) {
+    private func updateRoom(
+        roomID: String,
+        projectID: String,
+        shouldPersist: Bool = true,
+        mutate: (inout RoomRecord) -> Void
+    ) {
         guard let projectIndex = projects.firstIndex(where: { $0.id == projectID }),
               let roomIndex = projects[projectIndex].rooms.firstIndex(where: { $0.id == roomID }) else { return }
         mutate(&projects[projectIndex].rooms[roomIndex])
-        saveCache()
+        if shouldPersist {
+            scheduleCachePersistence()
+        }
     }
 
     private static func newLocalID() -> String {
         "local-\(UUID().uuidString.prefix(8))"
-    }
-
-    private func loadCache() -> [SpatiumProject] {
-        guard let data = try? Data(contentsOf: cacheFileURL) else { return [] }
-        return (try? JSONDecoder.spatiumAPI.decode([SpatiumProject].self, from: data)) ?? []
     }
 
     var localPersistenceErrorMessage: String? {
@@ -450,9 +621,9 @@ final class ProjectStore: ObservableObject {
     /// 저장 공간·권한 문제를 해결한 뒤 현재 메모리의 최신 프로젝트 목록을 다시 기록한다.
     /// 실패한 시점의 오래된 스냅샷이 아니라 사용자가 계속 작업한 결과 전체를 저장한다.
     @discardableResult
-    func retryLocalPersistence() -> Bool {
+    func retryLocalPersistence() async -> Bool {
         cachePersistenceState = .idle
-        return saveCache()
+        return await persistCurrentCache()
     }
 
     func dismissLocalPersistenceError() {
@@ -460,18 +631,37 @@ final class ProjectStore: ObservableObject {
         cachePersistenceState = .idle
     }
 
+    private func nextCacheRevision() -> UInt64 {
+        cacheRevision += 1
+        return cacheRevision
+    }
+
+    private func scheduleCachePersistence() {
+        let snapshot = projects
+        let revision = nextCacheRevision()
+        Task { [weak self] in
+            guard let self else { return }
+            _ = await persistCache(snapshot, revision: revision)
+        }
+    }
+
     @discardableResult
-    private func saveCache() -> Bool {
+    private func persistCurrentCache() async -> Bool {
+        let snapshot = projects
+        let revision = nextCacheRevision()
+        return await persistCache(snapshot, revision: revision)
+    }
+
+    private func persistCache(_ snapshot: [SpatiumProject], revision: UInt64) async -> Bool {
         do {
-            try FileManager.default.createDirectory(
-                at: cacheFileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            let data = try JSONEncoder.spatiumAPI.encode(projects)
-            try data.write(to: cacheFileURL, options: .atomic)
-            cachePersistenceState = .saved(Date())
+            let result = try await cacheDiskStore.save(snapshot, revision: revision)
+            guard revision == cacheRevision else { return true }
+            if case let .applied(savedAt) = result {
+                cachePersistenceState = .saved(savedAt)
+            }
             return true
         } catch {
+            guard revision == cacheRevision else { return true }
             recordCachePersistenceFailure(error)
             return false
         }

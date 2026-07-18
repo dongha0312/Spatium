@@ -1,4 +1,5 @@
 import GLTFKit2
+import OSLog
 import SceneKit
 import simd
 import SwiftUI
@@ -26,6 +27,8 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
         }
         view.antialiasingMode = .multisampling4X
         view.preferredFramesPerSecond = 60
+        view.rendersContinuously = false
+        view.isPlaying = false
         view.scene = context.coordinator.makeScene()
         view.pointOfView = context.coordinator.cameraNode
         view.allowsCameraControl = true
@@ -61,6 +64,10 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
         view.allowsCameraControl = !adjustsModel
         view.defaultCameraController.interactionMode = .orbitTurntable
         lockCameraRoll(view)
+    }
+
+    static func dismantleUIView(_ view: SCNView, coordinator: Coordinator) {
+        coordinator.releaseSceneResources(from: view)
     }
 
     /// SceneKit 기본 카메라 컨트롤의 두 손가락 비틀기(roll) 제스처를 끕니다.
@@ -99,6 +106,14 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
             self.parent = parent
         }
 
+        var retainedModelNodeCountForTesting: Int {
+            modelContainer.childNodes.count
+        }
+
+        var cachedModelSampleCountForTesting: Int {
+            modelLocalSamples.count
+        }
+
         func makeScene() -> SCNScene {
             let scene = SCNScene()
             scene.rootNode.addChildNode(makeFloor())
@@ -128,6 +143,69 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
             aimCameraAtTarget()
             scene.rootNode.addChildNode(cameraNode)
             return scene
+        }
+
+        /// SwiftUI가 보정 뷰를 제거할 때 SCNView와 Coordinator 양쪽의 강한 참조를 끊습니다.
+        /// scene만 nil로 바꾸면 Coordinator가 모델 컨테이너·지오메트리·정점 샘플을 계속 보관합니다.
+        func releaseSceneResources(from view: SCNView) {
+            view.isPlaying = false
+            view.rendersContinuously = false
+            view.allowsCameraControl = false
+            view.defaultCameraController.inertiaEnabled = false
+            view.delegate = nil
+
+            if let adjustmentPan {
+                adjustmentPan.isEnabled = false
+                view.removeGestureRecognizer(adjustmentPan)
+                self.adjustmentPan = nil
+            }
+
+            view.pointOfView = nil
+            if let rootNode = view.scene?.rootNode {
+                discardResources(in: rootNode)
+            }
+            view.scene = nil
+            sceneView = nil
+
+            modelContainer.childNodes.forEach { $0.removeFromParentNode() }
+            gizmoNode.childNodes.forEach { $0.removeFromParentNode() }
+            cameraNode.removeFromParentNode()
+            cameraNode.camera = nil
+            modelLocalBounds = nil
+            modelLocalSamples.removeAll(keepingCapacity: false)
+            renderedModelURL = nil
+            renderedCameraResetToken = 0
+            renderedAutoAlignToken = 0
+            renderedCameraPreset = .perspective
+            renderedColorScheme = nil
+            reportedWorldSize = nil
+            panStart = .initial
+            panLatest = .initial
+        }
+
+        /// 모델 텍스처가 SCNMaterialProperty.contents를 통해 남지 않도록 씬 계층을 재귀 정리합니다.
+        private func discardResources(in node: SCNNode) {
+            node.removeAllActions()
+            node.animationKeys.forEach { node.removeAnimation(forKey: $0) }
+            node.childNodes.forEach { discardResources(in: $0) }
+            node.geometry?.materials.forEach { material in
+                material.diffuse.contents = nil
+                material.ambient.contents = nil
+                material.specular.contents = nil
+                material.emission.contents = nil
+                material.transparent.contents = nil
+                material.reflective.contents = nil
+                material.multiply.contents = nil
+                material.normal.contents = nil
+                material.displacement.contents = nil
+                material.metalness.contents = nil
+                material.roughness.contents = nil
+                material.ambientOcclusion.contents = nil
+            }
+            node.geometry = nil
+            node.light = nil
+            node.camera = nil
+            node.childNodes.forEach { $0.removeFromParentNode() }
         }
 
         func apply(transform: ImgTo3DModelTransform, floorSnap: Bool) {
@@ -205,6 +283,9 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
             }
 
             do {
+                let signposter = PerformanceSignposts.imgTo3D
+                let parseInterval = signposter.beginInterval("imgTo3D.model.parse", id: signposter.makeSignpostID())
+                defer { signposter.endInterval("imgTo3D.model.parse", parseInterval) }
                 let asset = try GLTFAsset(url: url, options: [:])
                 let scene = SCNScene(gltfAsset: asset)
                 let root = SCNNode()
@@ -245,6 +326,10 @@ struct ImgTo3DModelViewer: UIViewRepresentable {
         func autoAlignIfNeeded(token: Int, transform: ImgTo3DModelTransform) {
             guard token != renderedAutoAlignToken, !modelLocalSamples.isEmpty else { return }
             renderedAutoAlignToken = token
+
+            let signposter = PerformanceSignposts.imgTo3D
+            let alignInterval = signposter.beginInterval("imgTo3D.autoAlign", id: signposter.makeSignpostID())
+            defer { signposter.endInterval("imgTo3D.autoAlign", alignInterval) }
 
             let scale = Float(transform.scale)
             let currentOrientation = modelContainer.simdOrientation

@@ -50,7 +50,7 @@ struct FurnitureService {
     }
 
     func createUserFurniture(
-        glbData: Data,
+        modelFileURL: URL,
         fileName: String,
         metadata: FurnitureCreateMetadata
     ) async throws -> FurnitureCreateResponse {
@@ -58,7 +58,7 @@ struct FurnitureService {
         let response: SpatiumAPIEnvelope<FurnitureCreateResponse> = try await SpatiumAPIClient.shared.sendMultipart(
             path: "/api/furniture",
             parts: [
-                MultipartFormPart(name: "file", data: glbData, fileName: fileName, contentType: "model/gltf-binary"),
+                MultipartFormPart(name: "file", fileURL: modelFileURL, fileName: fileName, contentType: "model/gltf-binary"),
                 MultipartFormPart(name: "metadata", data: metadataData, fileName: nil, contentType: "application/json")
             ]
         )
@@ -68,19 +68,22 @@ struct FurnitureService {
         return result
     }
 
-    func downloadModel(path: String) async throws -> Data {
+    /// GLB 응답을 URLSession download task로 받아 임시 파일 URL을 반환합니다.
+    /// 호출자는 파일을 최종 저장소로 옮기거나 사용 후 삭제해야 합니다.
+    func downloadModel(path: String) async throws -> URL {
         if let apiPath = Self.protectedModelAPIPath(
             from: path,
             apiBaseURL: SpatiumAPIEnvironment.shared.baseURL
         ) {
-            let response = try await SpatiumAPIClient.shared.sendData(
+            let response = try await SpatiumAPIClient.shared.downloadFile(
                 path: apiPath,
                 timeout: 120
             )
-            guard !response.data.isEmpty else {
+            guard Self.fileIsNotEmpty(response.fileURL) else {
+                try? FileManager.default.removeItem(at: response.fileURL)
                 throw SpatiumAPIError.network(URLError(.zeroByteResource))
             }
-            return response.data
+            return response.fileURL
         }
 
         guard let url = resolvedModelURL(path: path) else {
@@ -91,21 +94,33 @@ struct FurnitureService {
         // 기본 카탈로그의 /data 에셋은 공개 파일 서버에서 받는다. 보호된 /api 모델은
         // 위의 공통 API 클라이언트만 사용하므로 JWT가 다른 포트나 외부 호스트로 새지 않는다.
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (downloadedURL, response) = try await URLSession.shared.download(for: request)
             guard let http = response as? HTTPURLResponse else {
+                try? FileManager.default.removeItem(at: downloadedURL)
                 throw SpatiumAPIError.network(URLError(.badServerResponse))
             }
             guard (200..<300).contains(http.statusCode) else {
+                try? FileManager.default.removeItem(at: downloadedURL)
                 throw SpatiumAPIError.server(
                     statusCode: http.statusCode,
                     code: nil,
                     message: "가구 모델을 내려받지 못했습니다. (HTTP \(http.statusCode))"
                 )
             }
-            guard !data.isEmpty else {
+            guard Self.fileIsNotEmpty(downloadedURL) else {
+                try? FileManager.default.removeItem(at: downloadedURL)
                 throw SpatiumAPIError.network(URLError(.zeroByteResource))
             }
-            return data
+            let ownedURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("furniture-model-\(UUID().uuidString).glb")
+            do {
+                try FileManager.default.moveItem(at: downloadedURL, to: ownedURL)
+            } catch {
+                try? FileManager.default.removeItem(at: downloadedURL)
+                try? FileManager.default.removeItem(at: ownedURL)
+                throw error
+            }
+            return ownedURL
         } catch let error as SpatiumAPIError {
             throw error
         } catch {
@@ -127,6 +142,11 @@ struct FurnitureService {
         if let absolute = URL(string: path), absolute.scheme != nil { return absolute }
         guard let baseURL = SpatiumAPIEnvironment.shared.furnitureAssetBaseURL else { return nil }
         return URL(string: path, relativeTo: baseURL)?.absoluteURL
+    }
+
+    private static func fileIsNotEmpty(_ url: URL) -> Bool {
+        guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize else { return false }
+        return size > 0
     }
 
     /// 새 백엔드가 내려주는 사용자 가구 경로(`/api/furniture/{id}/model`)만

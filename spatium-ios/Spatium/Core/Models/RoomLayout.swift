@@ -1,6 +1,6 @@
 import Foundation
 
-enum RoomViewMode: String, Codable, CaseIterable {
+nonisolated enum RoomViewMode: String, Codable, CaseIterable, Sendable {
     case threeD = "3D"
     case skyView = "SKYVIEW"
     /// 방 안에서 눈높이로 둘러보는 1인칭 뷰. 앱 전용 모드라 서버에는 동기화하지 않는다.
@@ -23,8 +23,8 @@ enum RoomViewMode: String, Codable, CaseIterable {
     }
 }
 
-struct FurnitureTransform: Codable, Equatable {
-    struct Vector3: Codable, Equatable {
+nonisolated struct FurnitureTransform: Codable, Equatable, Sendable {
+    nonisolated struct Vector3: Codable, Equatable, Sendable {
         var x: Double
         var y: Double
         var z: Double
@@ -40,12 +40,14 @@ struct FurnitureTransform: Codable, Equatable {
     static let identity = FurnitureTransform(position: .zero, rotation: .zero, scale: .one)
 }
 
-struct RoomSpace: Codable, Identifiable {
+nonisolated struct RoomSpace: Codable, Identifiable, Equatable, Sendable {
     var spaceId: String
     var name: String
     var area: Double
     var ceilingHeight: Double
-    var wallColor: String
+    /// 사용자가 고른 벽 색상. 프런트엔드 applyRoomWallColor 대응 —
+    /// nil이면 스캔 원본 벽 재질(박스 방은 기본 벽색)을 유지합니다.
+    var wallColor: String? = nil
     /// 스캔 metadata의 _spatiumFloorColor에서 복원한 선택 바닥 색상.
     /// nil이면 스캔 원본 재질(박스 방은 기본 바닥색)을 유지합니다.
     var floorColor: String? = nil
@@ -56,7 +58,7 @@ struct RoomSpace: Codable, Identifiable {
 /// 꾸미기 책장 위에 올려놓은 피규어(소품) 하나. 프런트엔드 `decorationToJson` 대응.
 /// position은 부모 가구(바닥 중심 pivot) 로컬 좌표계 기준이라, 책장을 옮기거나 돌려도
 /// 상대 배치가 그대로 유지된다.
-struct PlacedDecoration: Codable, Identifiable, Equatable {
+nonisolated struct PlacedDecoration: Codable, Identifiable, Equatable, Sendable {
     var decorId: Int
     var name: String
     /// 렌더할 GLB 파일명(확장자 제외). 번들 모델 또는 사용자 가구(usr_) 파일명.
@@ -75,7 +77,7 @@ struct PlacedDecoration: Codable, Identifiable, Equatable {
     var id: Int { decorId }
 }
 
-struct PlacedFurniture: Codable, Identifiable {
+nonisolated struct PlacedFurniture: Codable, Identifiable, Equatable, Sendable {
     var itemId: Int
     var furnitureId: Int
     var furnitureName: String
@@ -93,7 +95,7 @@ struct PlacedFurniture: Codable, Identifiable {
     var id: Int { itemId }
 }
 
-struct RoomLayout: Codable {
+nonisolated struct RoomLayout: Codable, Equatable, Sendable {
     var roomId: String
     var roomName: String
     var viewMode: RoomViewMode?

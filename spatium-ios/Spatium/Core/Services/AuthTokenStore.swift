@@ -18,28 +18,41 @@ final class AuthTokenStore: ObservableObject {
     private static let refreshAccount = "refreshToken"
 
     @Published private(set) var isLoggedIn: Bool
+    /// API 요청마다 Keychain을 동기 조회하지 않도록 앱 실행 중에는 토큰을 메모리에 유지한다.
+    private var cachedAccessToken: String?
+    private var cachedRefreshToken: String?
+    private var hasLoadedRefreshToken = false
 
     private init() {
         let storedAccessToken = Self.read(account: Self.accessAccount)
         #if DEBUG
+        cachedAccessToken = storedAccessToken
         isLoggedIn = storedAccessToken != nil
         #else
         if storedAccessToken?.hasPrefix("mock_") == true {
             Self.delete(account: Self.accessAccount)
             Self.delete(account: Self.refreshAccount)
+            cachedAccessToken = nil
+            cachedRefreshToken = nil
+            hasLoadedRefreshToken = true
             isLoggedIn = false
         } else {
+            cachedAccessToken = storedAccessToken
             isLoggedIn = storedAccessToken != nil
         }
         #endif
     }
 
     var accessToken: String? {
-        Self.read(account: Self.accessAccount)
+        cachedAccessToken
     }
 
     var refreshToken: String? {
-        Self.read(account: Self.refreshAccount)
+        if !hasLoadedRefreshToken {
+            cachedRefreshToken = Self.read(account: Self.refreshAccount)
+            hasLoadedRefreshToken = true
+        }
+        return cachedRefreshToken
     }
 
     func save(_ tokens: AuthTokens) {
@@ -51,12 +64,18 @@ final class AuthTokenStore: ObservableObject {
         #endif
         Self.write(tokens.accessToken, account: Self.accessAccount)
         Self.write(tokens.refreshToken, account: Self.refreshAccount)
+        cachedAccessToken = tokens.accessToken
+        cachedRefreshToken = tokens.refreshToken
+        hasLoadedRefreshToken = true
         isLoggedIn = true
     }
 
     func clear() {
         Self.delete(account: Self.accessAccount)
         Self.delete(account: Self.refreshAccount)
+        cachedAccessToken = nil
+        cachedRefreshToken = nil
+        hasLoadedRefreshToken = true
         isLoggedIn = false
     }
 
@@ -67,13 +86,16 @@ final class AuthTokenStore: ObservableObject {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account
         ]
-        SecItemDelete(query as CFDictionary)
+        let valueAttributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        let updateStatus = SecItemUpdate(query as CFDictionary, valueAttributes as CFDictionary)
+        guard updateStatus == errSecItemNotFound else { return }
 
-        var attributes = query
-        attributes[kSecValueData as String] = data
+        let attributes = query.merging(valueAttributes) { _, newValue in newValue }
         // 첫 잠금 해제 후 접근 가능 + 이 기기 전용: 백업/기기 이전으로 세션 토큰이
         // 다른 기기로 복사되지 않게 한다. (재설치 시 유지되는 동작은 그대로)
-        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         SecItemAdd(attributes as CFDictionary, nil)
     }
 

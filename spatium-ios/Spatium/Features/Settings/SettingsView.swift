@@ -1,5 +1,56 @@
 import SwiftUI
 
+/// 캐시 디렉터리 순회와 삭제를 메인 액터 밖에서 처리한다.
+enum SettingsCacheStorage {
+    nonisolated static let directoryNames = ["RoomScans", "RoomScenes", "Spatium"]
+
+    nonisolated static var defaultRoot: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    }
+
+    nonisolated static func totalBytesInBackground(root: URL = defaultRoot) async -> Int64 {
+        let worker: Task<Int64, Never> = Task.detached(priority: .utility) {
+            totalBytes(root: root)
+        }
+        return await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+    }
+
+    nonisolated static func clearInBackground(root: URL = defaultRoot) async -> Int64 {
+        await Task.detached(priority: .utility) {
+            let fileManager = FileManager.default
+            for name in directoryNames where !Task.isCancelled {
+                try? fileManager.removeItem(
+                    at: root.appendingPathComponent(name, isDirectory: true)
+                )
+            }
+            return totalBytes(root: root)
+        }.value
+    }
+
+    nonisolated static func totalBytes(root: URL) -> Int64 {
+        let fileManager = FileManager.default
+        var total: Int64 = 0
+        for name in directoryNames where !Task.isCancelled {
+            let directory = root.appendingPathComponent(name, isDirectory: true)
+            guard let files = fileManager.enumerator(
+                at: directory,
+                includingPropertiesForKeys: [.fileSizeKey]
+            ) else {
+                continue
+            }
+            for case let file as URL in files {
+                guard !Task.isCancelled else { return total }
+                total += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+            }
+        }
+        return total
+    }
+}
+
 struct SettingsView: View {
     #if DEBUG
     @State private var versionTapCount = 0
@@ -155,9 +206,6 @@ private struct StorageSection: View {
     @State private var cacheBytes: Int64 = 0
     @State private var isClearing = false
 
-    /// "Spatium"은 가구 만들기의 GeneratedModels/CorrectedModels 중간 산출물 폴더.
-    private static let cacheDirectoryNames = ["RoomScans", "RoomScenes", "Spatium"]
-
     var body: some View {
         SettingsGroup(title: "저장 공간") {
             SettingsInfoRow(systemImage: "internaldrive", title: "스캔·모델 캐시", value: Self.format(cacheBytes))
@@ -175,33 +223,20 @@ private struct StorageSection: View {
             .buttonStyle(.pressable)
             .disabled(isClearing || cacheBytes == 0)
         }
-        .task { cacheBytes = Self.totalBytes() }
+        .task {
+            let bytes = await SettingsCacheStorage.totalBytesInBackground()
+            guard !Task.isCancelled else { return }
+            cacheBytes = bytes
+        }
     }
 
     private func clearCache() {
         isClearing = true
         Task {
-            let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            for name in Self.cacheDirectoryNames {
-                try? FileManager.default.removeItem(at: root.appendingPathComponent(name, isDirectory: true))
-            }
-            cacheBytes = Self.totalBytes()
+            cacheBytes = await SettingsCacheStorage.clearInBackground()
             isClearing = false
             Haptics.success()
         }
-    }
-
-    private static func totalBytes() -> Int64 {
-        let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        var total: Int64 = 0
-        for name in cacheDirectoryNames {
-            let directory = root.appendingPathComponent(name, isDirectory: true)
-            guard let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.fileSizeKey]) else { continue }
-            for case let file as URL in files {
-                total += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-            }
-        }
-        return total
     }
 
     private static func format(_ bytes: Int64) -> String {

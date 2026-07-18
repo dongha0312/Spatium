@@ -2,7 +2,7 @@ import Foundation
 import RoomPlan
 import simd
 
-struct EditableScanItem: Identifiable, Codable {
+nonisolated struct EditableScanItem: Identifiable, Codable, Sendable {
     var id: UUID
     var sourceType: String
     var detectedCategory: String
@@ -125,7 +125,7 @@ struct EditableScanItem: Identifiable, Codable {
     }
 }
 
-extension EditableScanItem {
+nonisolated extension EditableScanItem {
     /// 원시 RoomPlan export(objects/doors/windows)에서 편집 아이템을 만듭니다.
     /// (외부/테스트 JSON을 CapturedRoom 없이 직접 불러올 때 사용)
     static func makeItems(

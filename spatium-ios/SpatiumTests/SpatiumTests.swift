@@ -148,6 +148,56 @@ struct SpatiumTests {
         )
     }
 
+    @Test func editorSceneReusesSelectionAndMeasurementNodesForUnchangedState() throws {
+        let room = RoomRecord(
+            id: "performance-room",
+            roomType: "성능 테스트 방",
+            itemCount: 0,
+            photoCount: 0,
+            uploadedAt: Date(),
+            fileName: "",
+            area: 16
+        )
+        let viewModel = RoomEditorViewModel(room: room)
+        let coordinator = RoomEditorSceneView.Coordinator(
+            viewModel: viewModel,
+            modelLoader: TestDataFurnitureModelLoader()
+        )
+        // 측정 노드는 씬 빌드 때 계산한 방 치수(roomMeasurements)를 사용한다.
+        coordinator.roomMeasurements = RoomEditorSceneView.Coordinator.fallbackRoomMeasurements(
+            bounds: .defaultRoom,
+            floorY: 0,
+            height: 2.4
+        )
+
+        let furniture = SCNNode(
+            geometry: SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0)
+        )
+        furniture.name = "furniture-1"
+        coordinator.furnitureContainer.addChildNode(furniture)
+
+        coordinator.applySelection(itemID: 1)
+        let firstHighlight = try #require(
+            furniture.childNode(withName: coordinator.selectionHighlightName, recursively: false)
+        )
+        coordinator.applySelection(itemID: 1)
+        let reusedHighlight = try #require(
+            furniture.childNode(withName: coordinator.selectionHighlightName, recursively: false)
+        )
+        #expect(firstHighlight === reusedHighlight)
+
+        coordinator.measurementContainer.isHidden = true
+        coordinator.setMeasurementVisible(true)
+        let firstMeasurementNodes = coordinator.measurementContainer.childNodes.map(ObjectIdentifier.init)
+        #expect(!firstMeasurementNodes.isEmpty)
+        coordinator.setMeasurementVisible(true)
+        let reusedMeasurementNodes = coordinator.measurementContainer.childNodes.map(ObjectIdentifier.init)
+        #expect(firstMeasurementNodes == reusedMeasurementNodes)
+
+        coordinator.applySelection(itemID: nil)
+        #expect(furniture.childNode(withName: coordinator.selectionHighlightName, recursively: false) == nil)
+    }
+
     @Test func shelfDetectorFindsSeparateHorizontalSupportLevels() {
         let scene = SCNScene()
         let bookcase = SCNNode()
@@ -177,7 +227,7 @@ struct SpatiumTests {
         #expect(abs(levels[2].height - 1.37) < 0.02)
     }
 
-    @Test func replacingDecorKeepsItsSupportPointRotationAndIdentity() throws {
+    @Test func replacingDecorKeepsItsSupportPointRotationAndIdentity() async throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: draftDirectory) }
@@ -237,10 +287,10 @@ struct SpatiumTests {
         )
         #expect(abs(constrained.x) < bookcase.width / 2)
         #expect(abs(constrained.z) < bookcase.depth / 2)
-        viewModel.discardCurrentDraft()
+        await viewModel.discardCurrentDraft()
     }
 
-    @Test func decorAccessibilityControlsPlaceMoveAndDescribeFigure() throws {
+    @Test func decorAccessibilityControlsPlaceMoveAndDescribeFigure() async throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: draftDirectory) }
@@ -292,10 +342,10 @@ struct SpatiumTests {
         viewModel.moveSelectedDecor(to: topShelf)
         #expect(viewModel.selectedDecoration?.position.y == topShelf.height)
         #expect(viewModel.selectedDecorAccessibilitySummary.contains("위 선반"))
-        viewModel.discardCurrentDraft()
+        await viewModel.discardCurrentDraft()
     }
 
-    @Test func decorRejectsNonFigureItemsAndPersonViewRejectsFurniturePlacement() throws {
+    @Test func decorRejectsNonFigureItemsAndPersonViewRejectsFurniturePlacement() async throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: draftDirectory) }
@@ -340,10 +390,10 @@ struct SpatiumTests {
         viewModel.place(catalogItem: chair)
         #expect(viewModel.layout.furnitures.count == furnitureCount)
         #expect(viewModel.statusMessage == "1인칭 시점에서는 가구를 추가할 수 없어요")
-        viewModel.discardCurrentDraft()
+        await viewModel.discardCurrentDraft()
     }
 
-    @Test func editorHistoryCoalescesSliderGestureAndSupportsRedo() throws {
+    @Test func editorHistoryCoalescesSliderGestureAndSupportsRedo() async throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: draftDirectory) }
@@ -365,13 +415,13 @@ struct SpatiumTests {
         viewModel.endHistoryTransaction()
 
         #expect(viewModel.selectedRotationDegrees == 40)
-        viewModel.undo()
+        await viewModel.undo()
         #expect(viewModel.layout.furnitures.count == 1)
         #expect(viewModel.selectedRotationDegrees == 0)
 
-        viewModel.redo()
+        await viewModel.redo()
         #expect(viewModel.selectedRotationDegrees == 40)
-        viewModel.discardCurrentDraft()
+        await viewModel.discardCurrentDraft()
     }
 
     @Test func editorDraftPersistsAndRestoresLatestLayout() async throws {
@@ -389,7 +439,7 @@ struct SpatiumTests {
         )
         let chair = try #require(FurnitureCatalog.items.first)
         original.place(catalogItem: chair)
-        original.persistDraftImmediately()
+        await original.persistDraftImmediately()
         #expect(original.draftSavedAt != nil)
 
         let reopened = RoomEditorViewModel(
@@ -406,10 +456,83 @@ struct SpatiumTests {
         reopened.restoreRecoverableDraft()
         #expect(reopened.layout.furnitures.count == 1)
         #expect(reopened.hasUnsavedChanges)
-        reopened.discardCurrentDraft()
+        await reopened.discardCurrentDraft()
     }
 
-    @Test func editorDraftSaveFailureIsVisibleAndCanBeRetried() throws {
+    @Test func editorDraftReadEncodingWritingAndRemovalRunOutsideMainThread() async throws {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let recorder = DiskOperationThreadRecorder()
+        let original = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "복구본 스레드 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory,
+            draftOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+        let chair = try #require(FurnitureCatalog.items.first)
+        original.place(catalogItem: chair)
+        await original.persistDraftImmediately()
+
+        let reopened = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "복구본 스레드 테스트",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory,
+            draftOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+        await reopened.loadLayout()
+        #expect(reopened.hasRecoverableDraft)
+        await reopened.discardCurrentDraft()
+
+        let observedThreads = recorder.recordedMainThreadValues
+        #expect(observedThreads.count >= 3)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func newerDraftRemovalRejectsAnOlderDelayedWrite() async throws {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let diskStore = RoomEditorDraftDiskStore(directoryURL: draftDirectory)
+        let draftFileURL = draftDirectory.appendingPathComponent("revision-order.json")
+        let olderWriteRevision = diskStore.reserveRevision()
+        let newerRemovalRevision = diskStore.reserveRevision()
+        let draft = EditorDraft(
+            version: EditorDraft.currentVersion,
+            savedAt: Date(),
+            layout: RoomLayout(
+                roomId: "revision-order",
+                roomName: "복구본 순서 테스트",
+                viewMode: .threeD,
+                space: nil,
+                furnitures: []
+            )
+        )
+
+        let removed = await diskStore.remove(
+            at: draftFileURL,
+            revision: newerRemovalRevision
+        )
+        let staleWriteApplied = try await diskStore.write(
+            draft,
+            to: draftFileURL,
+            revision: olderWriteRevision
+        )
+
+        #expect(removed)
+        #expect(!staleWriteApplied)
+        #expect(!FileManager.default.fileExists(atPath: draftFileURL.path))
+    }
+
+    @Test func editorDraftSaveFailureIsVisibleAndCanBeRetried() async throws {
         let testRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         let blockedDraftDirectory = testRoot.appendingPathComponent("not-a-directory")
@@ -427,7 +550,7 @@ struct SpatiumTests {
         )
         let chair = try #require(FurnitureCatalog.items.first)
         viewModel.place(catalogItem: chair)
-        viewModel.persistDraftImmediately()
+        await viewModel.persistDraftImmediately()
 
         #expect(viewModel.hasUnsavedChanges)
         #expect(
@@ -436,11 +559,11 @@ struct SpatiumTests {
         )
 
         try FileManager.default.removeItem(at: blockedDraftDirectory)
-        viewModel.retryDraftSave()
+        await viewModel.retryDraftSave()
 
         #expect(viewModel.draftSavedAt != nil)
         #expect(viewModel.draftSaveState.failureMessage == nil)
-        viewModel.discardCurrentDraft()
+        await viewModel.discardCurrentDraft()
     }
 
     @Test func otherRoomTwoIncludesBundledUserGeneratedFurniture() throws {
@@ -626,11 +749,23 @@ struct SpatiumTests {
 @MainActor
 struct ImgTo3DUploadImageTests {
     /// 8×8 단색 이미지 — 인코딩 테스트용 최소 입력.
-    private func solidImage() -> UIImage {
-        UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+    private func solidImage(size: CGSize = CGSize(width: 8, height: 8)) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
             UIColor.systemBrown.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+            context.fill(CGRect(origin: .zero, size: size))
         }
+    }
+
+    private func maximumPixelDimension(of data: Data) -> Int? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let width = (properties[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue,
+              let height = (properties[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue else {
+            return nil
+        }
+        return max(width, height)
     }
 
     @Test func heicPhotoConvertsToPNGForBackend() throws {
@@ -643,7 +778,8 @@ struct ImgTo3DUploadImageTests {
         CGImageDestinationAddImage(destination, cgImage, nil)
         guard CGImageDestinationFinalize(destination) else { return }
 
-        let normalized = try #require(ImgTo3DUploadImage.normalize(image: image, rawData: heicData as Data))
+        let prepared = try #require(ImgTo3DUploadImage.prepare(rawData: heicData as Data))
+        let normalized = prepared.upload
         #expect(normalized.convertedFromIncompatibleFormat)
         #expect(normalized.fileExtension == "png")
         #expect(normalized.data.starts(with: [0x89, 0x50, 0x4E, 0x47]))
@@ -652,17 +788,71 @@ struct ImgTo3DUploadImageTests {
     @Test func jpegPhotoPassesThroughUnchanged() throws {
         let image = solidImage()
         let jpeg = try #require(image.jpegData(compressionQuality: 0.9))
-        let normalized = try #require(ImgTo3DUploadImage.normalize(image: image, rawData: jpeg))
+        let normalized = try #require(ImgTo3DUploadImage.prepare(rawData: jpeg)).upload
         #expect(!normalized.convertedFromIncompatibleFormat)
         #expect(normalized.fileExtension == "jpg")
         #expect(normalized.data == jpeg)
     }
 
     @Test func cameraCaptureWithoutRawDataEncodesToPNG() throws {
-        let normalized = try #require(ImgTo3DUploadImage.normalize(image: solidImage(), rawData: nil))
+        let normalized = try #require(ImgTo3DUploadImage.prepare(cameraImage: solidImage())).upload
         #expect(!normalized.convertedFromIncompatibleFormat)
         #expect(normalized.fileExtension == "png")
         #expect(normalized.data.starts(with: [0x89, 0x50, 0x4E, 0x47]))
+    }
+
+    @Test func oversizedPhotoIsDownsampledForUploadAndPreview() throws {
+        let original = solidImage(size: CGSize(width: 160, height: 80))
+        let png = try #require(original.pngData())
+        let prepared = try #require(ImgTo3DUploadImage.prepare(
+            rawData: png,
+            maximumUploadPixelDimension: 64,
+            maximumPreviewPixelDimension: 24
+        ))
+
+        let uploadDimension = try #require(maximumPixelDimension(of: prepared.upload.data))
+        let previewCGImage = try #require(prepared.previewImage.cgImage)
+        #expect(uploadDimension <= 64)
+        #expect(max(previewCGImage.width, previewCGImage.height) <= 24)
+        #expect(prepared.upload.data.count <= ImgTo3DUploadImage.maximumUploadBytes)
+    }
+
+    @Test func profileAvatarPreprocessingDownsamplesAndEncodesJPEG() throws {
+        let original = solidImage(size: CGSize(width: 1_024, height: 512))
+        let png = try #require(original.pngData())
+        let prepared = try #require(ProfileAvatarImagePreprocessor.prepare(rawData: png))
+        let uploadDimension = try #require(maximumPixelDimension(of: prepared.uploadData))
+        let preview = try #require(prepared.previewImage.cgImage)
+
+        #expect(uploadDimension <= ProfileAvatarImagePreprocessor.maximumPixelDimension)
+        #expect(max(preview.width, preview.height) <= ProfileAvatarImagePreprocessor.maximumPixelDimension)
+        #expect(prepared.uploadData.starts(with: [0xFF, 0xD8]))
+    }
+}
+
+@MainActor
+struct SettingsCacheStorageTests {
+    @Test func cacheWorkerCountsAndClearsOnlyManagedDirectories() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("settings-cache-test-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let managedDirectory = root.appendingPathComponent("RoomScans", isDirectory: true)
+        let unmanagedDirectory = root.appendingPathComponent("KeepMe", isDirectory: true)
+        try FileManager.default.createDirectory(at: managedDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: unmanagedDirectory, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 4_096).write(
+            to: managedDirectory.appendingPathComponent("scan.bin")
+        )
+        let unmanagedFile = unmanagedDirectory.appendingPathComponent("user-data.bin")
+        try Data(repeating: 2, count: 2_048).write(to: unmanagedFile)
+
+        let measured = await SettingsCacheStorage.totalBytesInBackground(root: root)
+        #expect(measured == 4_096)
+
+        let remaining = await SettingsCacheStorage.clearInBackground(root: root)
+        #expect(remaining == 0)
+        #expect(FileManager.default.fileExists(atPath: unmanagedFile.path))
     }
 }
 
@@ -717,6 +907,27 @@ struct ImgTo3DModelViewerTests {
         #expect(abs(scaled.depth - 1.2) < 0.001)
     }
 
+    @Test func dismantlingViewerReleasesSceneAndCachedModelResources() {
+        let viewer = makeViewer()
+        let coordinator = viewer.makeCoordinator()
+        let sceneView = SCNView()
+        sceneView.scene = coordinator.makeScene()
+        sceneView.pointOfView = coordinator.cameraNode
+        coordinator.sceneView = sceneView
+
+        #expect(coordinator.retainedModelNodeCountForTesting > 0)
+        #expect(coordinator.cachedModelSampleCountForTesting > 0)
+        #expect(sceneView.scene != nil)
+
+        ImgTo3DModelViewer.dismantleUIView(sceneView, coordinator: coordinator)
+
+        #expect(sceneView.scene == nil)
+        #expect(sceneView.pointOfView == nil)
+        #expect(coordinator.sceneView == nil)
+        #expect(coordinator.retainedModelNodeCountForTesting == 0)
+        #expect(coordinator.cachedModelSampleCountForTesting == 0)
+    }
+
     private func makeViewer(
         onBoundsChanged: @escaping (ImgTo3DModelSize) -> Void = { _ in },
         onAutoAlignment: @escaping (ImgTo3DModelTransform) -> Void = { _ in }
@@ -747,6 +958,37 @@ struct ImgTo3DModelViewerTests {
 
 @MainActor
 struct FurnitureModelLoaderTests {
+    @Test func modelTemplateCacheEvictsLeastRecentlyUsedEntriesWithinLimits() {
+        var cache = BoundedLRUCache<String, Int>(countLimit: 3, totalCostLimit: 5)
+        cache.insert(1, forKey: "bed", cost: 2)
+        cache.insert(2, forKey: "chair", cost: 2)
+
+        let cachedBed = cache.value(forKey: "bed")
+        #expect(cachedBed == 1)
+        cache.insert(3, forKey: "sofa", cost: 2)
+
+        let evictedChair = cache.value(forKey: "chair")
+        #expect(evictedChair == nil)
+        #expect(cache.keysInLeastRecentlyUsedOrder == ["bed", "sofa"])
+        #expect(cache.totalCost == 4)
+
+        cache.insert(4, forKey: "table", cost: 1)
+        cache.insert(5, forKey: "storage", cost: 1)
+
+        #expect(cache.keysInLeastRecentlyUsedOrder == ["sofa", "table", "storage"])
+        #expect(cache.count == 3)
+        #expect(cache.totalCost == 4)
+
+        cache.removeAll()
+        cache.insert(6, forKey: "oversized", cost: 10)
+        #expect(cache.keysInLeastRecentlyUsedOrder == ["oversized"])
+        #expect(cache.totalCost == 10)
+
+        cache.insert(7, forKey: "latest", cost: 1)
+        #expect(cache.keysInLeastRecentlyUsedOrder == ["latest"])
+        #expect(cache.totalCost == 1)
+    }
+
     @Test func userGLBIsFittedToCatalogDimensionsInRoom() throws {
         let fileName = "usr_dfcb0a2619784c6faa11b2bfe17eb363"
         _ = try #require(Bundle.main.url(forResource: fileName, withExtension: "glb"))
@@ -807,6 +1049,64 @@ struct FurnitureModelLoaderTests {
 
 @MainActor
 struct ProjectStorePersistenceTests {
+    @Test func initialProjectCacheReadAndDecodingRunOutsideMainThread() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-project-cache-load-\(UUID().uuidString)", isDirectory: true)
+        let cacheFileURL = testRoot.appendingPathComponent("projects.json")
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+        try FileManager.default.createDirectory(at: testRoot, withIntermediateDirectories: true)
+
+        let cachedProjects = [
+            SpatiumProject(id: "project-cached", name: "캐시 프로젝트")
+        ]
+        let data = try JSONEncoder.spatiumAPI.encode(cachedProjects)
+        try data.write(to: cacheFileURL, options: .atomic)
+
+        let recorder = DiskOperationThreadRecorder()
+        let store = ProjectStore(
+            cacheFileURL: cacheFileURL,
+            authenticationStateProvider: { true },
+            cacheOperationObserver: { recorder.record(isMainThread: $0) },
+            automaticallyRefresh: false
+        )
+
+        let didLoadCache = await waitUntil {
+            store.projects.map(\.id) == cachedProjects.map(\.id)
+        }
+        let observedThreads = recorder.recordedMainThreadValues
+
+        #expect(didLoadCache)
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func guestProjectRiskCountReadsCacheOutsideMainThread() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-guest-project-count-\(UUID().uuidString)", isDirectory: true)
+        let cacheFileURL = testRoot.appendingPathComponent("projects.json")
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+        try FileManager.default.createDirectory(at: testRoot, withIntermediateDirectories: true)
+
+        let cachedProjects = [
+            SpatiumProject(id: "local-first", name: "게스트 프로젝트 1"),
+            SpatiumProject(id: "project-synced", name: "서버 프로젝트"),
+            SpatiumProject(id: "local-second", name: "게스트 프로젝트 2")
+        ]
+        let data = try JSONEncoder.spatiumAPI.encode(cachedProjects)
+        try data.write(to: cacheFileURL, options: .atomic)
+
+        let recorder = DiskOperationThreadRecorder()
+        let guestProjectCount = await ProjectStore.guestLocalProjectCount(
+            cacheFileURL: cacheFileURL,
+            cacheOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+        let observedThreads = recorder.recordedMainThreadValues
+
+        #expect(guestProjectCount == 2)
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
     @Test func projectCacheWriteFailureIsVisibleAndCanBeRetried() async throws {
         let testRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("spatium-project-cache-\(UUID().uuidString)", isDirectory: true)
@@ -829,7 +1129,7 @@ struct ProjectStorePersistenceTests {
         // 디스크 오류가 해결되기 전 계속 작업해도 재시도 시점의 최신 메모리 상태를 저장한다.
         let secondProject = try await store.createProject(name: "실패 후 추가한 프로젝트")
         try FileManager.default.removeItem(at: blockedDirectory)
-        let didRetry = store.retryLocalPersistence()
+        let didRetry = await store.retryLocalPersistence()
 
         #expect(didRetry)
         #expect(store.localPersistenceErrorMessage == nil)
@@ -841,11 +1141,276 @@ struct ProjectStorePersistenceTests {
         #expect(savedProjects.map(\.id) == [secondProject.id, firstProject.id])
         #expect(savedProjects.map(\.name) == ["실패 후 추가한 프로젝트", "로컬 저장 복구 테스트"])
     }
+
+    @Test func projectCacheEncodingAndWritingRunOutsideMainThread() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-project-cache-thread-\(UUID().uuidString)", isDirectory: true)
+        let cacheFileURL = testRoot.appendingPathComponent("projects.json")
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let recorder = DiskOperationThreadRecorder()
+        let store = ProjectStore(
+            cacheFileURL: cacheFileURL,
+            authenticationStateProvider: { false },
+            cacheOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+
+        _ = try await store.createProject(name: "백그라운드 저장 테스트")
+
+        let observedThreads = recorder.recordedMainThreadValues
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func overlappingProjectCacheWritesKeepNewestCompleteSnapshot() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-project-cache-order-\(UUID().uuidString)", isDirectory: true)
+        let cacheFileURL = testRoot.appendingPathComponent("projects.json")
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let store = ProjectStore(
+            cacheFileURL: cacheFileURL,
+            authenticationStateProvider: { false }
+        )
+        let firstTask = Task { @MainActor in
+            try await store.createProject(name: "첫 번째 프로젝트")
+        }
+        let secondTask = Task { @MainActor in
+            try await store.createProject(name: "두 번째 프로젝트")
+        }
+        let firstProject = try await firstTask.value
+        let secondProject = try await secondTask.value
+
+        let savedData = try Data(contentsOf: cacheFileURL)
+        let savedProjects = try JSONDecoder.spatiumAPI.decode(
+            [SpatiumProject].self,
+            from: savedData
+        )
+        #expect(store.projects.map(\.id) == [secondProject.id, firstProject.id])
+        #expect(savedProjects.map(\.id) == store.projects.map(\.id))
+    }
+
+    private func waitUntil(_ condition: () -> Bool) async -> Bool {
+        for _ in 0..<100 {
+            if condition() { return true }
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+        return condition()
+    }
+}
+
+private final class DiskOperationThreadRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [Bool] = []
+
+    func record(isMainThread: Bool) {
+        lock.lock()
+        values.append(isMainThread)
+        lock.unlock()
+    }
+
+    var recordedMainThreadValues: [Bool] {
+        lock.lock()
+        defer { lock.unlock() }
+        return values
+    }
+}
+
+@MainActor
+struct RoomSceneModelDiskStoreTests {
+    @Test func roomSceneBase64DecodingAndWritingRunOutsideMainThread() async throws {
+        let testDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-room-scene-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: testDirectory) }
+
+        let expectedData = Data((0..<4_096).map { UInt8($0 % 251) })
+        let recorder = DiskOperationThreadRecorder()
+        let store = RoomSceneModelDiskStore(
+            directoryURL: testDirectory,
+            operationObserver: { recorder.record(isMainThread: $0) }
+        )
+
+        let optionalURL = try await store.materialize(
+            base64: expectedData.base64EncodedString(),
+            roomID: "room/test"
+        )
+        let fileURL = try #require(optionalURL)
+        let observedThreads = recorder.recordedMainThreadValues
+
+        #expect(fileURL.lastPathComponent == "scene-room_test.usdz")
+        #expect(try Data(contentsOf: fileURL) == expectedData)
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func invalidRoomSceneBase64DoesNotCreateACacheFile() async throws {
+        let testDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-invalid-room-scene-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: testDirectory) }
+
+        let store = RoomSceneModelDiskStore(directoryURL: testDirectory)
+        let fileURL = try await store.materialize(
+            base64: "not-valid-base64!",
+            roomID: "room-invalid"
+        )
+
+        #expect(fileURL == nil)
+        #expect(!FileManager.default.fileExists(atPath: testDirectory.path))
+    }
+}
+
+@MainActor
+struct RoomScanAssetServiceTests {
+    @Test func roomScanPackageReadDecodingAndItemMappingRunOutsideMainThread() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-room-scan-package-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let room = try makeFixture(in: testRoot, roomID: "local/package")
+        let recorder = DiskOperationThreadRecorder()
+        let service = RoomScanAssetService(
+            cacheRootURL: testRoot.appendingPathComponent("RoomScans", isDirectory: true),
+            diskOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+
+        let optionalPackage = try await service.loadPackage(for: room)
+        let package = try #require(optionalPackage)
+        let item = try #require(package.items.first)
+        let observedThreads = recorder.recordedMainThreadValues
+
+        #expect(package.items.count == 1)
+        #expect(item.detectedCategory == "chair")
+        #expect(item.positionX == 1)
+        #expect(item.positionZ == 2)
+        #expect(package.floorColor == "#112233")
+        #expect(package.usdzURL?.lastPathComponent == "source.usdz")
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func roomScanItemCountReadAndCacheInvalidationRunOutsideMainThread() async throws {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-room-scan-count-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let roomID = "local/count"
+        let room = try makeFixture(in: testRoot, roomID: roomID)
+        let cacheRoot = testRoot.appendingPathComponent("RoomScans", isDirectory: true)
+        let roomCache = cacheRoot.appendingPathComponent("local_count", isDirectory: true)
+        let recorder = DiskOperationThreadRecorder()
+        let service = RoomScanAssetService(
+            cacheRootURL: cacheRoot,
+            diskOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+
+        let itemCount = await service.loadItemCount(for: room)
+        #expect(FileManager.default.fileExists(atPath: roomCache.path))
+
+        await service.invalidateCache(forRoomID: roomID)
+        let observedThreads = recorder.recordedMainThreadValues
+
+        #expect(itemCount == 1)
+        #expect(!FileManager.default.fileExists(atPath: roomCache.path))
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    private func makeFixture(in testRoot: URL, roomID: String) throws -> RoomRecord {
+        let sourceDirectory = testRoot.appendingPathComponent("Sources", isDirectory: true)
+        try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
+
+        let jsonURL = sourceDirectory.appendingPathComponent("source.json")
+        let usdzURL = sourceDirectory.appendingPathComponent("source.usdz")
+        let json = """
+        {
+          "objects": [
+            {
+              "category": "chair",
+              "dimensions": { "x": 1, "y": 2, "z": 3 },
+              "transform": {
+                "columns": [
+                  [1, 0, 0, 0],
+                  [0, 1, 0, 0],
+                  [0, 0, 1, 0],
+                  [1, 0, 2, 1]
+                ]
+              }
+            }
+          ],
+          "doors": [],
+          "windows": [],
+          "_spatiumFloorColor": "#112233"
+        }
+        """
+        try Data(json.utf8).write(to: jsonURL, options: .atomic)
+        try Data("test-usdz".utf8).write(to: usdzURL, options: .atomic)
+
+        return RoomRecord(
+            id: roomID,
+            roomType: "로컬 스캔 테스트",
+            itemCount: 0,
+            photoCount: 0,
+            uploadedAt: Date(),
+            fileName: "",
+            area: 16,
+            scanJsonUrl: jsonURL.absoluteString,
+            usdzUrl: usdzURL.absoluteString
+        )
+    }
 }
 
 @MainActor
 struct UserFurnitureStoreTests {
-    @Test func legacyCentimeterDimensionsMigrateToMetersBeforeRoomPlacement() throws {
+    @Test func initialCatalogReadDecodingMigrationAndSortingRunOutsideMainThread() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-furniture-load-thread-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let older = UserFurniture(
+            id: "usr_older",
+            name: "이전 가구",
+            normalizedName: "older furniture",
+            category: "other",
+            categoryLabel: "기타",
+            width: 60,
+            height: 120,
+            depth: 45,
+            modelFileName: "usr_older",
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+        let newer = UserFurniture(
+            id: "usr_newer",
+            name: "최근 가구",
+            normalizedName: "newer furniture",
+            category: "chair",
+            categoryLabel: "의자",
+            width: 0.5,
+            height: 0.8,
+            depth: 0.5,
+            modelFileName: "usr_newer",
+            createdAt: Date(timeIntervalSince1970: 200)
+        )
+        let data = try JSONEncoder.spatiumAPI.encode([older, newer])
+        try data.write(to: directory.appendingPathComponent("catalog.json"), options: .atomic)
+
+        let recorder = DiskOperationThreadRecorder()
+        let store = UserFurnitureStore(
+            storageDirectory: directory,
+            initialLoadOperationObserver: { recorder.record(isMainThread: $0) }
+        )
+        await store.waitForInitialCatalogLoad()
+
+        #expect(store.items.map(\.id) == [newer.id, older.id])
+        #expect(store.items.last?.width == 0.6)
+        #expect(store.items.last?.height == 1.2)
+        #expect(store.items.last?.depth == 0.45)
+        let observedThreads = recorder.recordedMainThreadValues
+        #expect(!observedThreads.isEmpty)
+        #expect(observedThreads.allSatisfy { !$0 })
+    }
+
+    @Test func legacyCentimeterDimensionsMigrateToMetersBeforeRoomPlacement() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("spatium-furniture-units-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -868,6 +1433,7 @@ struct UserFurnitureStoreTests {
         try data.write(to: directory.appendingPathComponent("catalog.json"), options: .atomic)
 
         let store = UserFurnitureStore(storageDirectory: directory)
+        await store.waitForInitialCatalogLoad()
         let migrated = try #require(store.items.first)
         #expect(migrated.width == 0.6)
         #expect(migrated.height == 1.2)
@@ -877,9 +1443,50 @@ struct UserFurnitureStoreTests {
         #expect(migrated.catalogItem.depth == 0.45)
 
         let relaunched = UserFurnitureStore(storageDirectory: directory)
+        await relaunched.waitForInitialCatalogLoad()
         #expect(relaunched.items.first?.width == 0.6)
         #expect(relaunched.items.first?.height == 1.2)
         #expect(relaunched.items.first?.depth == 0.45)
+    }
+
+    @Test func mutationStartedDuringInitialLoadPreservesLoadedCatalog() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-furniture-load-mutation-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let existing = UserFurniture(
+            id: "usr_existing_at_launch",
+            name: "기존 가구",
+            normalizedName: "existing furniture",
+            category: "chair",
+            categoryLabel: "의자",
+            width: 0.5,
+            height: 0.8,
+            depth: 0.5,
+            modelFileName: "usr_existing_at_launch",
+            createdAt: Date(timeIntervalSince1970: 100)
+        )
+        let data = try JSONEncoder.spatiumAPI.encode([existing])
+        try data.write(to: directory.appendingPathComponent("catalog.json"), options: .atomic)
+
+        let store = UserFurnitureStore(storageDirectory: directory)
+        let added = try await store.add(
+            id: "usr_added_at_launch",
+            name: "새 가구",
+            normalizedName: "new furniture",
+            category: "table",
+            categoryLabel: "테이블",
+            width: 1.2,
+            height: 0.75,
+            depth: 0.65,
+            sourceModelURL: nil
+        )
+
+        #expect(Set(store.items.map(\.id)) == Set([existing.id, added.id]))
+        let relaunched = UserFurnitureStore(storageDirectory: directory)
+        await relaunched.waitForInitialCatalogLoad()
+        #expect(Set(relaunched.items.map(\.id)) == Set([existing.id, added.id]))
     }
 
     @Test func signedOutRefreshKeepsCachedServerFurnitureForNextLogin() async throws {
@@ -891,7 +1498,7 @@ struct UserFurnitureStoreTests {
             storageDirectory: directory,
             accessTokenProvider: { nil }
         )
-        let cached = try store.add(
+        let cached = try await store.add(
             id: "usr_cached_server_item",
             name: "나의 의자",
             normalizedName: "my chair",
@@ -911,6 +1518,7 @@ struct UserFurnitureStoreTests {
             storageDirectory: directory,
             accessTokenProvider: { nil }
         )
+        await relaunched.waitForInitialCatalogLoad()
         #expect(relaunched.items.first?.id == cached.id)
         #expect(relaunched.items.first?.serverModelPath == cached.serverModelPath)
     }
@@ -933,13 +1541,13 @@ struct UserFurnitureStoreTests {
         )))
     }
 
-    @Test func userFurniturePersistsAndJoinsRenderingCatalog() throws {
+    @Test func userFurniturePersistsAndJoinsRenderingCatalog() async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("spatium-user-furniture-\(UUID().uuidString)", isDirectory: true)
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let store = UserFurnitureStore(storageDirectory: directory)
-        let furniture = try store.add(
+        let furniture = try await store.add(
             name: "나의 캣타워",
             normalizedName: "cat tower",
             category: "other",
@@ -956,6 +1564,7 @@ struct UserFurnitureStoreTests {
         #expect(store.catalogItems.last?.group == "기타")
 
         let reloaded = UserFurnitureStore(storageDirectory: directory)
+        await reloaded.waitForInitialCatalogLoad()
         #expect(reloaded.items.count == 1)
         #expect(reloaded.items.first?.id == furniture.id)
         #expect(reloaded.items.first?.name == furniture.name)
@@ -965,7 +1574,7 @@ struct UserFurnitureStoreTests {
         #expect(FurnitureCatalog.items.contains { $0.id == "default_stairs" })
     }
 
-    @Test func importedGLBIsCopiedIntoUserFurnitureStorage() throws {
+    @Test func importedGLBIsCopiedIntoUserFurnitureStorage() async throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("spatium-user-model-\(UUID().uuidString)", isDirectory: true)
         let directory = root.appendingPathComponent("catalog", isDirectory: true)
@@ -975,7 +1584,7 @@ struct UserFurnitureStoreTests {
         try Data([0x67, 0x6C, 0x54, 0x46]).write(to: source)
 
         let store = UserFurnitureStore(storageDirectory: directory)
-        let furniture = try store.add(
+        let furniture = try await store.add(
             name: "사용자 의자",
             normalizedName: "custom chair",
             category: "chair",
@@ -1002,7 +1611,7 @@ struct UserFurnitureStoreTests {
         try glbData.write(to: source)
 
         let store = UserFurnitureStore(storageDirectory: directory)
-        let local = try store.add(
+        let local = try await store.add(
             name: "나의 협탁",
             normalizedName: "side table",
             category: "table",
@@ -1016,8 +1625,9 @@ struct UserFurnitureStoreTests {
             .appendingPathComponent(local.modelFileName)
             .appendingPathExtension("glb")
 
-        let count = await store.synchronizePendingFurniture { data, fileName, metadata in
-            #expect(data == glbData)
+        let count = await store.synchronizePendingFurniture { fileURL, fileName, metadata in
+            #expect(fileURL.standardizedFileURL == oldModelURL.standardizedFileURL)
+            #expect((try? Data(contentsOf: fileURL)) == glbData)
             #expect(fileName == "\(local.id).glb")
             #expect(metadata.nameKr == "나의 협탁")
             #expect(metadata.name == "side table")
@@ -1043,6 +1653,7 @@ struct UserFurnitureStoreTests {
         #expect(try Data(contentsOf: newModelURL) == glbData)
 
         let reloaded = UserFurnitureStore(storageDirectory: directory)
+        await reloaded.waitForInitialCatalogLoad()
         let persisted = try #require(reloaded.items.first)
         #expect(persisted.id == synchronized.id)
         #expect(persisted.name == synchronized.name)
@@ -1050,6 +1661,96 @@ struct UserFurnitureStoreTests {
         #expect(persisted.serverModelPath == synchronized.serverModelPath)
         // API JSON 코더가 ISO-8601 초 단위로 날짜를 저장하므로 하위 초는 제거된다.
         #expect(abs(persisted.createdAt.timeIntervalSince(synchronized.createdAt)) < 1)
+    }
+
+    @Test func concurrentUserFurnitureAddsPreserveEveryCatalogEntry() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-concurrent-furniture-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let store = UserFurnitureStore(storageDirectory: directory)
+        let firstTask = Task { @MainActor in
+            try await store.add(
+                id: "usr_concurrent_first",
+                name: "첫 번째 가구",
+                normalizedName: "first furniture",
+                category: "chair",
+                categoryLabel: "의자",
+                width: 0.5,
+                height: 0.8,
+                depth: 0.5,
+                sourceModelURL: nil
+            )
+        }
+        let secondTask = Task { @MainActor in
+            try await store.add(
+                id: "usr_concurrent_second",
+                name: "두 번째 가구",
+                normalizedName: "second furniture",
+                category: "table",
+                categoryLabel: "테이블",
+                width: 1.2,
+                height: 0.75,
+                depth: 0.65,
+                sourceModelURL: nil
+            )
+        }
+
+        let first = try await firstTask.value
+        let second = try await secondTask.value
+        let expectedIDs = Set([first.id, second.id])
+
+        #expect(Set(store.items.map(\.id)) == expectedIDs)
+        let reloaded = UserFurnitureStore(storageDirectory: directory)
+        await reloaded.waitForInitialCatalogLoad()
+        #expect(Set(reloaded.items.map(\.id)) == expectedIDs)
+    }
+
+    @Test func failedCatalogWriteRestoresExistingModelAndPublishedItems() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-furniture-rollback-\(UUID().uuidString)", isDirectory: true)
+        let directory = root.appendingPathComponent("catalog", isDirectory: true)
+        let source = root.appendingPathComponent("replacement.glb")
+        let modelURL = directory
+            .appendingPathComponent("usr_existing_model")
+            .appendingPathExtension("glb")
+        let metadataURL = directory.appendingPathComponent("catalog.json", isDirectory: true)
+        let previousModel = Data([0x67, 0x6C, 0x54, 0x46, 0x01])
+        let replacementModel = Data([0x67, 0x6C, 0x54, 0x46, 0x02])
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try previousModel.write(to: modelURL)
+        try replacementModel.write(to: source)
+        // catalog.json을 디렉터리로 만들어 모델 복사 후 JSON 원자 쓰기만 실패하게 한다.
+        try FileManager.default.createDirectory(at: metadataURL, withIntermediateDirectories: true)
+
+        let store = UserFurnitureStore(storageDirectory: directory)
+        var receivedError: Error?
+        do {
+            _ = try await store.add(
+                id: "usr_existing_model",
+                name: "교체 가구",
+                normalizedName: "replacement furniture",
+                category: "other",
+                categoryLabel: "기타",
+                width: 0.6,
+                height: 0.7,
+                depth: 0.8,
+                sourceModelURL: source
+            )
+        } catch {
+            receivedError = error
+        }
+
+        #expect(receivedError != nil)
+        #expect(store.items.isEmpty)
+        #expect(try Data(contentsOf: modelURL) == previousModel)
+        #expect(try Data(contentsOf: source) == replacementModel)
+        let leftoverTransactionFiles = try FileManager.default
+            .contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix(".model-staging-") || $0.hasPrefix(".model-backup-") }
+        #expect(leftoverTransactionFiles.isEmpty)
     }
 }
 
@@ -1076,7 +1777,7 @@ struct BackendContractTests {
     }
 
     @Test func avatarMultipartUsesBackendImageField() throws {
-        let form = MultipartFormData(parts: [
+        let form = try MultipartFormData(parts: [
             .init(name: "image", data: Data([0xFF, 0xD8]), fileName: "avatar.jpg", contentType: "image/jpeg")
         ], boundary: "avatar-contract")
         let body = try #require(String(data: form.body, encoding: .isoLatin1))
@@ -1086,6 +1787,35 @@ struct BackendContractTests {
         #expect(!body.contains("name=\"avatar\""))
     }
 
+    /// 대용량 USDZ/GLB 파일 파트가 실수로 메모리 바디 경로에 올라가지 않도록,
+    /// 파일 파트는 스트리밍 `writeBodyFile`만 허용하고 메모리 init은 거부한다.
+    @Test func multipartMemoryBodyRejectsFileParts() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("multipart-guard-\(UUID().uuidString).bin")
+        try Data([0x01, 0x02, 0x03]).write(to: fileURL)
+        defer { try? FileManager.default.removeItem(at: fileURL) }
+
+        #expect(throws: MultipartFormDataError.self) {
+            _ = try MultipartFormData(parts: [
+                .init(name: "text", data: Data("value".utf8)),
+                .init(name: "model", fileURL: fileURL, contentType: "model/gltf-binary")
+            ], boundary: "file-guard-contract")
+        }
+
+        // 같은 파트 구성이라도 스트리밍 경로는 정상 동작해야 한다.
+        let bodyURL = try MultipartFormData.writeBodyFile(
+            parts: [
+                .init(name: "text", data: Data("value".utf8)),
+                .init(name: "model", fileURL: fileURL, contentType: "model/gltf-binary")
+            ],
+            boundary: "file-guard-contract"
+        )
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+        let body = try #require(String(data: Data(contentsOf: bodyURL), encoding: .isoLatin1))
+        #expect(body.contains("name=\"model\""))
+        #expect(body.contains("--file-guard-contract--"))
+    }
+
     @Test func profileImageDecoderSupportsBackendDataURL() {
         let expected = Data([1, 2, 3, 4])
         let source = "data:image/png;base64,\(expected.base64EncodedString())"
@@ -1093,11 +1823,29 @@ struct BackendContractTests {
         #expect(ProfileImageDataDecoder.decode("https://example.com/avatar.png") == nil)
     }
 
+    @Test func profileDataURLImageIsDecodedAndDownsampledInBackground() async throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let original = UIGraphicsImageRenderer(
+            size: CGSize(width: 1_024, height: 512),
+            format: format
+        ).image { context in
+            UIColor.systemBlue.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 1_024, height: 512))
+        }
+        let png = try #require(original.pngData())
+        let source = "data:image/png;base64,\(png.base64EncodedString())"
+        let decoded = try #require(await ProfileImageDataDecoder.decodeImageInBackground(source))
+        let image = try #require(decoded.cgImage)
+
+        #expect(max(image.width, image.height) <= ProfileImageDataDecoder.maximumDisplayPixelDimension)
+    }
+
     @Test func imgTo3DOptionsMatchSpringGatewayAndFastAPI() {
         #expect(ImgTo3DCategory.allCases.map(\.code) == [
             "figure", "bathtub", "bed", "chair", "dishwasher", "fireplace", "oven",
             "refrigerator", "sink", "sofa", "stairs", "storage", "stove",
-            "table", "television", "toilet", "washerDryer", "other"
+            "table", "television", "toilet", "washerDryer", "storage/editable", "other"
         ])
         #expect(ImgTo3DSegmentationProvider.allCases.map(\.rawValue) == ["grounded_sam2", "yolo"])
         #expect(ImgTo3DGenerationProvider.allCases.map(\.rawValue) == [
@@ -1148,6 +1896,10 @@ struct BackendContractTests {
     }
 
     @Test func springFurnitureMultipartUsesFileAndJSONParts() throws {
+        let modelURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("multipart-contract-\(UUID().uuidString).glb")
+        defer { try? FileManager.default.removeItem(at: modelURL) }
+        try Data("glTF".utf8).write(to: modelURL)
         let metadata = FurnitureCreateMetadata(
             nameKr: "의자",
             name: "chair",
@@ -1156,11 +1908,16 @@ struct BackendContractTests {
             dimensions: .init(x: 0.5, y: 0.8, z: 0.5)
         )
         let metadataData = try JSONEncoder.spatiumAPI.encode(metadata)
-        let form = MultipartFormData(parts: [
-            .init(name: "file", data: Data("glTF".utf8), fileName: "chair.glb", contentType: "model/gltf-binary"),
-            .init(name: "metadata", data: metadataData, contentType: "application/json")
-        ], boundary: "contract-test")
-        let body = try #require(String(data: form.body, encoding: .utf8))
+        let bodyURL = try MultipartFormData.writeBodyFile(
+            parts: [
+                .init(name: "file", fileURL: modelURL, fileName: "chair.glb", contentType: "model/gltf-binary"),
+                .init(name: "metadata", data: metadataData, contentType: "application/json")
+            ],
+            boundary: "contract-test"
+        )
+        defer { try? FileManager.default.removeItem(at: bodyURL) }
+        let bodyData = try Data(contentsOf: bodyURL)
+        let body = try #require(String(data: bodyData, encoding: .utf8))
 
         #expect(body.contains("name=\"file\"; filename=\"chair.glb\""))
         #expect(body.contains("Content-Type: model/gltf-binary"))
@@ -1198,7 +1955,76 @@ struct BackendContractTests {
         #expect(abs(matrix[14] - 3) < 0.001)
     }
 
-    private func minimalGLB() throws -> Data {
+    @Test func correctedTransformFileStreamingPreservesBinaryPayload() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("glb-streaming-baker-\(UUID().uuidString)", isDirectory: true)
+        let sourceURL = directory.appendingPathComponent("source.glb")
+        let destinationURL = directory.appendingPathComponent("corrected.glb")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let binary = Data(
+            repeating: 0xA5,
+            count: GLBTransformBaker.streamingBufferSize * 2 + 128
+        )
+        let source = try minimalGLB(binaryPayload: binary)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try source.write(to: sourceURL)
+
+        let resultURL = try await GLBTransformBaker.bakeFileInBackground(
+            sourceURL: sourceURL,
+            destinationURL: destinationURL,
+            transform: .init(xPosition: 1, yPosition: 2, zPosition: 3)
+        )
+        let result = try Data(contentsOf: resultURL)
+        let jsonLength = Int(readUInt32(result, at: 12))
+        let binaryHeaderOffset = 20 + jsonLength
+        let binaryLength = Int(readUInt32(result, at: binaryHeaderOffset))
+        let binaryType = readUInt32(result, at: binaryHeaderOffset + 4)
+        let outputBinary = result.subdata(
+            in: (binaryHeaderOffset + 8)..<(binaryHeaderOffset + 8 + binaryLength)
+        )
+
+        #expect(resultURL == destinationURL)
+        #expect(result.prefix(4) == Data("glTF".utf8))
+        #expect(readUInt32(result, at: 8) == UInt32(result.count))
+        #expect(binaryType == 0x004E4942)
+        #expect(outputBinary == binary)
+        #expect(try Data(contentsOf: sourceURL) == source)
+        let remainingFiles = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )
+        #expect(!remainingFiles.contains { $0.pathExtension == "tmp" })
+    }
+
+    @Test func invalidGLBStreamingBakeLeavesNoDestinationOrTemporaryFile() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("glb-streaming-failure-\(UUID().uuidString)", isDirectory: true)
+        let sourceURL = directory.appendingPathComponent("invalid.glb")
+        let destinationURL = directory.appendingPathComponent("corrected.glb")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try Data("invalid-glb".utf8).write(to: sourceURL)
+
+        do {
+            _ = try await GLBTransformBaker.bakeFileInBackground(
+                sourceURL: sourceURL,
+                destinationURL: destinationURL,
+                transform: .initial
+            )
+            Issue.record("손상된 GLB는 보정 파일을 만들지 않아야 합니다.")
+        } catch {
+            #expect(!FileManager.default.fileExists(atPath: destinationURL.path))
+        }
+
+        let remainingFiles = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )
+        #expect(remainingFiles.map(\.lastPathComponent) == [sourceURL.lastPathComponent])
+    }
+
+    private func minimalGLB(binaryPayload: Data = Data()) throws -> Data {
         var json = try JSONSerialization.data(withJSONObject: [
             "asset": ["version": "2.0"],
             "scene": 0,
@@ -1206,12 +2032,18 @@ struct BackendContractTests {
             "nodes": [["name": "Root"]]
         ])
         json.append(contentsOf: repeatElement(UInt8(0x20), count: (4 - json.count % 4) % 4))
+        let binaryChunkLength = binaryPayload.isEmpty ? 0 : 8 + binaryPayload.count
         var result = Data("glTF".utf8)
         appendUInt32(2, to: &result)
-        appendUInt32(UInt32(20 + json.count), to: &result)
+        appendUInt32(UInt32(20 + json.count + binaryChunkLength), to: &result)
         appendUInt32(UInt32(json.count), to: &result)
         appendUInt32(0x4E4F534A, to: &result)
         result.append(json)
+        if !binaryPayload.isEmpty {
+            appendUInt32(UInt32(binaryPayload.count), to: &result)
+            appendUInt32(0x004E4942, to: &result)
+            result.append(binaryPayload)
+        }
         return result
     }
 
@@ -1226,5 +2058,209 @@ struct BackendContractTests {
         data.append(UInt8(truncatingIfNeeded: value >> 8))
         data.append(UInt8(truncatingIfNeeded: value >> 16))
         data.append(UInt8(truncatingIfNeeded: value >> 24))
+    }
+}
+
+@MainActor
+struct HomeAmbientAnimationTests {
+    /// 홈 반복 애니메이션은 "홈 탭 표시 + 앱 포그라운드 + Reduce Motion 꺼짐"이
+    /// 모두 만족될 때만 실행된다. (숨겨진 탭·백그라운드·접근성 설정에서 유휴 전력 사용 방지)
+    @Test func ambientAnimationsRunOnlyWhenHomeIsVisibleAndActive() {
+        #expect(HomeDashboardView.shouldRunAmbientAnimations(
+            isActive: true, scenePhase: .active, reduceMotion: false
+        ))
+        // 가구 만들기 탭으로 이동해 홈이 숨겨진 상태.
+        #expect(!HomeDashboardView.shouldRunAmbientAnimations(
+            isActive: false, scenePhase: .active, reduceMotion: false
+        ))
+        // 앱이 백그라운드/인액티브로 전환된 상태.
+        #expect(!HomeDashboardView.shouldRunAmbientAnimations(
+            isActive: true, scenePhase: .background, reduceMotion: false
+        ))
+        #expect(!HomeDashboardView.shouldRunAmbientAnimations(
+            isActive: true, scenePhase: .inactive, reduceMotion: false
+        ))
+        // 사용자가 동작 줄이기(Reduce Motion)를 켠 상태.
+        #expect(!HomeDashboardView.shouldRunAmbientAnimations(
+            isActive: true, scenePhase: .active, reduceMotion: true
+        ))
+    }
+}
+
+@MainActor
+struct BoundedConcurrencyTests {
+    /// 방·프로젝트 개수 집계가 데이터 규모와 무관하게 순간 동시 요청 수를
+    /// `maxConcurrentCountRequests` 이하로 유지하면서 모든 요소를 처리하는지 검증한다.
+    @Test func boundedConcurrencyKeepsWindowAndProcessesEveryElement() async {
+        actor ConcurrencyTracker {
+            private var current = 0
+            private(set) var peak = 0
+            func begin() {
+                current += 1
+                peak = max(peak, current)
+            }
+            func end() {
+                current -= 1
+            }
+        }
+
+        let tracker = ConcurrencyTracker()
+        var processed: [Int] = []
+        await ProjectStore.withBoundedConcurrency(
+            elements: Array(1...23),
+            limit: 5,
+            operation: { value in
+                await tracker.begin()
+                try? await Task.sleep(for: .milliseconds(15))
+                await tracker.end()
+                return value
+            },
+            process: { processed.append($0) }
+        )
+
+        #expect(processed.sorted() == Array(1...23))
+        #expect(await tracker.peak <= 5)
+
+        // 기본 상한이 문서 권장 범위(4~6) 안에 있는지도 고정한다.
+        #expect((4...6).contains(ProjectStore.maxConcurrentCountRequests))
+    }
+}
+
+@MainActor
+struct SurfaceTintRestoreTests {
+    /// 프런트엔드 applyRoomWallColor/applyRoomFloorColor 대응 회귀:
+    /// 색을 칠하기 전 원본 diffuse를 기록하고, 선택 해제(nil) 시 스캔 원본 재질로 복원한다.
+    @Test func clearingWallAndFloorColorRestoresOriginalScanMaterials() throws {
+        let room = RoomRecord(
+            id: "tint-restore-room",
+            roomType: "틴트 복원 방",
+            itemCount: 0,
+            photoCount: 0,
+            uploadedAt: Date(),
+            fileName: "",
+            area: 16
+        )
+        let viewModel = RoomEditorViewModel(room: room)
+        let coordinator = RoomEditorSceneView.Coordinator(
+            viewModel: viewModel,
+            modelLoader: TestDataFurnitureModelLoader()
+        )
+
+        // 스캔 셸을 흉내 낸 벽/바닥 mesh — 원본 diffuse를 고유 색으로 구분해 둔다.
+        let shell = SCNNode()
+        let wall = SCNNode(geometry: SCNBox(width: 3, height: 2.4, length: 0.1, chamferRadius: 0))
+        wall.name = "Wall_0_grp"
+        wall.geometry?.firstMaterial?.diffuse.contents = UIColor.systemRed
+        let floor = SCNNode(geometry: SCNBox(width: 3, height: 0.05, length: 3, chamferRadius: 0))
+        floor.name = "Floor_grp"
+        floor.geometry?.firstMaterial?.diffuse.contents = UIColor.systemBlue
+        shell.addChildNode(wall)
+        shell.addChildNode(floor)
+
+        coordinator.tintWalls(in: shell, color: UIColor.white)
+        coordinator.tintFloors(in: shell, color: UIColor.black)
+        #expect(wall.geometry?.firstMaterial?.diffuse.contents as? UIColor == UIColor.white)
+        #expect(floor.geometry?.firstMaterial?.diffuse.contents as? UIColor == UIColor.black)
+
+        coordinator.tintWalls(in: shell, color: nil)
+        coordinator.tintFloors(in: shell, color: nil)
+        #expect(wall.geometry?.firstMaterial?.diffuse.contents as? UIColor == UIColor.systemRed)
+        #expect(floor.geometry?.firstMaterial?.diffuse.contents as? UIColor == UIColor.systemBlue)
+
+        // 한 번도 tint하지 않은 재질은 nil 적용이 원본을 건드리지 않아야 한다.
+        let untouched = SCNNode(geometry: SCNBox(width: 1, height: 1, length: 1, chamferRadius: 0))
+        untouched.name = "Wall_1_grp"
+        untouched.geometry?.firstMaterial?.diffuse.contents = UIColor.systemGreen
+        coordinator.tintWalls(in: untouched, color: nil)
+        #expect(untouched.geometry?.firstMaterial?.diffuse.contents as? UIColor == UIColor.systemGreen)
+    }
+
+    /// 색을 고르지 않은 새 스캔 방은 벽을 기본색으로 덮지 않고 원본 재질을 유지한다.
+    @Test func newEditorStartsWithoutForcedWallColor() {
+        let room = RoomRecord(
+            id: "no-tint-room",
+            roomType: "원본 유지 방",
+            itemCount: 0,
+            photoCount: 0,
+            uploadedAt: Date(),
+            fileName: "",
+            area: 16
+        )
+        let viewModel = RoomEditorViewModel(room: room)
+        #expect(viewModel.wallColorHex == nil)
+        #expect(viewModel.resolvedWallColorHex == "#F2EDE5")
+
+        viewModel.setWallColor("#3A3A3A")
+        #expect(viewModel.wallColorHex == "#3A3A3A")
+        viewModel.setWallColor(nil)
+        #expect(viewModel.wallColorHex == nil)
+    }
+}
+
+@MainActor
+struct RoomMeasurementCalculationTests {
+    /// 프런트엔드 calculateRoomMeasurements 대응 회귀: 바닥 mesh 삼각형에서
+    /// 폭·깊이·실제 면적·외곽 edge(사용 횟수 1)·높이선을 계산한다.
+    @Test func floorPolygonProducesOutlineAreaAndHeightSegment() throws {
+        // 3m × 2m 바닥(삼각형 2개, y=0.1) + 높이 2.3m 벽 하나로 셸을 구성한다.
+        let floorY: Float = 0.1
+        let vertices = [
+            SCNVector3(0, floorY, 0),
+            SCNVector3(3, floorY, 0),
+            SCNVector3(3, floorY, 2),
+            SCNVector3(0, floorY, 2)
+        ]
+        let indices: [Int32] = [0, 1, 2, 0, 2, 3]
+        let geometry = SCNGeometry(
+            sources: [SCNGeometrySource(vertices: vertices)],
+            elements: [SCNGeometryElement(indices: indices, primitiveType: .triangles)]
+        )
+        let floor = SCNNode(geometry: geometry)
+        floor.name = "Floor_grp"
+
+        let wall = SCNNode(geometry: SCNBox(width: 3, height: 2.3, length: 0.05, chamferRadius: 0))
+        wall.name = "Wall_0_grp"
+        wall.position = SCNVector3(1.5, floorY + 1.15, 0)
+
+        let shell = SCNNode()
+        shell.addChildNode(floor)
+        shell.addChildNode(wall)
+
+        let measurements = try #require(
+            RoomEditorSceneView.Coordinator.calculateRoomMeasurements(from: shell)
+        )
+
+        #expect(abs(measurements.width - 3) < 0.01)
+        #expect(abs(measurements.depth - 2) < 0.01)
+        // 실제 바닥 폴리곤 면적(3×2=6). bounding box가 아니라 삼각형 면적 합이어야 한다.
+        #expect(abs(measurements.area - 6) < 0.05)
+        // 외곽선은 사용 횟수 1인 edge 4개(대각선 제외), 길이는 3·2·3·2.
+        #expect(measurements.outlineSegments.count == 4)
+        let lengths = measurements.outlineSegments.map(\.length).sorted()
+        #expect(lengths.count == 4)
+        if lengths.count == 4 {
+            #expect(abs(lengths[0] - 2) < 0.01 && abs(lengths[1] - 2) < 0.01)
+            #expect(abs(lengths[2] - 3) < 0.01 && abs(lengths[3] - 3) < 0.01)
+        }
+        // 높이선은 바닥 테두리 바깥 모서리(maxX+0.18, minZ-0.18)에 수직으로 선다.
+        #expect(abs(measurements.heightSegment.start.x - 3.18) < 0.01)
+        #expect(abs(measurements.heightSegment.start.z - (-0.18)) < 0.01)
+        #expect(measurements.heightSegment.length > 2.2)
+        // 외곽선 Y는 바닥 평면 높이를 따른다.
+        #expect(abs((measurements.outlineSegments.first?.start.y ?? 0) - floorY) < 0.01)
+    }
+
+    /// 바닥 mesh가 없는 박스 방 폴백은 bounding box 직사각형 외곽선을 만든다.
+    @Test func fallbackMeasurementsUseRectangleOutline() {
+        let measurements = RoomEditorSceneView.Coordinator.fallbackRoomMeasurements(
+            bounds: HorizontalBounds(minX: -2, maxX: 2, minZ: -1.5, maxZ: 1.5),
+            floorY: 0,
+            height: 2.4
+        )
+        #expect(abs(measurements.width - 4) < 0.001)
+        #expect(abs(measurements.depth - 3) < 0.001)
+        #expect(abs(measurements.area - 12) < 0.001)
+        #expect(measurements.outlineSegments.count == 4)
+        #expect(abs(measurements.heightSegment.length - 2.4) < 0.001)
     }
 }

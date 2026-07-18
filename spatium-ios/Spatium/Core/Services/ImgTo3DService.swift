@@ -12,7 +12,8 @@ struct ImgTo3DSegmentationResult: Equatable {
 struct ImgTo3DGenerationResult: Equatable {
     let id: String
     let provider: String
-    let modelData: Data
+    /// URLSession이 디스크로 스트리밍한 임시 GLB. 호출자가 최종 위치로 옮기거나 삭제합니다.
+    let temporaryModelURL: URL
     let fileName: String
 }
 
@@ -152,12 +153,13 @@ struct ImgTo3DService {
             parts.append(textPart(name: "mc_resolution", value: String(mcResolution)))
         }
 
-        let response = try await sendMultipart(
+        let response = try await sendMultipartFile(
             path: Self.imageTo3DPath,
             parts: parts,
             timeout: 620
         )
-        guard response.data.starts(with: Data("glTF".utf8)) else {
+        guard Self.file(response.fileURL, startsWith: Data("glTF".utf8)) else {
+            try? FileManager.default.removeItem(at: response.fileURL)
             throw ImgTo3DServiceError.invalidResponse
         }
 
@@ -166,7 +168,7 @@ struct ImgTo3DService {
         return ImgTo3DGenerationResult(
             id: id,
             provider: metadata?.provider ?? provider.rawValue,
-            modelData: response.data,
+            temporaryModelURL: response.fileURL,
             fileName: "\(id).glb"
         )
     }
@@ -194,6 +196,38 @@ struct ImgTo3DService {
                 throw ImgTo3DServiceError.invalidResponse
             }
         }
+    }
+
+    private func sendMultipartFile(
+        path: String,
+        parts: [MultipartFormPart],
+        timeout: TimeInterval
+    ) async throws -> SpatiumAPITemporaryFileResponse {
+        do {
+            return try await client.sendMultipartFile(path: path, parts: parts, timeout: timeout)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as SpatiumAPIError {
+            switch error {
+            case .invalidBaseURL:
+                throw ImgTo3DServiceError.invalidBaseURL
+            case let .network(underlying):
+                throw ImgTo3DServiceError.network(underlying)
+            case let .server(statusCode, _, message):
+                throw ImgTo3DServiceError.server(statusCode: statusCode, message: message)
+            case .unauthorized:
+                throw ImgTo3DServiceError.server(statusCode: 401, message: "로그인이 필요합니다.")
+            case .decoding:
+                throw ImgTo3DServiceError.invalidResponse
+            }
+        }
+    }
+
+    private static func file(_ url: URL, startsWith expected: Data) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        guard let prefix = try? handle.read(upToCount: expected.count) else { return false }
+        return prefix == expected
     }
 
     private func textPart(name: String, value: String) -> MultipartFormPart {

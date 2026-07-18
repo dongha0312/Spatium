@@ -3,6 +3,7 @@ import UIKit
 
 struct ImgTo3DUploadStep: View {
     let image: UIImage?
+    let isPreparingImage: Bool
     let convertedFromIncompatibleFormat: Bool
     let canUseCamera: Bool
     let onChoosePhoto: () -> Void
@@ -14,12 +15,34 @@ struct ImgTo3DUploadStep: View {
             title: "가구 사진을 올려주세요",
             description: "3D로 만들 가구의 전체 형태가 잘 보이는 사진 한 장이면 충분해요."
         ) {
-            if let image {
+            if isPreparingImage {
+                preparingImageContent
+            } else if let image {
                 selectedImageContent(image)
             } else {
                 emptyImageContent
             }
         }
+    }
+
+    private var preparingImageContent: some View {
+        VStack(spacing: 14) {
+            Spacer(minLength: 0)
+            ProgressView()
+                .controlSize(.large)
+                .tint(SpatiumTheme.accent)
+            Text("사진을 최적화하고 있어요…")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(SpatiumTheme.text)
+            Text("화질은 유지하면서 업로드 크기와 메모리 사용을 줄이고 있습니다.")
+                .font(.caption)
+                .foregroundStyle(SpatiumTheme.soft)
+                .multilineTextAlignment(.center)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("사진 최적화 중")
     }
 
     private func selectedImageContent(_ image: UIImage) -> some View {
