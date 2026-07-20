@@ -5,7 +5,7 @@ import Foundation
 /// - `3d_models/<카테고리>`의 변형(variant)들을 사용자가 고를 수 있게 노출합니다.
 ///
 /// 번들 리소스는 폴더 구조 없이 루트로 평탄화되어 복사되므로, 조회는 파일명만으로 합니다.
-struct FurnitureModelOption: Identifiable, Hashable {
+nonisolated struct FurnitureModelOption: Identifiable, Hashable, Sendable {
     /// 번들 리소스 이름(확장자 제외), 예: "modern_chair".
     let fileName: String
     /// 사용자에게 보일 이름, 예: "모던 의자".
@@ -14,7 +14,7 @@ struct FurnitureModelOption: Identifiable, Hashable {
     var id: String { fileName }
 }
 
-struct FurnitureCategoryModels: Identifiable {
+nonisolated struct FurnitureCategoryModels: Identifiable, Sendable {
     /// 정규 카테고리 키, 예: "chair".
     let id: String
     /// 카테고리 표시 이름, 예: "의자".
@@ -30,14 +30,14 @@ struct FurnitureCategoryModels: Identifiable {
     var options: [FurnitureModelOption] { [defaultOption] + variantOptions }
 }
 
-enum FurnitureCatalogSource: String, Hashable {
+nonisolated enum FurnitureCatalogSource: String, Hashable, Sendable {
     case builtIn
     case user
 }
 
 /// 3D 에디터 카탈로그의 개별 상품. 프런트엔드 `furniture_catalog.json`과 동일한 구성
 /// (그룹/카테고리/치수/모델 파일)을 앱 번들 GLB에 매핑합니다.
-struct FurnitureCatalogItem: Identifiable, Hashable {
+nonisolated struct FurnitureCatalogItem: Identifiable, Hashable, Sendable {
     let id: String
     /// 표시 이름, 예: "원목 침대".
     let name: String
@@ -51,11 +51,13 @@ struct FurnitureCatalogItem: Identifiable, Hashable {
     let depth: Double
     /// 번들 GLB 파일명(확장자 제외), 예: "wooden_bed".
     let modelFileName: String
+    /// 웹 에디터도 같은 GLB를 불러올 수 있는 서버/공개 경로. 번들 전용 항목은 nil이다.
+    var modelPath: String? = nil
     /// 기본 제공 모델인지 사용자가 만든 모델인지 구분합니다.
     var source: FurnitureCatalogSource = .builtIn
 }
 
-enum FurnitureCatalog {
+nonisolated enum FurnitureCatalog {
     /// 실제 상품 그룹과 겹치지 않는 가상 필터. 사용자가 만든 모든 가구를 모아 보여줍니다.
     static let userFurnitureFilterID = "__userFurniture__"
     static let otherGroup = "기타"

@@ -399,9 +399,10 @@ extension RoomEditorView {
 
     // MARK: - 책장 꾸미기 카탈로그
 
-    /// 꾸미기 책장에는 저장 카테고리가 figure인 피규어·소품만 노출한다.
+    /// 프런트엔드와 동일하게 기본 카탈로그에서는 figure만, 사용자가 만든 모델은
+    /// 저장 카테고리와 무관하게 모두 소품 후보로 노출한다. 큰 모델은 배치 시 최대 35cm로 축소된다.
     private var figureItems: [FurnitureCatalogItem] {
-        userFurnitureStore.catalogItems.filter(RoomEditorViewModel.isDecorFigure)
+        userFurnitureStore.catalogItems.filter(RoomEditorViewModel.isDecorCatalogItem)
     }
 }
 

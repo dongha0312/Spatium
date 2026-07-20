@@ -134,16 +134,17 @@ struct ScanCaptureSheet: View {
 private struct ScanGuidanceBanner: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "arrow.triangle.turn.up.right.diamond.fill")
+            Image(systemName: "door.left.hand.closed")
                 .font(.headline)
                 .foregroundStyle(.white)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("천천히 방을 비춰주세요")
+                Text("지금 있는 방 하나만 스캔하세요")
                     .font(.subheadline.weight(.bold))
-                Text("벽, 바닥, 가구가 모두 보이도록 방을 한 바퀴 돌며 스캔하세요.")
+                Text("문을 넘어 다른 방으로 이동하지 말고, 다른 방은 완료 후 새 스캔으로 시작하세요.")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.85))
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Spacer(minLength: 0)
@@ -155,5 +156,7 @@ private struct ScanGuidanceBanner: View {
             RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous)
                 .stroke(.white.opacity(0.24), lineWidth: 1)
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("지금 있는 방 하나만 스캔하세요. 문을 넘어 다른 방으로 이동하지 말고, 다른 방은 완료 후 새 스캔으로 시작하세요.")
     }
 }

@@ -73,6 +73,10 @@ nonisolated struct PlacedDecoration: Codable, Identifiable, Equatable, Sendable 
     var rotationY: Double
     /// 크기 슬라이더의 균일 스케일. 표시 크기 = 기준 치수 × scale.
     var scale: Double = 1
+    /// 프런트엔드 metadata와 왕복할 때 정확한 카탈로그·모델을 유지하기 위한 식별 정보.
+    var catalogId: String? = nil
+    var category: String? = nil
+    var modelPath: String? = nil
 
     var id: Int { decorId }
 }

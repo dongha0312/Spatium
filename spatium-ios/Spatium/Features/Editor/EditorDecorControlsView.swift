@@ -41,6 +41,7 @@ struct EditorDecorControlsView: View {
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.88), value: viewModel.pendingFigure?.id)
         .animation(.spring(response: 0.34, dampingFraction: 0.88), value: viewModel.selectedDecorID)
+        .animation(.spring(response: 0.34, dampingFraction: 0.88), value: isReplacingDecor)
         .onChange(of: viewModel.selectedDecorID) { _, selectedDecorID in
             if selectedDecorID == nil {
                 isReplacingDecor = false
@@ -60,7 +61,10 @@ struct EditorDecorControlsView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
 
-            catalog
+            if viewModel.selectedDecoration == nil || isReplacingDecor {
+                catalog
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
     }
 
@@ -73,14 +77,14 @@ struct EditorDecorControlsView: View {
                         Spacer(minLength: 8)
                         doneButton
                     }
-                    Text("소품을 고른 뒤 3D 선반을 탭하거나 선반 선택 메뉴를 사용하세요")
+                    Text(modeInstruction)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.72))
                 }
             } else {
                 HStack(spacing: 8) {
                     modeTitle
-                    Text("소품을 고르고 선반을 탭하세요")
+                    Text(modeInstruction)
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.white.opacity(0.64))
                         .lineLimit(1)
@@ -104,6 +108,19 @@ struct EditorDecorControlsView: View {
         Label("책장 꾸미기", systemImage: "sparkles")
             .font(.caption.weight(.black))
             .foregroundStyle(.white)
+    }
+
+    private var modeInstruction: String {
+        if isReplacingDecor {
+            return "교체할 소품을 골라주세요"
+        }
+        if viewModel.selectedDecoration != nil {
+            return "선택한 소품을 조절하세요"
+        }
+        if viewModel.pendingFigure != nil {
+            return "소품을 놓을 선반을 탭하세요"
+        }
+        return "소품을 고르고 선반을 탭하세요"
     }
 
     private var doneButton: some View {

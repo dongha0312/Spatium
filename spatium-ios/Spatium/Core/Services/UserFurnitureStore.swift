@@ -62,6 +62,7 @@ struct UserFurniture: Codable, Identifiable, Equatable, Sendable {
             height: dimensions.height,
             depth: dimensions.depth,
             modelFileName: modelFileName,
+            modelPath: serverModelPath,
             source: .user
         )
     }
@@ -570,7 +571,8 @@ final class UserFurnitureStore: ObservableObject {
                 depth: item.dimensions.z,
                 modelFileName: bundled?.modelFileName
                     ?? URL(string: item.modelUrl ?? "")?.deletingPathExtension().lastPathComponent
-                    ?? item.id
+                    ?? item.id,
+                modelPath: item.modelUrl
             )
         }
         if !defaults.isEmpty {
