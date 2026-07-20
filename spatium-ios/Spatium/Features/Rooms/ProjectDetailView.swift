@@ -14,6 +14,7 @@ struct ProjectDetailView: View {
     @State private var editingRoom: RoomRecord?
     @State private var pendingRoomDeletion: RoomRecord?
     @State private var showProjectDeletion = false
+    @GestureState private var backSwipeOffset: CGFloat = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -102,6 +103,28 @@ struct ProjectDetailView: View {
                 onConfirm: onDeleteProject
             )
         }
+        .offset(x: backSwipeOffset)
+        .animation(.spring(response: 0.3, dampingFraction: 0.9), value: backSwipeOffset)
+        .simultaneousGesture(edgeBackSwipeGesture)
+    }
+
+    /// 시스템 내비게이션 pop 관례처럼 왼쪽 가장자리에서 오른쪽 스와이프로 목록에 복귀.
+    /// simultaneousGesture라 세로 스크롤·방 행의 왼쪽 스와이프 삭제와 경합하지 않고,
+    /// 가장자리 시작 + 가로 우세 드래그일 때만 화면을 따라가다 임계값을 넘으면 onBack을 호출한다.
+    private var edgeBackSwipeGesture: some Gesture {
+        DragGesture(minimumDistance: 16, coordinateSpace: .global)
+            .updating($backSwipeOffset) { value, state, _ in
+                guard value.startLocation.x <= 32,
+                      value.translation.width > 0,
+                      value.translation.width > abs(value.translation.height) else { return }
+                state = value.translation.width
+            }
+            .onEnded { value in
+                guard value.startLocation.x <= 32,
+                      value.translation.width > 80,
+                      value.translation.width > abs(value.translation.height) else { return }
+                onBack()
+            }
     }
 }
 
