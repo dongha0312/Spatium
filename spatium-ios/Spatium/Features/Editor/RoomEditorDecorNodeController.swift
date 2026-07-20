@@ -1,7 +1,52 @@
 import Foundation
+import QuartzCore
 import SceneKit
 import simd
 import UIKit
+
+struct DecorCameraState {
+    let position: SCNVector3
+    let orientation: SCNQuaternion
+    let target: SCNVector3
+    let usesOrthographicProjection: Bool
+    let orthographicScale: Double
+    let fieldOfView: CGFloat
+    let zNear: Double
+    let zFar: Double
+    let interactionMode: SCNInteractionMode
+    let automaticTarget: Bool
+    let inertiaEnabled: Bool
+    let inertiaFriction: Float
+    let worldUp: SCNVector3
+    let minimumVerticalAngle: Float
+    let maximumVerticalAngle: Float
+    let minimumHorizontalAngle: Float
+    let maximumHorizontalAngle: Float
+}
+
+struct DecorCameraView {
+    let target: SIMD3<Float>
+    let front: SIMD3<Float>
+    let right: SIMD3<Float>
+    let minimumDistance: Float
+    let maximumDistance: Float
+    let minimumElevation: Float
+    let maximumElevation: Float
+    let maximumAzimuth: Float
+    var distance: Float
+    var elevation: Float
+    var azimuth: Float
+
+    var position: SIMD3<Float> {
+        let horizontalDirection = simd_normalize(
+            front * cosf(azimuth) + right * sinf(azimuth)
+        )
+        let horizontalDistance = distance * cosf(elevation)
+        return target
+            + horizontalDirection * horizontalDistance
+            + SIMD3<Float>(0, distance * sinf(elevation), 0)
+    }
+}
 
 // MARK: - 피규어 노드 / 선반 배치
 
@@ -125,8 +170,9 @@ extension RoomEditorSceneView.Coordinator {
         guard decorCameraItemID != target else { return }
         if let target,
            let node = furnitureContainer.childNode(withName: "furniture-\(target)", recursively: false) {
+            savedDecorCameraState = captureDecorCameraState()
             decorCameraItemID = target
-            applyDecorCamera(to: node)
+            applyDecorCamera(to: node, animated: true)
             let container = furnitureContainer.childNode(
                 withName: "decorbox-\(target)",
                 recursively: false
@@ -143,53 +189,266 @@ extension RoomEditorSceneView.Coordinator {
             }
         } else {
             decorCameraItemID = nil
-            applyCamera(mode: viewModel.viewMode, animated: true)
+            restoreDecorCamera(animated: true)
         }
     }
 
-    /// 웹 computeDecorView 대응: 책장의 열린 선반 정면에서 25도 위로 내려다보는
-    /// 근접 시점. 선반 안쪽 바닥이 보여 피규어를 올릴 자리를 탭하기 좋다.
-    func applyDecorCamera(to node: SCNNode) {
-        guard let bounds = Self.localHierarchyBounds(of: node) else { return }
-        let localCenter = SCNVector3(
+    func captureDecorCameraState() -> DecorCameraState? {
+        guard let camera = cameraNode.camera,
+              let controller = sceneView?.defaultCameraController else { return nil }
+        controller.stopInertia()
+        let presented = cameraNode.presentation
+        return DecorCameraState(
+            position: presented.position,
+            orientation: presented.orientation,
+            target: controller.target,
+            usesOrthographicProjection: camera.usesOrthographicProjection,
+            orthographicScale: camera.orthographicScale,
+            fieldOfView: camera.fieldOfView,
+            zNear: camera.zNear,
+            zFar: camera.zFar,
+            interactionMode: controller.interactionMode,
+            automaticTarget: controller.automaticTarget,
+            inertiaEnabled: controller.inertiaEnabled,
+            inertiaFriction: controller.inertiaFriction,
+            worldUp: controller.worldUp,
+            minimumVerticalAngle: controller.minimumVerticalAngle,
+            maximumVerticalAngle: controller.maximumVerticalAngle,
+            minimumHorizontalAngle: controller.minimumHorizontalAngle,
+            maximumHorizontalAngle: controller.maximumHorizontalAngle
+        )
+    }
+
+    /// 웹 computeDecorView 대응: 책장 OBB를 정면 카메라의 가로·세로·깊이 축으로
+    /// 투영해 휴대폰 화면 비율에서도 전체 책장이 1.2배 여백 안에 들어오게 한다.
+    func makeDecorCameraView(for node: SCNNode) -> DecorCameraView? {
+        guard let bounds = Self.localHierarchyBounds(of: node) else { return nil }
+        let center = node.convertPosition(SCNVector3(
             (bounds.min.x + bounds.max.x) / 2,
             (bounds.min.y + bounds.max.y) / 2,
             (bounds.min.z + bounds.max.z) / 2
-        )
-        let worldCenter = node.convertPosition(localCenter, to: nil)
-        let size = SIMD3(
-            (bounds.max.x - bounds.min.x) * node.scale.x,
-            (bounds.max.y - bounds.min.y) * node.scale.y,
-            (bounds.max.z - bounds.min.z) * node.scale.z
-        )
-        let radius = max(simd_length(size) / 2, 0.4)
+        ), to: nil)
+        let target = SIMD3(center.x, center.y, center.z)
 
-        // 모델의 열린 면은 로컬 +Z다. 가구 회전은 convertVector에 이미 반영되므로,
-        // 방 중심을 기준으로 다시 뒤집으면 책장 뒤판을 바라보게 될 수 있다.
         let frontWorld = node.convertVector(SCNVector3(0, 0, 1), to: nil)
-        let front = RoomEditorSceneView.decorFrontDirection(from: frontWorld)
+        // 앱 GLB의 열린 선반 면인 로컬 +Z를 가구 회전만 반영해 사용한다.
+        // 방 중심 기준으로 다시 뒤집으면 실제 모델의 뒤판을 바라보게 된다.
+        let frontXZ = RoomEditorSceneView.decorFrontDirection(from: frontWorld)
+        let front = SIMD3(frontXZ.x, 0, frontXZ.y)
+        let right = simd_normalize(SIMD3(-front.z, 0, front.x))
+        let up = SIMD3<Float>(0, 1, 0)
 
-        let distance = max(radius * 2.2, 1.1)
-        let elevation = Float(25 * Double.pi / 180)
-        SCNTransaction.begin()
-        SCNTransaction.animationDuration = 0.45
-        cameraNode.camera?.usesOrthographicProjection = false
-        cameraNode.camera?.fieldOfView = 60
-        cameraNode.position = SCNVector3(
-            worldCenter.x + front.x * distance * cos(elevation),
-            worldCenter.y + distance * sin(elevation),
-            worldCenter.z + front.y * distance * cos(elevation)
+        let localCorners = [
+            SCNVector3(bounds.min.x, bounds.min.y, bounds.min.z),
+            SCNVector3(bounds.max.x, bounds.min.y, bounds.min.z),
+            SCNVector3(bounds.min.x, bounds.max.y, bounds.min.z),
+            SCNVector3(bounds.max.x, bounds.max.y, bounds.min.z),
+            SCNVector3(bounds.min.x, bounds.min.y, bounds.max.z),
+            SCNVector3(bounds.max.x, bounds.min.y, bounds.max.z),
+            SCNVector3(bounds.min.x, bounds.max.y, bounds.max.z),
+            SCNVector3(bounds.max.x, bounds.max.y, bounds.max.z)
+        ]
+        var halfWidth: Float = 0
+        var halfHeight: Float = 0
+        var halfDepth: Float = 0
+        for corner in localCorners {
+            let world = node.convertPosition(corner, to: nil)
+            let relative = SIMD3(world.x, world.y, world.z) - target
+            halfWidth = max(halfWidth, abs(simd_dot(relative, right)))
+            halfHeight = max(halfHeight, abs(simd_dot(relative, up)))
+            halfDepth = max(halfDepth, abs(simd_dot(relative, front)))
+        }
+
+        let boundsSize = sceneView?.bounds.size ?? .zero
+        let aspect = boundsSize.height > 0
+            ? Float(boundsSize.width / boundsSize.height)
+            : 1
+        let distance = RoomEditorSceneView.decorCameraDistance(
+            halfWidth: halfWidth,
+            halfHeight: halfHeight,
+            halfDepth: halfDepth,
+            verticalFieldOfViewDegrees: 50,
+            aspectRatio: aspect
         )
-        cameraNode.look(at: worldCenter, up: SCNVector3(0, 1, 0), localFront: SCNVector3(0, 0, -1))
+        let elevation = Float(25 * Double.pi / 180)
+
+        return DecorCameraView(
+            target: target,
+            front: front,
+            right: right,
+            minimumDistance: distance * 0.35,
+            maximumDistance: distance * 1.8,
+            minimumElevation: 0,
+            maximumElevation: Float(55 * Double.pi / 180),
+            maximumAzimuth: Float(50 * Double.pi / 180),
+            distance: distance,
+            elevation: elevation,
+            azimuth: 0
+        )
+    }
+
+    /// 1.3초 ease-in-out 전환, 정면 ±50°/상하 ±30° orbit, 0.35~1.8배 줌까지
+    /// 프런트엔드 decorCamera와 같은 값으로 적용한다.
+    func applyDecorCamera(to node: SCNNode, animated: Bool) {
+        guard let view = makeDecorCameraView(for: node) else { return }
+        decorCameraView = view
+        decorCameraTransitionRevision &+= 1
+        let revision = decorCameraTransitionRevision
+        isDecorCameraTransitioning = animated
+        sceneView?.allowsCameraControl = false
+        decorCameraOrbitGesture?.isEnabled = false
+        decorCameraZoomGesture?.isEnabled = false
+
+        if let controller = sceneView?.defaultCameraController {
+            controller.stopInertia()
+            controller.interactionMode = .orbitTurntable
+            controller.target = SCNVector3(view.target.x, view.target.y, view.target.z)
+            controller.automaticTarget = false
+            controller.inertiaEnabled = true
+        }
+
+        SCNTransaction.begin()
+        SCNTransaction.animationDuration = animated ? 1.3 : 0
+        SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        SCNTransaction.completionBlock = { [weak self] in
+            DispatchQueue.main.async {
+                guard let self,
+                      self.decorCameraTransitionRevision == revision,
+                      self.viewModel.decoratingItemID == self.decorCameraItemID else { return }
+                self.isDecorCameraTransitioning = false
+                self.decorCameraOrbitGesture?.isEnabled = true
+                self.decorCameraZoomGesture?.isEnabled = true
+            }
+        }
+        cameraNode.camera?.usesOrthographicProjection = false
+        cameraNode.camera?.fieldOfView = 50
+        cameraNode.camera?.zNear = Double(max(view.distance / 1_000, 0.01))
+        applyDecorCameraTransform(view)
         SCNTransaction.commit()
         sceneView?.pointOfView = cameraNode
 
-        // 궤도 회전 중심을 책장으로 옮겨, 꾸미는 동안의 시점 조작이 책장을 축으로 돌게 한다.
-        if let controller = sceneView?.defaultCameraController {
-            controller.interactionMode = .orbitTurntable
-            controller.target = worldCenter
-            controller.automaticTarget = false
+        if !animated {
+            isDecorCameraTransitioning = false
+            decorCameraOrbitGesture?.isEnabled = true
+            decorCameraZoomGesture?.isEnabled = true
         }
+    }
+
+    func restoreDecorCamera(animated: Bool) {
+        decorCameraTransitionRevision &+= 1
+        let revision = decorCameraTransitionRevision
+        decorCameraView = nil
+        decorCameraOrbitGesture?.isEnabled = false
+        decorCameraZoomGesture?.isEnabled = false
+
+        guard let state = savedDecorCameraState else {
+            isDecorCameraTransitioning = false
+            applyCamera(mode: viewModel.viewMode, animated: animated)
+            return
+        }
+        savedDecorCameraState = nil
+        isDecorCameraTransitioning = animated
+        sceneView?.allowsCameraControl = false
+        sceneView?.defaultCameraController.stopInertia()
+        sceneView?.defaultCameraController.target = state.target
+
+        SCNTransaction.begin()
+        SCNTransaction.animationDuration = animated ? 1.3 : 0
+        SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        SCNTransaction.completionBlock = { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, self.decorCameraTransitionRevision == revision else { return }
+                if let controller = self.sceneView?.defaultCameraController {
+                    controller.interactionMode = state.interactionMode
+                    controller.target = state.target
+                    controller.automaticTarget = state.automaticTarget
+                    controller.inertiaEnabled = state.inertiaEnabled
+                    controller.inertiaFriction = state.inertiaFriction
+                    controller.worldUp = state.worldUp
+                    controller.minimumVerticalAngle = state.minimumVerticalAngle
+                    controller.maximumVerticalAngle = state.maximumVerticalAngle
+                    controller.minimumHorizontalAngle = state.minimumHorizontalAngle
+                    controller.maximumHorizontalAngle = state.maximumHorizontalAngle
+                }
+                self.isDecorCameraTransitioning = false
+                self.sceneView?.allowsCameraControl = self.viewModel.viewMode != .person
+            }
+        }
+        cameraNode.camera?.usesOrthographicProjection = state.usesOrthographicProjection
+        cameraNode.camera?.orthographicScale = state.orthographicScale
+        cameraNode.camera?.fieldOfView = state.fieldOfView
+        cameraNode.camera?.zNear = state.zNear
+        cameraNode.camera?.zFar = state.zFar
+        cameraNode.position = state.position
+        cameraNode.orientation = state.orientation
+        SCNTransaction.commit()
+
+        if !animated {
+            isDecorCameraTransitioning = false
+            sceneView?.allowsCameraControl = viewModel.viewMode != .person
+        }
+    }
+
+    func applyDecorCameraTransform(_ view: DecorCameraView) {
+        cameraNode.simdPosition = view.position
+        cameraNode.look(
+            at: SCNVector3(view.target.x, view.target.y, view.target.z),
+            up: SCNVector3(0, 1, 0),
+            localFront: SCNVector3(0, 0, -1)
+        )
+        sceneView?.defaultCameraController.target = SCNVector3(
+            view.target.x,
+            view.target.y,
+            view.target.z
+        )
+    }
+
+    /// 화면 회전/크기 변경 중에도 웹의 OBB 맞춤 여백을 다시 계산한다. 꾸미기 진입 전
+    /// 카메라 스냅샷은 건드리지 않아 완료 시 원래 시점으로 정확히 복귀한다.
+    func refitDecorCameraForCurrentLayout() -> Bool {
+        guard !isDecorCameraTransitioning,
+              let itemID = viewModel.decoratingItemID,
+              let node = furnitureContainer.childNode(
+                withName: "furniture-\(itemID)",
+                recursively: false
+              ) else { return false }
+        applyDecorCamera(to: node, animated: false)
+        return true
+    }
+
+    @objc func handleDecorCameraOrbit(_ gesture: UIPanGestureRecognizer) {
+        guard let sceneView, var view = decorCameraView, !isDecorCameraTransitioning else { return }
+        if gesture.state == .began { lastDecorCameraOrbitTranslation = .zero }
+        let translation = gesture.translation(in: sceneView)
+        let deltaX = Float(translation.x - lastDecorCameraOrbitTranslation.x)
+        let deltaY = Float(translation.y - lastDecorCameraOrbitTranslation.y)
+        lastDecorCameraOrbitTranslation = translation
+        let viewportHeight = Float(max(sceneView.bounds.height, 1))
+
+        view.azimuth = min(
+            max(view.azimuth - deltaX / viewportHeight * .pi * 2, -view.maximumAzimuth),
+            view.maximumAzimuth
+        )
+        view.elevation = min(
+            max(view.elevation + deltaY / viewportHeight * .pi * 2, view.minimumElevation),
+            view.maximumElevation
+        )
+        decorCameraView = view
+        applyDecorCameraTransform(view)
+
+        if gesture.state == .ended || gesture.state == .cancelled || gesture.state == .failed {
+            lastDecorCameraOrbitTranslation = .zero
+        }
+    }
+
+    @objc func handleDecorCameraZoom(_ gesture: UIPinchGestureRecognizer) {
+        guard var view = decorCameraView, !isDecorCameraTransitioning else { return }
+        let scale = Float(gesture.scale)
+        guard scale.isFinite, scale > 0.001 else { return }
+        view.distance = min(max(view.distance / scale, view.minimumDistance), view.maximumDistance)
+        gesture.scale = 1
+        decorCameraView = view
+        applyDecorCameraTransform(view)
     }
 
     /// 꾸미기 모드의 탭: 대기 소품의 선반 배치 → 기존 소품 선택 → 빈 곳 선택 해제 순으로 판정.

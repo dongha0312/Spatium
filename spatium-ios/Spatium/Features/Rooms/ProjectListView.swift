@@ -13,13 +13,7 @@ struct ProjectListView: View {
 
             UserFurnitureLibrary(items: userFurniture, onDelete: onDeleteFurniture)
 
-            if projects.isEmpty {
-                EmptyStateCard(
-                    systemImage: "folder",
-                    title: "프로젝트가 아직 없습니다",
-                    message: "위의 '새 프로젝트' 버튼으로 첫 프로젝트를 만들어 보세요."
-                )
-            } else {
+            if !projects.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("모든 프로젝트")
                         .font(.headline.weight(.black))
@@ -210,12 +204,34 @@ private struct ProjectLibrarySummary: View {
 
     var body: some View {
         Card {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Text("프로젝트")
+                                .font(.title3.weight(.black))
+                                .foregroundStyle(SpatiumTheme.text)
+
+                            Text("\(projects.count)개")
+                                .font(.caption.weight(.black))
+                                .foregroundStyle(SpatiumTheme.accent)
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 5)
+                                .background(SpatiumTheme.accent.opacity(0.10), in: Capsule())
+                        }
+
+                        Text(projects.isEmpty ? "방을 정리할 첫 공간을 만들어 보세요." : "프로젝트마다 여러 방을 모아 관리하세요.")
+                            .font(.subheadline)
+                            .foregroundStyle(SpatiumTheme.soft)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 8)
+
                     Image(systemName: "folder.fill")
-                        .font(.title2.weight(.bold))
+                        .font(.headline.weight(.bold))
                         .foregroundStyle(.white)
-                        .frame(width: 48, height: 48)
+                        .frame(width: 42, height: 42)
                         .background(
                             LinearGradient(
                                 colors: [SpatiumTheme.accent, SpatiumTheme.accentLight],
@@ -223,27 +239,36 @@ private struct ProjectLibrarySummary: View {
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("\(projects.count)개 프로젝트")
-                            .font(.title3.weight(.black))
-                            .foregroundStyle(SpatiumTheme.text)
-                        Text(projects.isEmpty ? "아직 만든 프로젝트가 없습니다." : "프로젝트마다 여러 방을 모아 관리하세요.")
-                            .font(.subheadline)
-                            .foregroundStyle(SpatiumTheme.soft)
-                    }
-
-                    Spacer()
+                        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous))
                 }
 
-                ActionCTAButton(
-                    title: "새 프로젝트",
-                    subtitle: "방을 모아 관리할 새 공간을 만드세요",
-                    systemImage: "folder.badge.plus",
-                    tint: SpatiumTheme.accent,
-                    action: onCreateProject
-                )
+                Button(action: onCreateProject) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "plus")
+                            .font(.subheadline.weight(.black))
+                            .frame(width: 30, height: 30)
+                            .background(SpatiumTheme.onCta.opacity(0.14), in: Circle())
+
+                        Text(projects.isEmpty ? "첫 프로젝트 만들기" : "새 프로젝트 추가")
+                            .font(.subheadline.weight(.black))
+
+                        Spacer(minLength: 8)
+
+                        Image(systemName: "arrow.right")
+                            .font(.subheadline.weight(.black))
+                    }
+                    .foregroundStyle(SpatiumTheme.onCta)
+                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(SpatiumTheme.ctaFill)
+                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                    .shadow(color: SpatiumTheme.ctaFill.opacity(0.16), radius: 10, y: 5)
+                }
+                .buttonStyle(.pressable)
+                .contentShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                .accessibilityLabel(projects.isEmpty ? "새 프로젝트 만들기" : "새 프로젝트 추가")
+                .accessibilityHint("방을 모아 관리할 새 공간을 만듭니다.")
             }
         }
     }

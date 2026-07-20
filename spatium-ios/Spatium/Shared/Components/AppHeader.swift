@@ -37,7 +37,10 @@ struct AppHeader: View {
         .padding(.horizontal, usesCompactHeight ? 14 : 20)
         .padding(.vertical, usesCompactHeight ? 6 : 12)
         .frame(maxWidth: .infinity)
-        .spatiumChromeGlass(cornerRadius: usesCompactHeight ? 18 : 24)
+        .spatiumChromeGlass(
+            cornerRadius: usesCompactHeight ? 18 : 24,
+            stabilizesBackgroundColor: true
+        )
         .padding(.horizontal, usesCompactHeight ? 8 : 10)
         .padding(.top, usesCompactHeight ? 3 : 5)
         .padding(.bottom, 2)

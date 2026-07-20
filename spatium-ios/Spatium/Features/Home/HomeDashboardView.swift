@@ -68,6 +68,22 @@ struct HomeDashboardView: View {
                 animationsActive: ambientAnimationsActive,
                 onStartScan: onStartScan
             )
+                // 큰 CTA 카드가 상단 Liquid Glass 아래에 반쯤 걸린 채 남으면
+                // 흰 버튼과 갈색 배경이 별도 박스처럼 보인다. 카드가 상단에서
+                // 벗어나는 구간에만 서서히 투명해져 유리에는 색감만 남긴다.
+                .scrollTransition(
+                    topLeading: .interactive.threshold(.visible(0.88)),
+                    bottomTrailing: .identity,
+                    axis: .vertical
+                ) { content, phase in
+                    content
+                        .opacity(phase.isIdentity ? 1 : 0)
+                        .blur(radius: phase.isIdentity ? 0 : 18)
+                        .scaleEffect(
+                            phase.isIdentity ? 1 : 0.98,
+                            anchor: .top
+                        )
+                }
                 .offset(y: animateItems ? 0 : 16)
                 .opacity(animateItems ? 1.0 : 0.0)
 
