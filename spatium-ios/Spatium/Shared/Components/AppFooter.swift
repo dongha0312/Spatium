@@ -30,33 +30,36 @@ struct AppFooter: View {
                             }
                         }
                     }
-                    .frame(minWidth: usesCompactHeight ? 44 : 54)
-                    .padding(.horizontal, usesCompactHeight ? 5 : 8)
-                    .padding(.vertical, usesCompactHeight ? 4 : 5)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: usesCompactHeight ? 32 : 44)
                     .background(
                         selectedTab == tab
                             ? SpatiumTheme.elevatedSurface
                             : Color.clear,
-                        in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        in: RoundedRectangle(
+                            cornerRadius: usesCompactHeight ? 11 : 16,
+                            style: .continuous
+                        )
                     )
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
+                    .contentShape(
+                        RoundedRectangle(
+                            cornerRadius: usesCompactHeight ? 11 : 16,
+                            style: .continuous
+                        )
+                    )
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
                 .accessibilityAddTraits(selectedTab == tab ? [.isSelected] : [])
             }
         }
         .padding(.horizontal, 6)
-        .padding(.top, usesCompactHeight ? 3 : 5)
-        .padding(.bottom, usesCompactHeight ? 2 : 3)
+        .padding(.vertical, usesCompactHeight ? 3 : 5)
         .frame(maxWidth: .infinity)
-        .background(SpatiumTheme.chromeSurface)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(SpatiumTheme.border.opacity(0.7))
-                .frame(height: 0.5)
-        }
+        .spatiumChromeGlass(cornerRadius: usesCompactHeight ? 18 : 24)
+        .padding(.horizontal, usesCompactHeight ? 8 : 10)
+        .padding(.top, 2)
+        .padding(.bottom, usesCompactHeight ? 2 : 5)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("app-footer")
         .animation(.spring(response: 0.3, dampingFraction: 0.76), value: selectedTab)

@@ -211,9 +211,7 @@ struct MainTabView: View {
                     }
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                AppFooter(selectedTab: $selectedTab)
-            }
+            .spatiumFooterBar(selectedTab: $selectedTab)
             // 가구 만들기 탭은 입력 필드가 화면 위쪽에 있어 키보드에 맞춰
             // 전체 화면과 푸터를 압축하지 않는다. 입력 모달은 fullScreenCover가
             // 자체 안전영역을 관리한다.
@@ -659,6 +657,25 @@ struct MainTabView: View {
             try? FileManager.default.removeItem(at: url)
         }
         shareItems = []
+    }
+}
+
+private extension View {
+    /// iOS 26의 커스텀 하단 바로 등록해 스크롤 콘텐츠가 풋터 아래에서 바로 잘리거나
+    /// 글자 형태로 선명하게 비치지 않고 부드러운 blur 경계로 사라지게 한다.
+    @ViewBuilder
+    func spatiumFooterBar(selectedTab: Binding<AppTab>) -> some View {
+        if #available(iOS 26.0, *) {
+            self
+                .scrollEdgeEffectStyle(.soft, for: .bottom)
+                .safeAreaBar(edge: .bottom, spacing: 0) {
+                    AppFooter(selectedTab: selectedTab)
+                }
+        } else {
+            self.safeAreaInset(edge: .bottom, spacing: 0) {
+                AppFooter(selectedTab: selectedTab)
+            }
+        }
     }
 }
 

@@ -63,3 +63,36 @@ enum SpatiumSpacing {
     static let lg: CGFloat = 20
     static let xl: CGFloat = 28
 }
+
+/// 앱의 상단·하단 크롬에만 사용하는 제한적 Liquid Glass 표면.
+///
+/// 콘텐츠 카드까지 유리 효과를 확장하지 않고 화면당 헤더와 푸터 한 면씩만 렌더링해
+/// 브랜드의 따뜻한 불투명 서페이스와 GPU 비용을 함께 지킨다. iOS 17~25에서는 기존
+/// Material 조합을 같은 형태로 유지한다.
+private struct SpatiumChromeGlassModifier: ViewModifier {
+    let cornerRadius: CGFloat
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(
+                    .regular.tint(SpatiumTheme.accent.opacity(0.08)),
+                    in: .rect(cornerRadius: cornerRadius)
+                )
+        } else {
+            let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            content
+                .background(SpatiumTheme.chromeSurface, in: shape)
+                .background(.ultraThinMaterial, in: shape)
+                .overlay(shape.stroke(SpatiumTheme.border.opacity(0.7), lineWidth: 0.5))
+        }
+    }
+}
+
+extension View {
+    /// iOS 26 이상은 네이티브 Liquid Glass, 이전 버전은 기존 Material을 사용한다.
+    func spatiumChromeGlass(cornerRadius: CGFloat) -> some View {
+        modifier(SpatiumChromeGlassModifier(cornerRadius: cornerRadius))
+    }
+}
