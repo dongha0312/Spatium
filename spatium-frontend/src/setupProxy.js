@@ -1,7 +1,7 @@
 const { createProxyMiddleware } = require("http-proxy-middleware");
 
 module.exports = function (app) {
-  const springBootTarget = "http://localhost:8080";
+  const springBootTarget = "http://210.119.12.101:8080";
 
   app.use(
     "/api",
@@ -11,5 +11,4 @@ module.exports = function (app) {
       secure: false,
     }),
   );
-
 };

@@ -1004,3 +1004,27 @@ export function prepareRoomModel(model) {
     }
   });
 }
+
+// 방 본체(saneBounds: 메인 바닥 폴리곤 기준 경계 + 여유)와 전혀 겹치지 않는 mesh를
+// 숨긴다 — 스캔 아티팩트나 과거 저장 버그로 방에서 멀리 떨어진 곳에 생긴 오염 mesh가
+// 대상이다. serializeRoomModelToJson이 visible=false mesh를 저장에서 제외하므로,
+// 숨긴 mesh는 다음 저장 때 _spatiumRoom 데이터에서도 함께 정리된다.
+// 숨긴 mesh 이름 배열을 반환한다(로깅용).
+export function hideOutlierRoomMeshes(model, saneBounds) {
+  if (!model || !saneBounds || saneBounds.isEmpty()) return [];
+
+  const hidden = [];
+  const meshBounds = new THREE.Box3();
+  model.updateWorldMatrix(true, true);
+  model.traverse((object) => {
+    if (!object.isMesh || !object.visible || !object.geometry) return;
+
+    meshBounds.setFromObject(object);
+    if (meshBounds.isEmpty() || meshBounds.intersectsBox(saneBounds)) return;
+
+    object.visible = false;
+    hidden.push(object.name || "unnamed-mesh");
+  });
+
+  return hidden;
+}
