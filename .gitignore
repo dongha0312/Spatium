@@ -61,7 +61,17 @@ fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
 
+.idea/
 # macOS
 .DS_Store
 .AppleDouble
 .LSOverride
+
+.claude/
+
+PROJECT_OVERVIEW.md
+
+outputs/
+
+*:Zone.Identifier
+/spatium-img-to-3d/vendor/

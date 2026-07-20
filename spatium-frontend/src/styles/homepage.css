@@ -1,0 +1,540 @@
+.hp-root {
+  background: var(--sur);
+}
+
+/* 로그인버튼 */
+.hp-btn-prim {
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: var(--g);
+  border: none;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+/* 로그인 후 우측 상단 닉네임 표시 */
+.hp-av-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 8px;
+  border: 1px solid var(--bd);
+  border-radius: 24px;
+  background: var(--sur);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+
+.hp-av-btn:hover {
+  background: var(--bg);
+}
+
+.hp-av-circ {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ga), var(--g));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.hp-av-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--t);
+}
+
+/* 상단바 : 마이페이지 버튼(외곽선) + 닉네임 버튼 묶음 */
+.hp-nav-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hp-mypage-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--bd);
+  background: var(--sur);
+  color: var(--g);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+
+.hp-mypage-btn:hover {
+  background: var(--bg);
+  border-color: var(--ga);
+}
+
+/* 닉네임 버튼(button)으로 사용 시 폰트 상속 + caret */
+.hp-av-btn {
+  font-family: inherit;
+}
+
+.hp-av-caret {
+  font-size: 10px;
+  color: var(--t3);
+}
+
+/* 프로필 사진(아바타 이미지) : 원형 안을 꽉 채움 */
+.hp-av-circ,
+.hp-panel-avatar {
+  overflow: hidden;
+}
+
+.hp-av-img,
+.hp-panel-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* 내 정보 우측 패널 (닉네임 클릭 시) */
+.hp-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(28, 18, 9, 0.28);
+  z-index: 40;
+}
+
+.hp-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  border-radius: 0 0 0 14px;
+  width: 300px;
+  max-width: 100%;
+  background: var(--sur);
+  border-left: 1px solid var(--bd);
+  box-shadow: -4px 0 20px rgba(60, 30, 10, 0.08);
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  animation: hp-panel-slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes hp-panel-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.hp-panel-head {
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--bd);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hp-panel-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--t);
+}
+
+.hp-panel-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--bg);
+  border: 1px solid var(--bd);
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--t2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hp-panel-body {
+  padding: 16px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.hp-panel-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--t3);
+  margin-bottom: 10px;
+  display: block;
+}
+
+.hp-panel-profile {
+  width: 100%;
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  background: var(--sur);
+  transition: all 0.15s;
+  margin-bottom: 14px;
+  text-align: left;
+  font-family: inherit;
+}
+
+.hp-panel-profile:hover {
+  background: var(--bg);
+  border-color: var(--ga);
+}
+
+.hp-panel-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--ga), var(--g));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.hp-panel-pname {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--t);
+}
+
+.hp-panel-pnick {
+  font-size: 12px;
+  color: var(--t3);
+  margin-top: 1px;
+}
+
+.hp-panel-arrow {
+  color: var(--t3);
+  font-size: 16px;
+  margin-left: auto;
+}
+
+.hp-panel-stats {
+  display: flex;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+
+.hp-panel-stat {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 11px;
+  text-align: center;
+}
+
+.hp-panel-stat-num {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--t);
+  display: block;
+}
+
+.hp-panel-stat-label {
+  font-size: 10px;
+  color: var(--t3);
+  margin-top: 2px;
+  display: block;
+}
+
+.hp-panel-foot {
+  padding: 13px 16px;
+  border-top: 1px solid var(--bd);
+  display: flex;
+  gap: 8px;
+}
+
+.hp-panel-foot-btn {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.hp-panel-main {
+  background: var(--g);
+  color: #fff;
+  border: none;
+}
+
+.hp-panel-main:hover {
+  opacity: 0.87;
+}
+
+.hp-panel-sub {
+  background: transparent;
+  border: 1px solid var(--bd);
+  color: var(--t2);
+}
+
+.hp-panel-sub:hover {
+  background: var(--bg);
+}
+
+/* 히어로 영역 (다크 테마) */
+.hp-hero {
+  background: #2a1d14;
+  padding: 72px 40px 64px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.hp-hero::before,
+.hp-hero::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(70px);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.hp-hero::before {
+  width: 420px;
+  height: 420px;
+  top: -160px;
+  left: -120px;
+  background: radial-gradient(circle, var(--ga) 0%, rgba(196, 149, 106, 0) 70%);
+  opacity: 0.45;
+}
+
+.hp-hero::after {
+  width: 480px;
+  height: 480px;
+  bottom: -220px;
+  right: -140px;
+  background: radial-gradient(circle, var(--g) 0%, rgba(92, 61, 46, 0) 70%);
+  opacity: 0.3;
+}
+
+.hp-hero-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.hp-hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: 1px solid #4a3a2c;
+  color: var(--ga);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 16px;
+  border-radius: 20px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 24px;
+}
+
+.hp-hero-h1 {
+  font-size: clamp(30px, 4.5vw, 44px);
+  font-weight: 900;
+  color: #f5efe6;
+  line-height: 1.25;
+  letter-spacing: -1px;
+  margin-bottom: 18px;
+}
+
+.hp-hero-h1 .hp-grad {
+  background: linear-gradient(90deg, var(--ga), #e8c49a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hp-hero-desc {
+  font-size: 16px;
+  color: #c9bbaa;
+  max-width: 500px;
+  margin: 0 auto 36px;
+  line-height: 1.75;
+}
+
+.hp-hero-btn-main {
+  padding: 14px 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--ga), var(--g));
+  border: none;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 28px rgba(155, 107, 69, 0.4);
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.hp-hero-btn-main:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 34px rgba(155, 107, 69, 0.55);
+}
+
+/* 이용 순서 소개 */
+.hp-steps {
+  border-top: 1px solid var(--bd);
+  background: var(--bg);
+  padding: 72px 32px 84px;
+}
+
+.hp-steps-label {
+  text-align: center;
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #996b3d;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.hp-steps-title {
+  text-align: center;
+  font-size: 34px;
+  font-weight: 800;
+  color: var(--t);
+  margin-bottom: 48px;
+}
+
+.hp-steps-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 32px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.hp-step-card {
+  position: relative;
+  background: var(--sur);
+  border: 1px solid var(--bd);
+  border-radius: 20px;
+  padding: 28px;
+  box-shadow: 0 10px 30px rgba(28, 18, 9, 0.06);
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity 0.6s ease,
+    transform 0.6s ease;
+}
+
+.hp-step-card.hp-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hp-step-shot {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--bd);
+  background: #fff;
+}
+
+.hp-step-shot img {
+  width: 100%;
+  display: block;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+}
+
+.hp-step-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.hp-step-badge {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--ga), var(--g));
+  color: #fff;
+  font-size: 15px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(155, 107, 69, 0.4);
+}
+
+.hp-step-eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #996b3d;
+  text-transform: uppercase;
+}
+
+.hp-step-name {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--t);
+  margin-top: 6px;
+}
+
+.hp-step-desc {
+  font-size: 16px;
+  color: var(--t2);
+  line-height: 1.6;
+  margin-top: 8px;
+}
+
+@media (max-width: 600px) {
+  .hp-hero {
+    padding: 56px 20px;
+  }
+  .hp-steps {
+    padding: 36px 20px 44px;
+  }
+  .hp-steps-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .hp-steps-title {
+    font-size: 24px;
+  }
+}

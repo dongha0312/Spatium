@@ -2,7 +2,7 @@ import Foundation
 import RoomPlan
 import simd
 
-struct EditableScanItem: Identifiable, Codable {
+nonisolated struct EditableScanItem: Identifiable, Codable, Sendable {
     var id: UUID
     var sourceType: String
     var detectedCategory: String
@@ -13,6 +13,14 @@ struct EditableScanItem: Identifiable, Codable {
     var positionX: Double
     var positionY: Double
     var positionZ: Double
+    /// 편집기에서 사용자가 돌린 Y축 회전(라디안). 스캔 원본은 0.
+    var rotationY: Double = 0
+    /// 스캔 당시 감지된 객체의 Y축 방향(라디안). RoomPlan transform에서 추출합니다.
+    var detectedRotationY: Double = 0
+    /// 사용자가 고른 3D 모델 파일명(확장자 제외). nil이면 카테고리 기본 모델을 사용합니다.
+    var modelName: String? = nil
+    /// 꾸미기 책장 위에 올려둔 피규어들(부모 로컬 transform 기준). 저장/복원용.
+    var decorations: [PlacedDecoration]? = nil
     var isReplacementTarget: Bool
     var editNote: String
 
@@ -56,6 +64,23 @@ struct EditableScanItem: Identifiable, Codable {
         return items
     }
 
+    /// 편집기에서 사용자가 직접 추가한 객체를 만들 때 사용합니다.
+    init(userAddedNamed displayName: String, width: Double, height: Double, depth: Double) {
+        self.id = UUID()
+        self.sourceType = "가구"
+        self.detectedCategory = "userAdded"
+        self.displayName = displayName
+        self.width = width
+        self.height = height
+        self.depth = depth
+        self.positionX = 0
+        self.positionY = height / 2
+        self.positionZ = 0
+        self.rotationY = 0
+        self.isReplacementTarget = true
+        self.editNote = "사용자 추가"
+    }
+
     private init(
         id: UUID,
         sourceType: String,
@@ -76,6 +101,8 @@ struct EditableScanItem: Identifiable, Codable {
         self.positionX = Double(transform.columns.3.x)
         self.positionY = Double(transform.columns.3.y)
         self.positionZ = Double(transform.columns.3.z)
+        // Y축 회전(라디안): 열 기준(column-major) Ry에서 θ = atan2(-m₀₂, m₀₀).
+        self.detectedRotationY = Double(atan2(-transform.columns.0.z, transform.columns.0.x))
         self.isReplacementTarget = isReplacementTarget
         self.editNote = editNote
     }
@@ -95,5 +122,39 @@ struct EditableScanItem: Identifiable, Codable {
 
     private func formatMeters(_ value: Double) -> String {
         String(format: "%.2f", value)
+    }
+}
+
+nonisolated extension EditableScanItem {
+    /// 원시 RoomPlan export(objects/doors/windows)에서 편집 아이템을 만듭니다.
+    /// (외부/테스트 JSON을 CapturedRoom 없이 직접 불러올 때 사용)
+    static func makeItems(
+        objects: [(category: String, dimensions: SIMD3<Float>, transform: simd_float4x4)],
+        doors: [(dimensions: SIMD3<Float>, transform: simd_float4x4)] = [],
+        windows: [(dimensions: SIMD3<Float>, transform: simd_float4x4)] = []
+    ) -> [EditableScanItem] {
+        var items = objects.enumerated().map { index, object in
+            EditableScanItem(
+                id: UUID(), sourceType: "가구", detectedCategory: object.category,
+                displayName: "\(object.category) \(index + 1)",
+                dimensions: object.dimensions, transform: object.transform,
+                isReplacementTarget: true, editNote: ""
+            )
+        }
+        items += doors.enumerated().map { index, door in
+            EditableScanItem(
+                id: UUID(), sourceType: "문", detectedCategory: "문", displayName: "문 \(index + 1)",
+                dimensions: door.dimensions, transform: door.transform,
+                isReplacementTarget: false, editNote: ""
+            )
+        }
+        items += windows.enumerated().map { index, window in
+            EditableScanItem(
+                id: UUID(), sourceType: "창문", detectedCategory: "창문", displayName: "창문 \(index + 1)",
+                dimensions: window.dimensions, transform: window.transform,
+                isReplacementTarget: false, editNote: ""
+            )
+        }
+        return items
     }
 }

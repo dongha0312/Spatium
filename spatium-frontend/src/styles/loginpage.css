@@ -1,0 +1,170 @@
+.lg-root {
+  background: var(--sur);
+}
+
+.lg-btn-out {
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: var(--sur);
+  border: 1px solid var(--bd);
+  color: var(--t2);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-block;
+}
+
+/* 본문 영역 : 로그인 폼을 화면 정중앙에 배치 */
+.lg-auth-wrap {
+  padding: 56px 24px;
+}
+
+.lg-auth-card {
+  max-width: 380px;
+  padding: 40px 36px;
+}
+
+.lg-auth-form-sub {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.lg-finput.lg-finput-error {
+  border-color: #DC2626;
+}
+
+.lg-finput.lg-finput-error:focus {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, .12);
+}
+
+.lg-field-error {
+  font-size: 11px;
+  color: #DC2626;
+  margin-top: 5px;
+}
+
+.lg-form-hint {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 5px;
+}
+
+.lg-form-hint button {
+  font-size: 11px;
+  color: var(--t3);
+  cursor: pointer;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+}
+
+.lg-check-row label {
+  font-size: 13px;
+  color: var(--t2);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+/* SNS 간편 로그인 */
+.lg-social-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 18px;
+  font-size: 12px;
+  color: var(--t3);
+}
+
+.lg-social-divider::before,
+.lg-social-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--bd);
+}
+
+.lg-social-row {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+}
+
+.lg-social-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--bd);
+  background: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all .15s;
+  padding: 0;
+}
+
+.lg-social-btn:hover {
+  border-color: var(--ga);
+  box-shadow: 0 2px 10px rgba(60, 30, 10, .1);
+}
+
+.lg-social-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.lg-google-btn {
+  width: 44px;
+  height: 44px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 44px;
+  /* border: 1px solid var(--bd);
+  border-radius: 50%; */
+  background: #fff;
+  overflow: hidden;
+}
+
+.lg-google-btn > div:not(.lg-google-mark) {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 1;
+  z-index: 2;
+}
+
+.lg-google-mark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 20px;
+  height: 20px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.lg-google-mark svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+@media (max-width: 480px) {
+  .lg-auth-wrap {
+    padding: 32px 16px;
+  }
+  .lg-auth-card {
+    padding: 32px 24px;
+  }
+}
+

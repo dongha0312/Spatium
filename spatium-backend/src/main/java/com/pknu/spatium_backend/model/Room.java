@@ -1,4 +1,11 @@
 package com.pknu.spatium_backend.model;
+
+import java.time.LocalDateTime;
+
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
@@ -8,10 +15,9 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 import jakarta.persistence.Id;
-import jakarta.persistence.Lob;
 
 @Entity
-@Table(name="Room")
+@Table(name = "Room")
 @Getter
 @Setter
 
@@ -22,14 +28,24 @@ import jakarta.persistence.Lob;
 
 @ToString
 public class Room {
-    
+
     @Id
     private String room_id;
 
-    private String room_mem;
+    private String room_proj;
 
-    // BLOB 데이터 타입으로 매핑
-    @Lob
-    private byte[] room_3d;
+    // room json/usdz 파일 저장 위치
+    private String room_path;
+
+    private String room_name;
+
+    private String room_area;
+
+    @CreationTimestamp
+    @Column(name = "room_created", updatable = false)
+    private LocalDateTime room_created;
+
+    @UpdateTimestamp
+    private LocalDateTime room_modified;
 
 }

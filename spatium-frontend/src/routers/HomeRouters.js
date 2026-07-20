@@ -2,35 +2,58 @@
 import React from "react";
 
 // URL 패턴에 따른 매핑 작업을 위한 라이브러리 가져오기
-//  - Routes : 라우트 전체 관리  
-//  - Route : 
+//  - Routes : 라우트 전체 관리
+//  - Route :
 import { Route, Routes } from "react-router-dom";
 
 // 외부 컴포넌트 가지고 오기
 // 공통으로 사용할 메인 메뉴 페이지 : HomePage.js
 import HomePage from "../pages/HomePage";
-
-import TestPage from "../pages/test/TestPage";
-import TestRenderingPage from "../pages/test/TestRenderingPage";
-import TestThreeStagingPage from "../pages/testThree/TestThreeStagingPage";
+import CookiePolicy from "../pages/CookiePolicy";
+import PrivacyConsent from "../pages/PrivacyConsent";
+import ContactUsPage from "../pages/ContactUsPage";
+import TermsOfService from "../pages/TermsOfService";
+import ManualPage from "../pages/ManualPage";
 
 // HomeRouters.js 컴포넌트 정의하기
 function HomeRouters() {
-    return(
-        /** Routes 컴포넌트로 전체 감싸기
-         *  - import Routes 및 Route 필요함
-         */
-        <Routes>
-            {/* URL 패턴 및 매핑 컴포넌트 정의 */}
-
-            {/* 루트(http://localhost:3000/) URL로 들어오면 -> HomePage.js 페이지 호출하기  */}
-            <Route path="/" element={<HomePage></HomePage>}></Route>
-            <Route path="/test" element={<TestPage></TestPage>}></Route>
-            <Route path="/test/render" element={<TestRenderingPage></TestRenderingPage>}></Route>
-            <Route path="/test/three" element={<TestThreeStagingPage></TestThreeStagingPage>}></Route>
-
-        </Routes>
-    );
+  return (
+    /** Routes 컴포넌트로 전체 감싸기
+     *  - import Routes 및 Route 필요함
+     */
+    <Routes>
+      {/* URL 패턴 및 매핑 컴포넌트 정의 */}
+      {/* 루트(http://localhost:3000/) URL로 들어오면 -> HomePage.js 페이지 호출하기  */}
+      <Route path="/" element={<HomePage></HomePage>}></Route>
+      <Route
+        path="cookie-policy"
+        element={<CookiePolicy></CookiePolicy>}
+      ></Route>
+      <Route
+        path="privacy-consent"
+        element={<PrivacyConsent></PrivacyConsent>}
+      ></Route>
+      <Route path="privacy" element={<PrivacyConsent />}></Route>
+      <Route path="terms" element={<TermsOfService />}></Route>
+      <Route path="contact-us" element={<ContactUsPage />}></Route>
+      <Route
+        path="manuals/room-scan"
+        element={<ManualPage manual="room-scan" />}
+      ></Route>
+      <Route
+        path="manuals/room-decoration"
+        element={<ManualPage manual="room-decoration" />}
+      ></Route>
+      <Route
+        path="manuals/drawer-decoration"
+        element={<ManualPage manual="drawer-decoration" />}
+      ></Route>
+      <Route
+        path="manuals/furniture-creation"
+        element={<ManualPage manual="furniture-creation" />}
+      ></Route>
+    </Routes>
+  );
 }
 
 // 외부에서 불러들일때(import) 사용하기 위해 export(내보내기) 처리

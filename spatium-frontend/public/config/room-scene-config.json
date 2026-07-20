@@ -1,0 +1,77 @@
+{
+  "models": {
+    "bathtub": "/data/default_3d_models/bathtub.glb",
+    "bed": "/data/default_3d_models/bed.glb",
+    "door": "/data/default_3d_models/door.glb",
+    "chair": "/data/default_3d_models/chair.glb",
+    "dishwasher": "/data/default_3d_models/dishwasher.glb",
+    "oven": "/data/default_3d_models/oven.glb",
+    "refrigerator": "/data/default_3d_models/refrigerator.glb",
+    "sink": "/data/default_3d_models/sink.glb",
+    "sofa": "/data/default_3d_models/sofa.glb",
+    "stove": "/data/default_3d_models/stove.glb",
+    "storage": "/data/default_3d_models/storage.glb",
+    "table": "/data/default_3d_models/table.glb",
+    "television": "/data/default_3d_models/television.glb",
+    "toilet": "/data/default_3d_models/toilet.glb",
+    "washerDryer": "/data/default_3d_models/washerDryer.glb",
+    "window": "/data/default_3d_models/window.glb",
+    "stairs": "/data/default_3d_models/stairs.glb"
+  },
+  "colors": {
+    "category": {
+      "chair": "#5f8f74",
+      "table": "#c08b57",
+      "storage": "#8fa4b8",
+      "sofa": "#7f9fb0",
+      "refrigerator": "#b7c7cf",
+      "oven": "#c98282",
+      "stove": "#c98282",
+      "bed": "#9a8fba",
+      "bathtub": "#7fb7c7",
+      "dishwasher": "#a8b8c8",
+      "sink": "#8fb8b0",
+      "television": "#4f5861",
+      "toilet": "#cfd8df",
+      "washerDryer": "#aeb8c2",
+      "stairs" : "#9aa0a6",
+      "object": "#9aa0a6"
+    },
+    "collision": "#d94b4b",
+    "collisionFill": "#f2aaaa",
+    "selectedEdge": "#ffcf5a",
+    "defaultEdge": "#1f2724",
+    "wallColliderDebug": "#00a6ff",
+    "sceneBackground": "#f4f1ea",
+    "hemisphereSky": "#ffffff",
+    "hemisphereGround": "#d8cfc0",
+    "sun": "#ffffff",
+    "roomMaterialDefault": "#d8d2c4",
+    "doorReference": "#d9903d",
+    "windowReference": "#4ba3c7",
+    "openingReference": "#8a8f98",
+    "selectionHandle": "#17211d"
+  },
+  "referenceFallbackThickness": {
+    "door": 0.08,
+    "window": 0.08
+  },
+  "debug": {
+    "showReferenceLabels": false,
+    "showCameraAngle": true
+  },
+  "wallConstraints": {
+    "collisionEpsilon": 0,
+    "clampIterations": 14,
+    "sweepStep": 0.03,
+    "sweepRotationStepDegrees": 2,
+    "sweepMaxSteps": 240,
+    "colliderHalfThickness": 0.005,
+    "boundaryEpsilon": 0,
+    "boundarySpanPadding": 0,
+    "showWallDiagnostics": false,
+    "logWallDiagnostics": false,
+    "showColliderDebug": false,
+    "showCollisionHighlight": false
+  }
+}
