@@ -796,6 +796,9 @@ private struct GuestFeatureRestrictionView: View {
             .frame(maxWidth: 460)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 컨테이너를 하나의 접근성 요소 그룹으로 유지해 식별자가 자식들로
+        // 흩어지지 않게 한다 (UI 테스트가 otherElements로 카드를 찾는다).
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("guest-img-to-3d-restriction")
     }
 }

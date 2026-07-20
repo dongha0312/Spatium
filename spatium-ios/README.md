@@ -109,8 +109,8 @@ xcodebuild \
 
 | 용도 | 기본 주소 |
 |------|-----------|
-| Spring API 서버 | `http://210.119.12.115:8080` |
-| 기본 가구 에셋 서버 | `http://210.119.12.115:3000` |
+| Spring API 서버 | `https://spatium.kro.kr` (`/api/*` 리버스 프록시) |
+| 기본 가구 에셋 서버 | `https://spatium.kro.kr` (`/data/*` 정적 서빙) |
 
 사진 배경 제거와 3D 생성은 인증된 Spring `/api/ai/*`로 요청합니다. Spring이 내부 인증으로 Image-to-3D 서버를 호출하고 PNG/GLB를 앱에 스트리밍하므로, 앱은 FastAPI 주소나 내부 키를 알지 못합니다. 사용자가 만든 가구 모델도 인증된 `/api/furniture/{id}/model`에서 받고, 공개 에셋 서버는 기본 카탈로그의 `/data` 모델에만 사용합니다. 따라서 JWT가 없는 게스트는 AI 생성과 사용자 가구 서버 동기화를 사용할 수 없습니다.
 
@@ -144,7 +144,7 @@ SceneKit 가구 모델 템플릿 캐시는 최근 사용 순서(LRU)로 최대 8
 
 - **Debug** 빌드에서는 숨겨진 개발자 설정으로 서버 주소를 변경할 수 있습니다.
 - **Release** 빌드에서는 배포 주소로 고정됩니다.
-- 현재 서버가 IP + 평문 HTTP로 서비스되어 `Info.plist`에서 ATS(`NSAllowsArbitraryLoads`)를 허용해 둔 상태이며, 백엔드 HTTPS 전환 후 도메인 예외로 좁힐 예정입니다.
+- 배포 서버가 `https://spatium.kro.kr` 정식 HTTPS로 전환되어 ATS 전역 허용(`NSAllowsArbitraryLoads`)을 제거했습니다. 개발 중 로컬 HTTP 서버 접속을 위한 `NSAllowsLocalNetworking`만 남겨 두었으며, 공인 주소의 평문 HTTP는 차단됩니다.
 
 **소셜 로그인**은 `Core/Networking/SpatiumSocialConfig.swift`에서 Google OAuth 클라이언트 ID를 관리합니다.
 

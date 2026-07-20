@@ -28,6 +28,31 @@ struct FurnitureCreateMetadata: Encodable, Equatable {
     let category: String
     let categoryKr: String
     let dimensions: FurnitureCatalogResponseItem.Dimensions
+
+    /// 치수는 웹 프런트엔드(ViewerStep의 `toFixed(4)`)와 동일하게 소수 4자리로 반올림해 보낸다.
+    /// 서버가 치수를 `Double.toString()` 문자열로 VARCHAR2 컬럼에 저장하므로,
+    /// Double 풀 정밀도 문자열(예: 0.42500000000000004)은 컬럼 길이를 넘겨 500이 난다.
+    init(
+        nameKr: String,
+        name: String,
+        category: String,
+        categoryKr: String,
+        dimensions: FurnitureCatalogResponseItem.Dimensions
+    ) {
+        self.nameKr = nameKr
+        self.name = name
+        self.category = category
+        self.categoryKr = categoryKr
+        self.dimensions = .init(
+            x: Self.roundedDimension(dimensions.x),
+            y: Self.roundedDimension(dimensions.y),
+            z: Self.roundedDimension(dimensions.z)
+        )
+    }
+
+    private static func roundedDimension(_ value: Double) -> Double {
+        (value * 10_000).rounded() / 10_000
+    }
 }
 
 struct FurnitureService {

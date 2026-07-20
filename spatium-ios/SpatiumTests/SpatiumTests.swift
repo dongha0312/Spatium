@@ -2032,6 +2032,26 @@ struct BackendContractTests {
         #expect(body.hasSuffix("--contract-test--\r\n"))
     }
 
+    // 서버가 치수를 Double.toString() 문자열로 VARCHAR2 컬럼에 저장하므로,
+    // 웹 프런트엔드(toFixed(4))와 동일하게 소수 4자리로 반올림해 보내야
+    // 풀 정밀도 문자열(0.42500000000000004 등)로 인한 컬럼 길이 초과 500이 없다.
+    @Test func furnitureCreateMetadataRoundsDimensionsLikeWebFrontend() throws {
+        let metadata = FurnitureCreateMetadata(
+            nameKr: "책장",
+            name: "bookcase",
+            category: "storage",
+            categoryKr: "수납",
+            dimensions: .init(x: 0.42500000000000004, y: 1.8000000000000007, z: 0.30000000000000004)
+        )
+
+        #expect(metadata.dimensions == .init(x: 0.425, y: 1.8, z: 0.3))
+
+        let json = try #require(
+            String(data: JSONEncoder.spatiumAPI.encode(metadata), encoding: .utf8)
+        )
+        #expect(!json.contains("00000000"))
+    }
+
     @Test func correctedTransformIsBakedIntoValidGLBWrapper() throws {
         let source = try minimalGLB()
         let transform = ImgTo3DModelTransform(

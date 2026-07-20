@@ -446,7 +446,7 @@ private struct EndpointEditor: View {
                 Spacer()
             }
 
-            TextField("http://서버IP:8080", text: $springBaseURLString)
+            TextField("https://spatium.kro.kr", text: $springBaseURLString)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -469,7 +469,7 @@ private struct EndpointEditor: View {
                 Spacer()
             }
 
-            TextField("http://서버IP:3000", text: $furnitureAssetBaseURLString)
+            TextField("https://spatium.kro.kr", text: $furnitureAssetBaseURLString)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
