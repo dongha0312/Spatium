@@ -112,8 +112,9 @@ function shouldLogWallDiagnostics() {
 // 디버그 로그용 표시 이름 (예: "chair 2").
 export function editableObjectLabel(object) {
   const item = object.userData.roomItem;
-  return `${item.category || object.userData.category || "object"} ${object.userData.sourceIndex + 1
-    }`;
+  return `${item.category || object.userData.category || "object"} ${
+    object.userData.sourceIndex + 1
+  }`;
 }
 
 // 이동/회전 가능한 일반 가구인지 판단한다 (문/창문은 editable:false).
@@ -402,7 +403,10 @@ function polygonsOverlap2D(firstPolygon, secondPolygon) {
       const firstRange = polygonProjectionRange2D(firstPolygon, axis);
       const secondRange = polygonProjectionRange2D(secondPolygon, axis);
 
-      if (firstRange.max < secondRange.min || secondRange.max < firstRange.min) {
+      if (
+        firstRange.max < secondRange.min ||
+        secondRange.max < firstRange.min
+      ) {
         return false;
       }
     }
@@ -556,7 +560,10 @@ export function wallBlocksObjectObb(objectObb, wall) {
 
   return (
     (objectOverlapsWallSpan(objectObb, wall) &&
-      objectObb.intersectsOBB(wall.obb, wallConfigNumber("collisionEpsilon"))) ||
+      objectObb.intersectsOBB(
+        wall.obb,
+        wallConfigNumber("collisionEpsilon"),
+      )) ||
     objectObbViolatesWallBoundary(objectObb, wall)
   );
 }
@@ -582,33 +589,33 @@ export function hasWallCollision(object, wallColliders) {
 }
 
 // 씬 로딩 직후(또는 가구 추가 직후) 벽에 박혀 있는 가구들을 전부 밀어내고, 유효 transform으로 기록한다.
+// 밀어내기로 해소되지 않은 가구는 startsInWallCollision으로 표시한다 — 클릭 시 벽 제약을
+// 임시 해제해(pointerdown 핸들러의 ignoreWallConstraint 활성화) 사용자가 직접 꺼낼 수 있고,
+// 꺼내는 데 성공하면(endActiveInteraction) 플래그가 해제되어 정상 제약이 다시 적용된다.
 export function initializeWallConstraints(editableObjects, wallColliders) {
   editableObjects.forEach((object) => {
     pushObjectOutOfWalls(object, wallColliders);
-    object.userData.startsInWallCollision = false;
+    object.userData.startsInWallCollision = hasWallCollision(
+      object,
+      wallColliders,
+    );
     object.userData.ignoreWallConstraint = false;
     rememberValidTransform(object);
   });
 }
 
-// 벽을 침범한 오브젝트를 바깥으로 밀어낼 벡터를 계산한다. roomFacingNormal이 있으면 그
-// 방향으로 침범 깊이만큼, 없으면 겹침이 가장 작은 축 방향으로 밀어낸다(pushObjectOutOfWalls에서 사용).
-function wallPushVector(objectObb, wall) {
-  if (wall.roomFacingNormal && Number.isFinite(wall.roomFacingProjection)) {
-    const penetration = objectWallBoundaryPenetration(objectObb, wall);
-    if (penetration <= 0) return null;
+// MTV 계산에서 "수직에 가까운" 축으로는 밀지 않기 위한 기준. 바닥 가구를 위/아래로
+// 밀면(과거: 침대가 바닥 3m 아래로 가라앉음) 항상 결과가 부자연스럽기 때문에, 로드 시
+// 보정은 수평 방향으로만 한다.
+const WALL_PUSH_VERTICAL_AXIS_LIMIT = 0.7;
 
-    return wall.roomFacingNormal
-      .clone()
-      .multiplyScalar(penetration + 1e-3);
-  }
-
-  if (
-    !objectOverlapsWallSpan(objectObb, wall) ||
-    !objectObb.intersectsOBB(wall.obb, wallConfigNumber("collisionEpsilon"))
-  ) {
-    return null;
-  }
+// 오브젝트가 이 벽 슬래브와 실제로 겹쳐 있을 때, 겹침을 해소하는 최소 이동
+// (minimal translation)을 벽 로컬 축 기준으로 계산한다. roomFacingNormal(집 전체 중심
+// 기준 휴리스틱)은 방이 여러 개인 스캔에서 안쪽 벽마다 엉뚱한 방향을 가리키므로 로드 시
+// 보정에는 쓰지 않는다 — 대신 "오브젝트 중심이 이미 있는 쪽"으로 겹친 깊이만큼만 민다.
+// 벽이 몇 개든 각 벽에 대해 국소적으로 옳은 방향이 나온다.
+function wallMinimalTranslation(objectObb, wall, epsilon) {
+  if (!wall.obb || !objectObb.intersectsOBB(wall.obb, epsilon)) return null;
 
   const axisX = new THREE.Vector3();
   const axisY = new THREE.Vector3();
@@ -627,10 +634,11 @@ function wallPushVector(objectObb, wall) {
 
   for (let i = 0; i < 3; i += 1) {
     const axis = axes[i].normalize();
+    if (Math.abs(axis.y) > WALL_PUSH_VERTICAL_AXIS_LIMIT) continue;
+
     const objRadius = projectionRadiusForObb(objectObb, axis);
     const wallRadius = halfSizes[i];
-    const diff =
-      objectObb.center.dot(axis) - wall.obb.center.dot(axis);
+    const diff = objectObb.center.dot(axis) - wall.obb.center.dot(axis);
     const overlap = objRadius + wallRadius - Math.abs(diff);
 
     if (overlap <= 0) return null;
@@ -642,29 +650,51 @@ function wallPushVector(objectObb, wall) {
   }
 
   if (!bestAxis) return null;
-  return bestAxis.clone().multiplyScalar(bestSign * (bestOverlap + 1e-3));
+  return {
+    direction: bestAxis.clone().multiplyScalar(bestSign),
+    overlap: bestOverlap,
+  };
 }
 
-// 오브젝트가 벽과 안 겹칠 때까지 반복적으로(최대 10회) 밀어낸다.
+// 벽 밀어내기 총 이동 거리 상한. 정상적인 보정은 "가구 절반 폭 + 벽 두께" 수준(1m 남짓)을
+// 넘을 수 없다. 이 상한을 넘거나 반복 안에 수렴하지 못하면(예: 가구가 좁은 틈새 양쪽 벽에
+// 동시에 끼어 진동) 보정을 포기하고 저장된 원래 위치를 유지한다 — 그런 가구는
+// startsInWallCollision으로 표시되어 사용자가 클릭해 직접 꺼낼 수 있다.
+const WALL_PUSH_MAX_DISTANCE = 2; // meters
+const WALL_PUSH_MAX_ITERATIONS = 30;
+
+// 오브젝트가 벽 슬래브와 안 겹칠 때까지 반복적으로 밀어낸다. 여러 벽(그리고 같은 벽을
+// 나눠 덮는 여러 콜라이더)과 동시에 겹친 경우, 밀어내기 벡터를 전부 합산하면 같은 방향이
+// 중복 누적돼 과잉 이동하므로, 매 반복 "가장 깊게 겹친 벽 하나"의 최소 이동만 적용하고
+// 나머지는 다음 반복에서 다시 평가한다 — 모서리(벽 2개)든 콜라이더 수백 개든 순차적으로
+// 수렴한다.
 function pushObjectOutOfWalls(object, wallColliders) {
-  for (let iteration = 0; iteration < 10; iteration += 1) {
+  const startPosition = object.position.clone();
+  const epsilon = wallConfigNumber("collisionEpsilon");
+
+  for (let iteration = 0; iteration < WALL_PUSH_MAX_ITERATIONS; iteration += 1) {
     object.updateWorldMatrix(true, false);
     const objectObb = worldObbForObject(object);
-    const push = new THREE.Vector3();
-    let collisionFound = false;
+    if (!objectObb) return;
 
+    let deepest = null;
     wallColliders.forEach((wall) => {
-      if (!wallBlocksObjectObb(objectObb, wall)) return;
-      collisionFound = true;
-
-      const v = wallPushVector(objectObb, wall);
-      if (v) push.add(v);
+      const candidate = wallMinimalTranslation(objectObb, wall, epsilon);
+      if (candidate && (!deepest || candidate.overlap > deepest.overlap)) {
+        deepest = candidate;
+      }
     });
 
-    if (!collisionFound) return;
-    object.position.add(push);
+    if (!deepest) return;
+    object.position.addScaledVector(deepest.direction, deepest.overlap + 1e-3);
+
+    if (object.position.distanceTo(startPosition) > WALL_PUSH_MAX_DISTANCE) {
+      break;
+    }
   }
 
+  // 수렴하지 못했다면 부분 적용된 이동을 남기지 않고 원래 위치로 되돌린다.
+  object.position.copy(startPosition);
   object.updateWorldMatrix(true, false);
 }
 
@@ -724,7 +754,10 @@ function adjustedMovementForObbBeforeWallCollision(
     let changed = false;
 
     wallColliders.forEach((wall) => {
-      if (!wall.roomFacingNormal || !Number.isFinite(wall.roomFacingProjection)) {
+      if (
+        !wall.roomFacingNormal ||
+        !Number.isFinite(wall.roomFacingProjection)
+      ) {
         return;
       }
 
@@ -746,8 +779,7 @@ function adjustedMovementForObbBeforeWallCollision(
         0,
         clearance - WALL_MOVEMENT_MARGIN,
       );
-      const blockedInwardDistance =
-        -normalDistance - allowedInwardDistance;
+      const blockedInwardDistance = -normalDistance - allowedInwardDistance;
 
       if (blockedInwardDistance > 1e-10) {
         onBlockedWall?.(wall, {
@@ -756,10 +788,7 @@ function adjustedMovementForObbBeforeWallCollision(
           requestedInwardDistance: -normalDistance,
           blockedInwardDistance,
         });
-        adjusted.addScaledVector(
-          wall.roomFacingNormal,
-          blockedInwardDistance,
-        );
+        adjusted.addScaledVector(wall.roomFacingNormal, blockedInwardDistance);
         changed = true;
       }
     });
@@ -769,10 +798,7 @@ function adjustedMovementForObbBeforeWallCollision(
       movedObb.center.add(adjusted);
       if (!objectOverlapsWallSpan(movedObb, wall)) return;
       if (
-        !movedObb.intersectsOBB(
-          wall.obb,
-          wallConfigNumber("collisionEpsilon"),
-        )
+        !movedObb.intersectsOBB(wall.obb, wallConfigNumber("collisionEpsilon"))
       ) {
         return;
       }
@@ -785,8 +811,7 @@ function adjustedMovementForObbBeforeWallCollision(
         0,
         clearance - WALL_MOVEMENT_MARGIN,
       );
-      const blockedInwardDistance =
-        -normalDistance - allowedInwardDistance;
+      const blockedInwardDistance = -normalDistance - allowedInwardDistance;
 
       if (blockedInwardDistance > 1e-10) {
         onBlockedWall?.(wall, {

@@ -28,12 +28,51 @@ export function base64ToObjectUrl(
   return URL.createObjectURL(new Blob(bytes, { type: contentType }));
 }
 
+// 실내 가구 치수(한 변)로 말이 되는 상한. 스캔/카탈로그에서 나오는 가장 큰 가구도
+// 6m를 넘지 않는다(크기 슬라이더 상한도 5m). 이걸 넘으면 단위 오류(cm/mm)거나
+// 오염된 저장 데이터다.
+const MAX_FURNITURE_DIMENSION = 8; // meters
+
 // 가구 dimensions를 정규화한다 (없거나 0이면 기본값, 최소 4cm는 보장).
+// 세 축 모두 정상 범위를 벗어나면 m/cm/mm 순으로 단위를 추정해 변환한다 — 카탈로그나
+// 저장 데이터에 mm 단위 치수(예: 900×450×1800)가 섞여 들어와 가구가 수백 m로 렌더링되는
+// 사고를 막는다. 어떤 단위로도 설명이 안 되는 값(진짜 오염)은 상한으로 잘라낸다.
 export function normalizedDimensions(dimensions = {}) {
+  const rawX = Number(dimensions.x) || DEFAULT_FURNITURE_DIMENSIONS.x;
+  const rawY = Number(dimensions.y) || DEFAULT_FURNITURE_DIMENSIONS.y;
+  const rawZ = Number(dimensions.z) || DEFAULT_FURNITURE_DIMENSIONS.z;
+
+  const unitFactor = [1, 0.01, 0.001].find((factor) =>
+    [rawX, rawY, rawZ].every(
+      (value) =>
+        !Number.isFinite(value) ||
+        Math.abs(value) * factor <= MAX_FURNITURE_DIMENSION,
+    ),
+  );
+  if (unitFactor === undefined || unitFactor !== 1) {
+    console.warn(
+      "[roomSceneEditor] Suspicious furniture dimensions:",
+      { x: rawX, y: rawY, z: rawZ },
+      unitFactor
+        ? `interpreted with unit factor ${unitFactor}`
+        : "clamped (no unit interpretation fits)",
+    );
+  }
+  const factor = unitFactor ?? 1;
+
+  const sanitize = (value, fallback) => {
+    const scaled = Number.isFinite(value) ? Math.abs(value) * factor : fallback;
+    return THREE.MathUtils.clamp(
+      scaled || fallback,
+      0.04,
+      MAX_FURNITURE_DIMENSION,
+    );
+  };
+
   return {
-    x: Math.max(Number(dimensions.x) || DEFAULT_FURNITURE_DIMENSIONS.x, 0.04),
-    y: Math.max(Number(dimensions.y) || DEFAULT_FURNITURE_DIMENSIONS.y, 0.04),
-    z: Math.max(Number(dimensions.z) || DEFAULT_FURNITURE_DIMENSIONS.z, 0.04),
+    x: sanitize(rawX, DEFAULT_FURNITURE_DIMENSIONS.x),
+    y: sanitize(rawY, DEFAULT_FURNITURE_DIMENSIONS.y),
+    z: sanitize(rawZ, DEFAULT_FURNITURE_DIMENSIONS.z),
   };
 }
 
@@ -131,6 +170,77 @@ export function estimateFloorY(metadataObjects, roomFloorY) {
   return candidateFloorY;
 }
 
+// 저장된 가구 위치가 방 바닥 경계에서 이 이상 벗어나 있으면(오염된 transform)
+// 신뢰하지 않는다. 방 밖으로 살짝 걸치는 정상 케이스(내닫이창 앞 가구, 스캔 오차)는
+// 허용해야 하므로 여유를 둔다.
+const OUT_OF_ROOM_XZ_MARGIN = 2; // meters
+// 바닥에서 이 이상 떠 있는 가구는 오염된 것으로 본다.
+const OUT_OF_ROOM_MAX_ABOVE_FLOOR = 10; // meters
+// 가구 중심이 바닥보다 이 이상 아래면(절반 이상 파묻힘) 오염된 것으로 본다.
+// 단차 있는 방(현관/거실 높이 차이)의 낮은 바닥에 놓인 가구는 허용해야 하므로
+// 0으로 두지 않는다.
+const OUT_OF_ROOM_MAX_BELOW_FLOOR = 0.75; // meters
+
+// 저장된 transform이 오염돼(과거 저장 버그 등) 방 밖 멀리 렌더링되는 가구를 방 안쪽으로
+// 되돌린다. 이런 가구는 씬 bounding box를 수백 km로 부풀려 카메라 프레이밍까지 망가뜨리고,
+// 사용자가 화면에서 찾을 수도 없다. XZ는 바닥 경계 안쪽으로 클램프하고(방향 정보 최대한
+// 보존), Y가 비정상이면 바닥 위에 앉힌다. 되돌린 가구 root 배열을 반환한다(로깅용).
+// measurements가 바닥 폴리곤 기준(areaSource === "floor")이 아니면 경계 자체를 신뢰할 수
+// 없으므로 아무것도 하지 않는다.
+export function recoverOutOfRoomFurniture(objects, measurements, floorY) {
+  if (!measurements || measurements.areaSource !== "floor") return [];
+
+  const halfWidth = measurements.width / 2;
+  const halfDepth = measurements.depth / 2;
+  const center = measurements.center;
+  const baseY = Number.isFinite(floorY) ? floorY : center.y;
+  const recovered = [];
+
+  objects.forEach((root) => {
+    const position = root.position;
+    const xzFinite = Number.isFinite(position.x) && Number.isFinite(position.z);
+    const xzOutside =
+      !xzFinite ||
+      Math.abs(position.x - center.x) > halfWidth + OUT_OF_ROOM_XZ_MARGIN ||
+      Math.abs(position.z - center.z) > halfDepth + OUT_OF_ROOM_XZ_MARGIN;
+    const yOutside =
+      !Number.isFinite(position.y) ||
+      position.y < baseY - OUT_OF_ROOM_MAX_BELOW_FLOOR ||
+      position.y > baseY + OUT_OF_ROOM_MAX_ABOVE_FLOOR;
+    if (!xzOutside && !yOutside) return;
+
+    const dimensions = normalizedDimensions(root.userData.roomItem?.dimensions);
+    // 가구 절반 폭만큼 안쪽으로 넣어 벽에 반쯤 파묻히지 않게 한다(가구가 방보다 크면
+    // 그냥 중앙에 둔다). 최종 벽 겹침 보정은 이후 initializeWallConstraints가 처리한다.
+    const insetX = Math.min(dimensions.x / 2, Math.max(halfWidth - 0.05, 0));
+    const insetZ = Math.min(dimensions.z / 2, Math.max(halfDepth - 0.05, 0));
+    position.set(
+      xzFinite
+        ? THREE.MathUtils.clamp(
+            position.x,
+            center.x - halfWidth + insetX,
+            center.x + halfWidth - insetX,
+          )
+        : center.x,
+      yOutside ? baseY + dimensions.y / 2 : position.y,
+      xzFinite
+        ? THREE.MathUtils.clamp(
+            position.z,
+            center.z - halfDepth + insetZ,
+            center.z + halfDepth - insetZ,
+          )
+        : center.z,
+    );
+    root.updateWorldMatrix(true, false);
+    // 초기화(reset)와 충돌 복원(lastValid)이 오염된 원래 위치로 되돌리지 않게 갱신한다.
+    root.userData.initialPosition?.copy(position);
+    root.userData.lastValidPosition?.copy(position);
+    recovered.push(root);
+  });
+
+  return recovered;
+}
+
 // 각도를 -180 ~ 180 범위로 정규화한다 (예: 190 -> -170).
 export function normalizeRotationDegrees(degrees) {
   const normalized = THREE.MathUtils.euclideanModulo(degrees + 180, 360) - 180;
@@ -186,7 +296,8 @@ export function yawDegreesFromDirection(direction) {
 }
 
 // 디버그 배지에 표시할 "카메라가 어느 방향을 보고 있는지" 문자열을 만든다.
-export function formatCameraViewAngle(camera) {
+// controls(OrbitControls)를 넘기면 타겟까지의 거리(줌 정도)도 함께 표시한다.
+export function formatCameraViewAngle(camera, controls) {
   const direction = camera.getWorldDirection(new THREE.Vector3());
   const yaw = yawDegreesFromDirection(direction);
   const pitch = Math.round(
@@ -195,7 +306,11 @@ export function formatCameraViewAngle(camera) {
     ),
   );
 
-  return `View Yaw ${yaw}째 / Pitch ${pitch}째`;
+  const distanceText = controls
+    ? ` / Dist ${controls.getDistance().toFixed(2)}m`
+    : "";
+
+  return `View Yaw ${yaw}도 / Pitch ${pitch}도${distanceText}`;
 }
 
 // 교체(Replace) 가능한 오브젝트인지 판단한다: 이동 가능한 일반 가구이거나, 문/창문이거나,

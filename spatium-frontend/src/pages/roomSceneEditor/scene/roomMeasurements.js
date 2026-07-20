@@ -149,6 +149,40 @@ function largestFloorGroup(roomModel) {
   );
 }
 
+// 카메라 초기 프레이밍용 방 높이 상한. 스캔 모델에 섞인 outlier 정점 하나가 raw
+// bounding box의 높이를 수백 km로 부풀릴 수 있어서, 프레이밍 목적으로는 실내에서
+// 나올 수 있는 상식적인 높이로 제한한다.
+const FRAMING_MAX_HEIGHT = 8; // meters
+const FRAMING_MIN_HEIGHT = 2; // meters
+
+// calculateRoomMeasurements() 결과로부터 카메라 초기 프레이밍용 Box3를 만든다.
+// raw bounding box 대신 "가장 넓은 바닥 폴리곤" 기준의 width/depth/center를 쓰기 때문에
+// 방 모델에 섞여 들어간 오염 mesh(스캔 아티팩트, 과거 저장 버그 등)가 카메라를 수백 km
+// 밖으로 밀어내는 것을 막는다. 바닥 mesh를 못 찾았으면(areaSource !== "floor") raw
+// bounding box와 같은 값이라 의미가 없으므로 null을 돌려준다 — 호출자가 기존 방식으로
+// fallback하게 한다.
+export function framingBoundsFromMeasurements(measurements) {
+  if (!measurements || measurements.areaSource !== "floor") return null;
+
+  const { width, depth, height, center } = measurements;
+  if (!(width > 0) || !(depth > 0)) return null;
+
+  const clampedHeight = THREE.MathUtils.clamp(
+    height,
+    FRAMING_MIN_HEIGHT,
+    FRAMING_MAX_HEIGHT,
+  );
+
+  return new THREE.Box3(
+    new THREE.Vector3(center.x - width / 2, center.y, center.z - depth / 2),
+    new THREE.Vector3(
+      center.x + width / 2,
+      center.y + clampedHeight,
+      center.z + depth / 2,
+    ),
+  );
+}
+
 // 방의 폭/깊이/높이/면적과, 치수 표시용 외곽선/높이선을 계산한다.
 // 바닥 mesh를 찾으면 실제 바닥 폴리곤 기준(area: "floor")으로, 못 찾으면 방 전체
 // bounding box 기준(area: "bounds")으로 fallback한다.
