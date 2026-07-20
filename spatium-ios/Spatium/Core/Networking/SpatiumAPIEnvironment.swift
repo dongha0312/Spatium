@@ -9,8 +9,10 @@ final class SpatiumAPIEnvironment: ObservableObject {
 
     private static let storageKey = "spatium.apiBaseURL"
     private static let furnitureAssetStorageKey = "spatium.furnitureAssetBaseURL"
-    private static let defaultBaseURL = "http://210.119.12.115:8080"
-    private static let defaultFurnitureAssetBaseURL = "http://210.119.12.115:3000"
+    /// 배포 도메인. Spring API는 `/api/*`, 기본 가구 에셋은 `/data/*`로
+    /// 같은 오리진에서 리버스 프록시·정적 서빙됩니다.
+    private static let defaultBaseURL = "https://spatium.kro.kr"
+    private static let defaultFurnitureAssetBaseURL = "https://spatium.kro.kr"
 
     @Published var baseURLString: String {
         didSet { UserDefaults.standard.set(baseURLString, forKey: Self.storageKey) }
