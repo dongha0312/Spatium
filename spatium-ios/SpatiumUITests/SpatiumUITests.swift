@@ -100,6 +100,41 @@ final class SpatiumUITests: XCTestCase {
     }
 
     @MainActor
+    func testScanPreparationExplainsOneRoomPerScan() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestScanPreparation"]
+        app.launch()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["scan-one-room-guidance"].waitForExistence(timeout: 8)
+        )
+        XCTAssertTrue(app.staticTexts["한 번에 방 하나만 스캔해 주세요"].exists)
+        XCTAssertTrue(app.staticTexts["한 방 = 스캔 1회"].exists)
+        XCTAssertTrue(app.staticTexts["현재 방 안에서만 이동하기"].exists)
+        XCTAssertTrue(app.staticTexts["다른 방은 새 스캔으로 시작하기"].exists)
+        XCTAssertTrue(app.buttons["scan-preparation-close-button"].isHittable)
+        XCTAssertTrue(app.buttons["scan-preparation-start-button"].isHittable)
+    }
+
+    @MainActor
+    func testScanPreparationKeepsStartActionVisibleAtAccessibilityTextSize() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestScanPreparation",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        app.launchEnvironment["UIPreferredContentSizeCategoryName"] = "UICTContentSizeCategoryAccessibilityXXXL"
+        app.launch()
+
+        let guidance = app.descendants(matching: .any)["scan-one-room-guidance"]
+        let startButton = app.buttons["scan-preparation-start-button"]
+        XCTAssertTrue(guidance.waitForExistence(timeout: 8))
+        XCTAssertTrue(startButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(startButton.isHittable)
+        XCTAssertLessThanOrEqual(startButton.frame.maxY, app.windows.firstMatch.frame.maxY)
+    }
+
+    @MainActor
     func testRoomCatalogShowsUserFurnitureAndOtherCategories() throws {
         let app = XCUIApplication()
         app.launchArguments = [

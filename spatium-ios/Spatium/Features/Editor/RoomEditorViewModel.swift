@@ -345,12 +345,13 @@ final class RoomEditorViewModel: ObservableObject {
         viewMode = viewMode == .threeD ? .skyView : .threeD
     }
 
-    /// 서버 metadata JSON 인코딩용. 로더는 `editedObjects`를 우선 읽으므로 나머지는 비워 둔다.
+    /// 서버 metadata JSON 인코딩용. 앱 전용 `editedObjects`와 웹 전용
+    /// `objects/doors/windows`를 함께 기록해 어느 편집기에서 열어도 같은 상태를 복원한다.
     private struct ExportedRoomMetadata: Encodable {
-        var objects: [EditableScanItem] = []
-        var doors: [EditableScanItem] = []
-        var windows: [EditableScanItem] = []
-        var openings: [EditableScanItem] = []
+        var objects: [FrontendRoomObject] = []
+        var doors: [FrontendRoomObject] = []
+        var windows: [FrontendRoomObject] = []
+        var openings: [FrontendRoomObject] = []
         var floorColor: String?
         var editedObjects: [EditableScanItem]
 
@@ -447,13 +448,15 @@ final class RoomEditorViewModel: ObservableObject {
         }
     }
 
-    /// 현재 편집된 가구 배치를 서버 metadata(JSON)로 내보낸다.
-    /// 로더(RoomPlanExportJSON)가 `editedObjects`를 우선 읽으므로 그대로 복원된다.
+    /// 현재 편집된 가구 배치를 서버 metadata(JSON)로 내보낸다. 앱은 `editedObjects`를
+    /// 우선 읽고, 프런트엔드는 `objects/doors/windows`를 읽으므로 두 표현을 함께 기록한다.
     private func exportEditedMetadata() throws -> URL {
         let editedObjects: [EditableScanItem] = layout.furnitures.map { f in
-            let width = f.width ?? 0.5
-            let height = f.height ?? 0.5
-            let depth = f.depth ?? 0.5
+            // 앱 전용 EditableScanItem에는 scale 필드가 없으므로 현재 표시 치수에
+            // scale을 반영해 저장한다. 다시 열 때 scale 1로 복원돼도 크기는 같다.
+            let width = (f.width ?? 0.5) * f.scale.x
+            let height = (f.height ?? 0.5) * f.scale.y
+            let depth = (f.depth ?? 0.5) * f.scale.z
             var item = EditableScanItem(userAddedNamed: f.furnitureName, width: width, height: height, depth: depth)
             item.detectedCategory = f.furnitureName
             item.positionX = f.position.x
@@ -468,7 +471,18 @@ final class RoomEditorViewModel: ObservableObject {
             return item
         }
 
+        let windows = layout.furnitures.filter(Self.isWindowFurniture)
+        let doors = layout.furnitures.filter {
+            Self.isDoorOrWindowName($0.furnitureName)
+                || Self.isDoorOrWindowName($0.modelName)
+        }.filter { !Self.isWindowFurniture($0) }
+        let referenceIDs = Set((doors + windows).map(\.itemId))
+        let objects = layout.furnitures.filter { !referenceIDs.contains($0.itemId) }
+
         let metadata = ExportedRoomMetadata(
+            objects: objects.map(FrontendRoomObject.init),
+            doors: doors.map(FrontendRoomObject.init),
+            windows: windows.map(FrontendRoomObject.init),
             floorColor: layout.space?.floorColor,
             editedObjects: editedObjects
         )
@@ -477,6 +491,14 @@ final class RoomEditorViewModel: ObservableObject {
             .appendingPathComponent("edited-room-\(UUID().uuidString).json")
         try data.write(to: url, options: .atomic)
         return url
+    }
+
+    private static func isWindowFurniture(_ furniture: PlacedFurniture) -> Bool {
+        [furniture.furnitureName, furniture.modelName].compactMap { $0 }
+            .contains { value in
+                value.localizedCaseInsensitiveContains("window")
+                    || value.localizedCaseInsensitiveContains("창문")
+            }
     }
 
 }

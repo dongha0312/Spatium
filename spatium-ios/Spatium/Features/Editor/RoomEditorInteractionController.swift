@@ -355,11 +355,11 @@ extension RoomEditorSceneView.Coordinator {
             decoratingID: decoratingID,
             container: container,
             current: wrapper.position
-        ), let constrained = viewModel.constrainedSelectedDecorPosition(candidate) {
+        ) {
             wrapper.position = SCNVector3(
-                Float(constrained.x),
-                Float(constrained.y),
-                Float(constrained.z)
+                Float(candidate.x),
+                Float(candidate.y),
+                Float(candidate.z)
             )
         }
 
@@ -393,7 +393,8 @@ extension RoomEditorSceneView.Coordinator {
         }
 
         // 프런트의 constrainedSupportPoint 폴백: 포인터 광선과 현재 선반 높이의
-        // 월드 수평면 교차점을 사용한다. 책장 범위 제한은 ViewModel이 적용한다.
+        // 월드 수평면 교차점을 목표로 삼되, 실제 책장 mesh를 아래로 탐색하며 현재
+        // 지지면이 이어지는 곳까지만 2cm 단위로 이동한다.
         let currentWorld = container.convertPosition(current, to: nil)
         let near = sceneView.unprojectPoint(SCNVector3(Float(point.x), Float(point.y), 0))
         let far = sceneView.unprojectPoint(SCNVector3(Float(point.x), Float(point.y), 1))
@@ -401,13 +402,61 @@ extension RoomEditorSceneView.Coordinator {
         guard abs(direction.y) > 1e-6 else { return nil }
         let distance = (currentWorld.y - near.y) / direction.y
         guard distance >= 0 else { return nil }
-        let world = SCNVector3(
+        let requestedWorld = SIMD3<Float>(
             near.x + direction.x * distance,
             currentWorld.y,
             near.z + direction.z * distance
         )
-        let local = container.convertPosition(world, from: nil)
-        return .init(x: Double(local.x), y: Double(current.y), z: Double(local.z))
+        guard let furnitureNode = furnitureContainer.childNode(
+            withName: "furniture-\(decoratingID)",
+            recursively: false
+        ) else { return nil }
+
+        let constrainedWorld = RoomEditorSceneView.constrainedDecorSupportPoint(
+            from: SIMD3(currentWorld.x, currentWorld.y, currentWorld.z),
+            toward: requestedWorld
+        ) { [weak self, weak furnitureNode] x, z, nearY in
+            guard let self, let furnitureNode else { return nil }
+            return self.decorSupportHeight(
+                in: furnitureNode,
+                worldX: x,
+                worldZ: z,
+                nearY: nearY
+            )
+        }
+        let local = container.convertPosition(
+            SCNVector3(constrainedWorld.x, constrainedWorld.y, constrainedWorld.z),
+            from: nil
+        )
+        return .init(x: Double(local.x), y: Double(local.y), z: Double(local.z))
+    }
+
+    /// 웹 `supportHeightAt`과 같은 10cm 위 → 6cm 아래의 짧은 down-raycast다.
+    /// 낮은 다음 선반이나 책장 바닥은 같은 층으로 인정하지 않아 가장자리에서 멈춘다.
+    func decorSupportHeight(
+        in furnitureNode: SCNNode,
+        worldX: Float,
+        worldZ: Float,
+        nearY: Float
+    ) -> Float? {
+        let startWorld = SCNVector3(worldX, nearY + 0.10, worldZ)
+        let endWorld = SCNVector3(worldX, nearY - 0.06, worldZ)
+        let startLocal = furnitureNode.convertPosition(startWorld, from: nil)
+        let endLocal = furnitureNode.convertPosition(endWorld, from: nil)
+        let hits = furnitureNode.hitTestWithSegment(
+            from: startLocal,
+            to: endLocal,
+            options: [
+                SCNHitTestOption.searchMode.rawValue: SCNHitTestSearchMode.all.rawValue,
+                SCNHitTestOption.backFaceCulling.rawValue: false,
+                SCNHitTestOption.ignoreHiddenNodes.rawValue: true
+            ]
+        )
+        return hits.first(where: { hit in
+            RoomEditorSceneView.isDecorSupportNormal(hit.worldNormal)
+                && hit.worldCoordinates.y >= nearY - 0.061
+                && hit.worldCoordinates.y <= nearY + 0.101
+        })?.worldCoordinates.y
     }
 
     static func furnitureID(fromNodeOrAncestors node: SCNNode) -> Int? {
@@ -426,9 +475,8 @@ extension RoomEditorSceneView.Coordinator {
         var lo = SIMD3<Float>(repeating: .greatestFiniteMagnitude)
         var hi = SIMD3<Float>(repeating: -.greatestFiniteMagnitude)
 
-        func accumulate(_ node: SCNNode, _ parent: simd_float4x4) {
+        func accumulate(_ node: SCNNode, _ transform: simd_float4x4) {
             if node.name == "__selection_highlight" || node.name == "__measurement_label" { return }
-            let transform = parent * node.simdTransform
             if node.geometry != nil {
                 let (minBounds, maxBounds) = node.boundingBox
                 let corners: [SIMD4<Float>] = [
@@ -449,15 +497,17 @@ extension RoomEditorSceneView.Coordinator {
                 }
             }
             for child in node.childNodes {
-                accumulate(child, transform)
+                accumulate(child, transform * child.simdTransform)
             }
         }
 
-        for child in root.childNodes {
-            accumulate(child, matrix_identity_float4x4)
-        }
+        // 반환값은 root 자체의 position/rotation/scale을 제외한 root 로컬 bounds다.
+        // root geometry는 identity로, 하위 geometry는 각 child transform부터 누적한다.
         if root.geometry != nil {
             accumulate(root, matrix_identity_float4x4)
+        }
+        for child in root.childNodes {
+            accumulate(child, child.simdTransform)
         }
 
         guard found else { return nil }

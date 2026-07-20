@@ -120,6 +120,50 @@ struct SpatiumTests {
         #expect(!FurnitureCatalog.matches(builtIn, groupFilter: FurnitureCatalog.userFurnitureFilterID))
         #expect(FurnitureCatalog.matches(userOther, groupFilter: FurnitureCatalog.userFurnitureFilterID))
         #expect(FurnitureCatalog.matches(userOther, groupFilter: FurnitureCatalog.otherGroup))
+        #expect(RoomEditorViewModel.isDecorCatalogItem(userOther))
+
+        let decoration = PlacedDecoration(
+            decorId: 7,
+            name: "웹 호환 소품",
+            modelName: "usr_fixture",
+            width: 0.2,
+            height: 0.3,
+            depth: 0.1,
+            position: .init(x: 0.2, y: 0.9, z: 0.1),
+            rotationY: .pi / 2,
+            scale: 0.8,
+            catalogId: "usr_fixture",
+            category: "figure",
+            modelPath: "/api/furniture/usr_fixture/model"
+        )
+        let bookcase = PlacedFurniture(
+            itemId: 1,
+            furnitureId: 1,
+            furnitureName: "꾸미기 책장",
+            position: .zero,
+            rotation: .zero,
+            scale: .init(x: 1.25, y: 1.25, z: 1.25),
+            width: 0.8,
+            depth: 0.3,
+            height: 1.8,
+            modelName: "editable_bookcase",
+            decorations: [decoration]
+        )
+        let frontend = FrontendRoomObject(furniture: bookcase)
+        let restored = frontend.editableScanItem(sourceType: "가구", index: 0)
+        let restoredDecoration = restored.decorations?.first
+
+        // 웹의 중심 pivot·부모 scale 형식으로 바꿨다가 앱의 바닥 pivot 형식으로
+        // 돌아와도 실제 치수와 소품 위치·회전·크기·모델 경로가 유지된다.
+        #expect(abs(restored.height - 2.25) < 0.0001)
+        #expect(abs(restored.positionY - 1.125) < 0.0001)
+        #expect(abs((restoredDecoration?.position.x ?? 0) - decoration.position.x) < 0.0001)
+        #expect(abs((restoredDecoration?.position.y ?? 0) - decoration.position.y) < 0.0001)
+        #expect(abs((restoredDecoration?.position.z ?? 0) - decoration.position.z) < 0.0001)
+        #expect(abs((restoredDecoration?.rotationY ?? 0) - decoration.rotationY) < 0.0001)
+        #expect(abs((restoredDecoration?.scale ?? 0) - decoration.scale) < 0.0001)
+        #expect(restoredDecoration?.modelName == decoration.modelName)
+        #expect(restoredDecoration?.modelPath == decoration.modelPath)
     }
 
     @Test func decorSupportNormalIsNormalizedBeforeCheckingItsDirection() {
@@ -132,20 +176,43 @@ struct SpatiumTests {
         #expect(!RoomEditorSceneView.isDecorSupportNormal(SCNVector3Zero))
     }
 
-    @Test func decorCameraKeepsTheBookcaseModelFrontDirection() {
-        let front = RoomEditorSceneView.decorFrontDirection(
+    @Test func decorCameraKeepsTheOpenShelfDirectionAndFitsTheViewport() {
+        let rotatedOpenFace = RoomEditorSceneView.decorFrontDirection(
             from: SCNVector3(x: -2, y: 0.5, z: 0)
         )
 
-        // 방 중심이 반대편에 있더라도 모델의 로컬 +Z가 변환된 -X 방향을 유지해야 한다.
-        #expect(abs(front.x + 1) < 0.0001)
-        #expect(abs(front.y) < 0.0001)
+        // 책장이 어느 위치에 있든 변환된 로컬 +Z를 그대로 사용해 열린 선반 면을 바라본다.
+        #expect(abs(rotatedOpenFace.x + 1) < 0.0001)
+        #expect(abs(rotatedOpenFace.y) < 0.0001)
+
+        let defaultOpenFace = RoomEditorSceneView.decorFrontDirection(
+            from: SCNVector3(x: 0, y: 0, z: 2)
+        )
+        #expect(abs(defaultOpenFace.x) < 0.0001)
+        #expect(abs(defaultOpenFace.y - 1) < 0.0001)
 
         // 비정상적으로 수평 성분이 사라진 경우에도 유효한 기본 정면을 반환한다.
         #expect(
             RoomEditorSceneView.decorFrontDirection(from: SCNVector3(0, 1, 0))
                 == SIMD2<Float>(0, 1)
         )
+
+        let portraitDistance = RoomEditorSceneView.decorCameraDistance(
+            halfWidth: 0.9,
+            halfHeight: 0.4,
+            halfDepth: 0.15,
+            verticalFieldOfViewDegrees: 50,
+            aspectRatio: 9.0 / 16.0
+        )
+        let landscapeDistance = RoomEditorSceneView.decorCameraDistance(
+            halfWidth: 0.9,
+            halfHeight: 0.4,
+            halfDepth: 0.15,
+            verticalFieldOfViewDegrees: 50,
+            aspectRatio: 16.0 / 9.0
+        )
+        #expect(portraitDistance > landscapeDistance)
+        #expect(landscapeDistance >= 0.8)
     }
 
     @Test func editorSceneReusesSelectionAndMeasurementNodesForUnchangedState() throws {
@@ -225,6 +292,17 @@ struct SpatiumTests {
         #expect(abs(levels[0].height - 0.37) < 0.02)
         #expect(abs(levels[1].height - 0.87) < 0.02)
         #expect(abs(levels[2].height - 1.37) < 0.02)
+
+        let slid = RoomEditorSceneView.constrainedDecorSupportPoint(
+            from: SIMD3<Float>(0, 0.6, 0),
+            toward: SIMD3<Float>(0.4, 0.6, 0.3)
+        ) { x, z, _ in
+            abs(x) <= 0.2 && abs(z) <= 0.4 ? 0.62 : nil
+        }
+        // 대각선 요청이 X 가장자리에 막힌 뒤에도 Z축 이동은 계속되어 가장자리를 따라간다.
+        #expect(slid.x >= 0.18 && slid.x <= 0.2)
+        #expect(slid.z >= 0.28)
+        #expect(abs(slid.y - 0.62) < 0.0001)
     }
 
     @Test func replacingDecorKeepsItsSupportPointRotationAndIdentity() async throws {
@@ -267,7 +345,9 @@ struct SpatiumTests {
         viewModel.beginDecorating()
 
         viewModel.pendingFigure = figure
-        let supportPoint = FurnitureTransform.Vector3(x: 0.14, y: 0.64, z: 0.02)
+        // 기존의 책장 전체 사각형 clamp라면 큰 교체 모델에서 안쪽으로 당겨질 위치다.
+        // 실제 지지면에서 얻은 점은 교체 전후 그대로 보존해야 한다.
+        let supportPoint = FurnitureTransform.Vector3(x: 0.38, y: 0.64, z: 0.02)
         viewModel.placePendingFigure(atLocal: supportPoint)
         viewModel.setSelectedDecorRotation(degrees: 90)
         let original = try #require(viewModel.selectedDecoration)
@@ -345,7 +425,7 @@ struct SpatiumTests {
         await viewModel.discardCurrentDraft()
     }
 
-    @Test func decorRejectsNonFigureItemsAndPersonViewRejectsFurniturePlacement() async throws {
+    @Test func decorMatchesFrontendCatalogAndViewModeRestrictions() async throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         defer { try? FileManager.default.removeItem(at: draftDirectory) }
@@ -370,21 +450,46 @@ struct SpatiumTests {
             depth: 0.15,
             modelFileName: "chair"
         )
+        let userChair = FurnitureCatalogItem(
+            id: "user_chair_as_decor",
+            name: "사용자 제작 의자 소품",
+            group: "의자",
+            category: "chair",
+            width: 0.55,
+            height: 0.85,
+            depth: 0.55,
+            modelFileName: "modern_chair",
+            source: .user
+        )
 
         #expect(!RoomEditorViewModel.isDecorFigure(chair))
         #expect(RoomEditorViewModel.isDecorFigure(figure))
+        #expect(!RoomEditorViewModel.isDecorCatalogItem(chair))
+        #expect(RoomEditorViewModel.isDecorCatalogItem(figure))
+        #expect(RoomEditorViewModel.isDecorCatalogItem(userChair))
 
         viewModel.place(catalogItem: bookcase)
         viewModel.isMovingSelectedFurniture = false
+        let bookcaseID = try #require(viewModel.selectedItemID)
+        viewModel.setViewMode(.skyView)
+        viewModel.beginDecorating()
+        #expect(!viewModel.isDecorating)
+        #expect(viewModel.statusMessage == "스카이뷰를 끈 뒤 책장 꾸미기를 시작해 주세요")
+
+        viewModel.setViewMode(.threeD)
         viewModel.beginDecorating()
         viewModel.prepareDecorPlacement(chair)
         #expect(viewModel.pendingFigure == nil)
-        #expect(viewModel.statusMessage == "꾸미기 책장에는 피규어만 올릴 수 있어요")
+        #expect(viewModel.statusMessage == "꾸미기 책장에는 사용자 소품이나 피규어만 올릴 수 있어요")
+
+        viewModel.prepareDecorPlacement(userChair)
+        #expect(viewModel.pendingFigure?.id == userChair.id)
 
         viewModel.prepareDecorPlacement(figure)
         #expect(viewModel.pendingFigure?.id == figure.id)
 
         viewModel.endDecorating()
+        #expect(viewModel.selectedItemID == bookcaseID)
         let furnitureCount = viewModel.layout.furnitures.count
         viewModel.setViewMode(.person)
         viewModel.place(catalogItem: chair)
@@ -2173,6 +2278,13 @@ struct SurfaceTintRestoreTests {
         untouched.geometry?.firstMaterial?.diffuse.contents = UIColor.systemGreen
         coordinator.tintWalls(in: untouched, color: nil)
         #expect(untouched.geometry?.firstMaterial?.diffuse.contents as? UIColor == UIColor.systemGreen)
+
+        // 시야를 가리는 벽과 문·창문은 프런트엔드와 같은 서로 다른 투명도를 사용한다.
+        // 문·창문은 벽보다 넓은 방향 범위에서 흐려지고, 방 안쪽에서는 둘 다 완전 복원한다.
+        #expect(WallFacingUpdater.previewOpacity(for: -0.3, kind: .wall) == 0.04)
+        #expect(WallFacingUpdater.previewOpacity(for: -0.1, kind: .wall) == 1)
+        #expect(WallFacingUpdater.previewOpacity(for: -0.1, kind: .reference) == 0.08)
+        #expect(WallFacingUpdater.previewOpacity(for: 0.1, kind: .reference) == 1)
     }
 
     /// 색을 고르지 않은 새 스캔 방은 벽을 기본색으로 덮지 않고 원본 재질을 유지한다.

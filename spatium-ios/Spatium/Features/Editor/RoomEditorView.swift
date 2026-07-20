@@ -211,25 +211,18 @@ struct RoomEditorView: View {
                 }
             )
         }
-        .alert(
-            "임시 저장된 편집을 복구할까요?",
-            isPresented: Binding(
-                get: { viewModel.hasRecoverableDraft },
-                set: { isPresented in
-                    if !isPresented, viewModel.hasRecoverableDraft {
-                        Task { await viewModel.discardRecoverableDraft() }
-                    }
+        .overlay {
+            ZStack {
+                if viewModel.hasRecoverableDraft {
+                    EditorDraftRecoveryDialog(
+                        savedAt: viewModel.recoverableDraftSavedAt,
+                        onRestore: viewModel.restoreRecoverableDraft,
+                        onDiscard: viewModel.discardRecoverableDraft
+                    )
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 }
-            )
-        ) {
-            Button("복구하기") {
-                viewModel.restoreRecoverableDraft()
             }
-            Button("새로 시작", role: .destructive) {
-                Task { await viewModel.discardRecoverableDraft() }
-            }
-        } message: {
-            Text("이 기기에 자동으로 저장된 편집 내용이 있습니다. 복구하면 마지막 작업 상태부터 이어갈 수 있어요.")
+            .animation(.easeOut(duration: 0.2), value: viewModel.hasRecoverableDraft)
         }
         .alert("임시 저장에 실패했어요", isPresented: $showDraftSaveExitWarning) {
             Button("다시 시도") {
