@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import "../../styles/loginpage.css";
 import { saveLoginSession } from "../../utils/authSession";
@@ -12,6 +12,10 @@ import Header from "../../components/Header";
 
 // 이메일 형식 검증용 정규식
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Apple Developer 콘솔(Service ID)에 등록된 값과 정확히 일치해야 함
+const APPLE_CLIENT_ID = "name.dongharyu.Spatium";
+const APPLE_REDIRECT_URI = "https://spatium.kro.kr/auth/apple/callback";
 
 // ID Token(JWT)의 payload를 디코딩 (화면 표시용 - 실제 검증은 백엔드가 수행)
 const decodeJwtPayload = (token) => {
@@ -38,6 +42,103 @@ function LoginPage({ onLoginSuccess }) {
   const [emailError, setEmailError] = useState("");
 
   const navigate = useNavigate();
+
+  // Apple JS SDK(index.html에서 <script async>로 불러옴)는 로드 시점이 보장되지
+  // 않으므로, 준비될 때까지 짧게 폴링한 뒤 초기화한다.
+  useEffect(() => {
+    let cancelled = false;
+
+    const initAppleAuth = () => {
+      if (cancelled) return;
+
+      if (window.AppleID) {
+        window.AppleID.auth.init({
+          clientId: APPLE_CLIENT_ID,
+          scope: "name email",
+          redirectURI: APPLE_REDIRECT_URI,
+          usePopup: true,
+        });
+        return;
+      }
+
+      // SDK가 아직 로드되지 않았으면 잠시 후 다시 시도 (최대 약 5초)
+      setTimeout(initAppleAuth, 200);
+    };
+
+    initAppleAuth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Apple 로그인 성공/실패 이벤트는 Apple JS SDK가 document에 커스텀 이벤트로 쏴준다.
+  useEffect(() => {
+    const handleAppleSuccess = async (event) => {
+      const idToken = event.detail?.authorization?.id_token;
+      if (!idToken) {
+        alert("Apple 로그인에 실패했습니다. 다시 시도해주세요.");
+        return;
+      }
+
+      // 화면 표시용 (실제 검증은 백엔드가 수행)
+      const profile = decodeJwtPayload(idToken);
+
+      try {
+        const data = await postSocialLogin({ provider: "APPLE", idToken });
+
+        saveLoginSession(profile.email, data.user?.nickname, "APPLE", {
+          accessToken: data.accessToken,
+        });
+
+        if (onLoginSuccess) {
+          onLoginSuccess();
+        } else {
+          navigate("/");
+        }
+      } catch (loginErr) {
+        if (loginErr.status === 404) {
+          // 가입되지 않은 Apple 계정 : 회원가입 페이지로 안내 (idToken을 함께 전달)
+          navigate("/auth/signup", {
+            state: {
+              socialProvider: "apple",
+              provider: "APPLE",
+              idToken,
+              email: profile.email,
+            },
+          });
+        } else {
+          console.error("Apple 로그인 처리 중 오류:", loginErr);
+          alert(
+            loginErr.message ||
+              "Apple 로그인 중 문제가 발생했습니다. 다시 시도해주세요.",
+          );
+        }
+      }
+    };
+
+    const handleAppleFailure = (event) => {
+      // 사용자가 팝업을 직접 닫은 경우는 에러 알림을 띄우지 않음
+      if (event.detail?.error === "popup_closed_by_user") return;
+
+      console.error("Apple 로그인에 실패했습니다.", event.detail);
+      alert("Apple 로그인에 실패했습니다. 다시 시도해주세요.");
+    };
+
+    document.addEventListener("AppleIDSignInOnSuccess", handleAppleSuccess);
+    document.addEventListener("AppleIDSignInOnFailure", handleAppleFailure);
+
+    return () => {
+      document.removeEventListener(
+        "AppleIDSignInOnSuccess",
+        handleAppleSuccess,
+      );
+      document.removeEventListener(
+        "AppleIDSignInOnFailure",
+        handleAppleFailure,
+      );
+    };
+  }, [navigate, onLoginSuccess]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -80,9 +181,14 @@ function LoginPage({ onLoginSuccess }) {
 
   //---------------------------------------------------------------------------
 
-  // 소셜 로그인 : 아직 백엔드 연동 전이라, 우선 회원가입 페이지로 안내
+  // Apple 로그인 버튼 클릭 : 팝업으로 Sign in with Apple 진행
+  //  - 결과는 위 useEffect의 AppleIDSignInOnSuccess/Failure 이벤트로 비동기 전달됨
   const handleAppleLogin = () => {
-    navigate("/auth/signup", { state: { socialProvider: "apple" } });
+    if (!window.AppleID) {
+      alert("Apple 로그인을 준비 중입니다. 잠시 후 다시 시도해주세요.");
+      return;
+    }
+    window.AppleID.auth.signIn();
   };
 
   // 구글 인증 성공 시 credential(ID Token)을 백엔드로 보내 로그인 시도
