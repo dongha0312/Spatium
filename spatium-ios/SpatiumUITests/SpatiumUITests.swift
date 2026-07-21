@@ -363,10 +363,13 @@ final class SpatiumUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
         XCTAssertTrue(app.buttons["decor-move-left"].exists)
-        // 큰 글씨에서는 선택 컨트롤 목록이 길어져 카탈로그 구역(소품 만들기)까지
-        // 여러 번 스와이프해야 한다 — 스크롤로 도달 가능함을 검증한다.
+        // 소품이 선택된 상태에서는 카탈로그가 숨겨지고 위치 조절 컨트롤만 보인다.
+        // "교체"를 눌러 교체 모드로 들어가면 카탈로그가 다시 나타나며,
+        // 큰 글씨에서는 컨트롤 목록이 길어져 카탈로그의 "소품 만들기"까지
+        // 세로 스크롤해야 도달한다 — 스크롤로 도달 가능함을 검증한다.
+        app.buttons["교체"].tap()
         let createFigureButton = app.buttons["소품 만들기"]
-        for _ in 0..<4 where !createFigureButton.exists {
+        for _ in 0..<5 where !createFigureButton.exists {
             controls.swipeUp()
         }
         XCTAssertTrue(createFigureButton.waitForExistence(timeout: 3))
