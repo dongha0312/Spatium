@@ -12,8 +12,55 @@ struct ImgTo3DSegmentationResult: Equatable {
 struct ImgTo3DGenerationResult: Equatable {
     let id: String
     let provider: String
-    let modelData: Data
+    /// URLSession이 디스크로 스트리밍한 임시 GLB. 호출자가 최종 위치로 옮기거나 삭제합니다.
+    let temporaryModelURL: URL
     let fileName: String
+}
+
+/// Spring이 바이너리 본문과 함께 전달하는 `X-Spatium-AI-Metadata` 헤더 내용입니다.
+/// 헤더 값은 URL-safe Base64로 인코딩된 JSON입니다.
+struct ImgTo3DAIMetadata: Decodable, Equatable {
+    var provider: String?
+    var segmentationProvider: String?
+    var segmentedObject: String?
+    var translatedQuery: String?
+    var confidence: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case provider, confidence
+        case segmentationProvider = "segmentation_provider"
+        case segmentedObject = "segmented_object"
+        case translatedQuery = "translated_query"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        provider = try container.decodeIfPresent(String.self, forKey: .provider)
+        segmentationProvider = try container.decodeIfPresent(String.self, forKey: .segmentationProvider)
+        segmentedObject = try container.decodeIfPresent(String.self, forKey: .segmentedObject)
+        translatedQuery = try container.decodeIfPresent(String.self, forKey: .translatedQuery)
+        if let number = try? container.decode(Double.self, forKey: .confidence) {
+            confidence = number
+        } else if let string = try? container.decode(String.self, forKey: .confidence) {
+            confidence = Double(string)
+        } else {
+            confidence = nil
+        }
+    }
+
+    static func decodeHeader(_ encoded: String?) -> ImgTo3DAIMetadata? {
+        guard var base64 = encoded?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !base64.isEmpty else { return nil }
+        base64 = base64
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = base64.count % 4
+        if remainder != 0 {
+            base64 += String(repeating: "=", count: 4 - remainder)
+        }
+        guard let data = Data(base64Encoded: base64) else { return nil }
+        return try? JSONDecoder.spatiumAPI.decode(Self.self, from: data)
+    }
 }
 
 enum ImgTo3DServiceError: LocalizedError {
@@ -25,47 +72,23 @@ enum ImgTo3DServiceError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidBaseURL:
-            "Image-to-3D 서버 주소를 확인해주세요."
+            "API 서버 주소를 확인해주세요."
         case .invalidResponse:
-            "Image-to-3D 서버 응답을 해석하지 못했습니다."
+            "이미지 처리 서버 응답을 해석하지 못했습니다."
         case let .server(_, message):
             message
         case .network:
-            "Image-to-3D 서버에 연결하지 못했습니다."
+            "API 서버에 연결하지 못했습니다."
         }
     }
 }
 
 struct ImgTo3DService {
-    private struct SegmentationResponse: Decodable {
-        let id: String
-        let segmentationProvider: String
-        let segmentedObject: String
-        let translatedQuery: String?
-        let confidence: String?
-        let downloadURL: String
+    static let removeBackgroundPath = "/api/ai/remove-background"
+    static let imageTo3DPath = "/api/ai/image-to-3d"
 
-        enum CodingKeys: String, CodingKey {
-            case id, confidence
-            case segmentationProvider = "segmentation_provider"
-            case segmentedObject = "segmented_object"
-            case translatedQuery = "translated_query"
-            case downloadURL = "download_url"
-        }
-    }
-
-    private struct GenerationResponse: Decodable {
-        let id: String
-        let provider: String
-        let downloadURL: String
-
-        enum CodingKeys: String, CodingKey {
-            case id, provider
-            case downloadURL = "download_url"
-        }
-    }
-
-    private var baseURL: URL? { SpatiumAPIEnvironment.shared.imageTo3DBaseURL }
+    private static let metadataHeader = "X-Spatium-AI-Metadata"
+    private let client = SpatiumAPIClient.shared
 
     func removeBackground(
         image: ImgTo3DUploadImage.Normalized,
@@ -88,15 +111,25 @@ struct ImgTo3DService {
             parts.append(textPart(name: "target_class", value: "auto"))
         }
 
-        let response: SegmentationResponse = try await postMultipart(path: "/v1/remove-background", parts: parts)
-        let imageData = try await download(path: response.downloadURL, timeout: 120)
+        let response = try await sendMultipart(
+            path: Self.removeBackgroundPath,
+            parts: parts,
+            timeout: 120
+        )
+        guard response.data.starts(with: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+              let metadata = ImgTo3DAIMetadata.decodeHeader(response.header(named: Self.metadataHeader)),
+              let segmentedObject = metadata.segmentedObject,
+              let segmentationProvider = metadata.segmentationProvider else {
+            throw ImgTo3DServiceError.invalidResponse
+        }
+
         return ImgTo3DSegmentationResult(
-            id: response.id,
-            imageData: imageData,
-            segmentedObject: response.segmentedObject,
-            translatedQuery: response.translatedQuery,
-            confidence: response.confidence.flatMap(Double.init),
-            provider: response.segmentationProvider
+            id: UUID().uuidString,
+            imageData: response.data,
+            segmentedObject: segmentedObject,
+            translatedQuery: metadata.translatedQuery,
+            confidence: metadata.confidence,
+            provider: segmentationProvider
         )
     }
 
@@ -120,102 +153,84 @@ struct ImgTo3DService {
             parts.append(textPart(name: "mc_resolution", value: String(mcResolution)))
         }
 
-        let response: GenerationResponse = try await postMultipart(
-            path: "/v1/image-to-3d",
+        let response = try await sendMultipartFile(
+            path: Self.imageTo3DPath,
             parts: parts,
             timeout: 620
         )
-        let modelData = try await download(path: response.downloadURL, timeout: 120)
-        let fileName = URL(string: response.downloadURL)?.lastPathComponent ?? "\(response.id).glb"
+        guard Self.file(response.fileURL, startsWith: Data("glTF".utf8)) else {
+            try? FileManager.default.removeItem(at: response.fileURL)
+            throw ImgTo3DServiceError.invalidResponse
+        }
+
+        let id = UUID().uuidString
+        let metadata = ImgTo3DAIMetadata.decodeHeader(response.header(named: Self.metadataHeader))
         return ImgTo3DGenerationResult(
-            id: response.id,
-            provider: response.provider,
-            modelData: modelData,
-            fileName: fileName
+            id: id,
+            provider: metadata?.provider ?? provider.rawValue,
+            temporaryModelURL: response.fileURL,
+            fileName: "\(id).glb"
         )
     }
 
-    private func postMultipart<Response: Decodable>(
+    private func sendMultipart(
         path: String,
         parts: [MultipartFormPart],
-        timeout: TimeInterval = 120
-    ) async throws -> Response {
-        guard let url = resolve(path: path) else { throw ImgTo3DServiceError.invalidBaseURL }
-        let form = MultipartFormData(parts: parts)
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.timeoutInterval = timeout
-        request.setValue(form.contentType, forHTTPHeaderField: "Content-Type")
-        request.httpBody = form.body
-        let data = try await perform(request)
+        timeout: TimeInterval
+    ) async throws -> SpatiumAPIRawResponse {
         do {
-            return try JSONDecoder.spatiumAPI.decode(Response.self, from: data)
-        } catch {
-            throw ImgTo3DServiceError.invalidResponse
-        }
-    }
-
-    private func download(path: String, timeout: TimeInterval) async throws -> Data {
-        guard let url = resolve(path: path) else { throw ImgTo3DServiceError.invalidBaseURL }
-        var request = URLRequest(url: url)
-        request.timeoutInterval = timeout
-        return try await perform(request)
-    }
-
-    private func perform(_ request: URLRequest) async throws -> Data {
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await URLSession.shared.data(for: request)
-        } catch {
-            if Task.isCancelled || (error as? URLError)?.code == .cancelled {
-                throw CancellationError()
+            return try await client.sendMultipartData(path: path, parts: parts, timeout: timeout)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as SpatiumAPIError {
+            switch error {
+            case .invalidBaseURL:
+                throw ImgTo3DServiceError.invalidBaseURL
+            case let .network(underlying):
+                throw ImgTo3DServiceError.network(underlying)
+            case let .server(statusCode, _, message):
+                throw ImgTo3DServiceError.server(statusCode: statusCode, message: message)
+            case .unauthorized:
+                throw ImgTo3DServiceError.server(statusCode: 401, message: "로그인이 필요합니다.")
+            case .decoding:
+                throw ImgTo3DServiceError.invalidResponse
             }
-            throw ImgTo3DServiceError.network(error)
         }
-        guard let http = response as? HTTPURLResponse else {
-            throw ImgTo3DServiceError.invalidResponse
-        }
-        guard (200..<300).contains(http.statusCode) else {
-            throw ImgTo3DServiceError.server(
-                statusCode: http.statusCode,
-                message: Self.errorMessage(from: data, statusCode: http.statusCode)
-            )
-        }
-        return data
     }
 
-    private func resolve(path: String) -> URL? {
-        guard let baseURL else { return nil }
-        if let absolute = URL(string: path), absolute.scheme != nil { return absolute }
-        return URL(string: path, relativeTo: baseURL)?.absoluteURL
+    private func sendMultipartFile(
+        path: String,
+        parts: [MultipartFormPart],
+        timeout: TimeInterval
+    ) async throws -> SpatiumAPITemporaryFileResponse {
+        do {
+            return try await client.sendMultipartFile(path: path, parts: parts, timeout: timeout)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as SpatiumAPIError {
+            switch error {
+            case .invalidBaseURL:
+                throw ImgTo3DServiceError.invalidBaseURL
+            case let .network(underlying):
+                throw ImgTo3DServiceError.network(underlying)
+            case let .server(statusCode, _, message):
+                throw ImgTo3DServiceError.server(statusCode: statusCode, message: message)
+            case .unauthorized:
+                throw ImgTo3DServiceError.server(statusCode: 401, message: "로그인이 필요합니다.")
+            case .decoding:
+                throw ImgTo3DServiceError.invalidResponse
+            }
+        }
+    }
+
+    private static func file(_ url: URL, startsWith expected: Data) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        guard let prefix = try? handle.read(upToCount: expected.count) else { return false }
+        return prefix == expected
     }
 
     private func textPart(name: String, value: String) -> MultipartFormPart {
         MultipartFormPart(name: name, data: Data(value.utf8), contentType: "text/plain; charset=utf-8")
-    }
-
-    private static func errorMessage(from data: Data, statusCode: Int) -> String {
-        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let detail = object["detail"] else {
-            return fallbackMessage(for: statusCode)
-        }
-        if let message = detail as? String { return message }
-        if let dictionary = detail as? [String: Any] {
-            return dictionary["message"] as? String ?? fallbackMessage(for: statusCode)
-        }
-        return fallbackMessage(for: statusCode)
-    }
-
-    private static func fallbackMessage(for statusCode: Int) -> String {
-        switch statusCode {
-        case 413: "이미지는 10MB 이하여야 합니다."
-        case 415: "PNG 또는 JPEG 이미지를 사용해주세요."
-        case 422: "사진에서 요청한 가구를 찾지 못했거나 입력값이 올바르지 않습니다."
-        case 502: "3D 모델 실행에 실패했습니다."
-        case 503: "서버의 이미지 처리 모델이 준비되지 않았습니다."
-        case 504: "이미지 처리 시간이 초과되었습니다."
-        default: "Image-to-3D 요청을 처리하지 못했습니다."
-        }
     }
 }

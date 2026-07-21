@@ -6,6 +6,7 @@ import SwiftUI
 struct OnboardingView: View {
     var onFinished: () -> Void
 
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @State private var currentPage = 0
 
     private let pages: [OnboardingPage] = [
@@ -40,6 +41,7 @@ struct OnboardingView: View {
     ]
 
     private var isLastPage: Bool { currentPage == pages.count - 1 }
+    private var usesCompactHeight: Bool { verticalSizeClass == .compact }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,47 +56,41 @@ struct OnboardingView: View {
                         .buttonStyle(.pressable)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.top, 12)
-            .frame(height: 56)
+            .padding(.horizontal, usesCompactHeight ? 18 : 24)
+            .padding(.top, usesCompactHeight ? 4 : 12)
+            .frame(height: usesCompactHeight ? 42 : 56)
 
             // 가운데: 슬라이드
             TabView(selection: $currentPage) {
                 ForEach(Array(pages.enumerated()), id: \.offset) { index, page in
-                    OnboardingPageView(page: page)
+                    OnboardingPageView(page: page, usesCompactHeight: usesCompactHeight)
                         .tag(index)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
             .animation(.easeInOut(duration: 0.25), value: currentPage)
 
-            // 페이지 인디케이터
-            HStack(spacing: 8) {
-                ForEach(pages.indices, id: \.self) { index in
-                    Capsule()
-                        .fill(index == currentPage ? SpatiumTheme.accent : SpatiumTheme.border)
-                        .frame(width: index == currentPage ? 22 : 7, height: 7)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: currentPage)
+            if usesCompactHeight {
+                HStack(spacing: 18) {
+                    pageIndicator
+                    Spacer(minLength: 8)
+                    nextButton
+                        .frame(maxWidth: 250)
                 }
-            }
-            .padding(.top, 14)
-            .padding(.bottom, 18)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 7)
+            } else {
+                pageIndicator
+                    .padding(.top, 14)
+                    .padding(.bottom, 18)
 
-            // 하단: 다음 / 시작하기
-            PrimaryButton(
-                title: isLastPage ? "Spatium 시작하기" : "다음",
-                systemImage: isLastPage ? "arrow.right.circle.fill" : "arrow.right"
-            ) {
-                if isLastPage {
-                    onFinished()
-                } else {
-                    withAnimation { currentPage += 1 }
-                }
+                nextButton
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 20)
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 20)
         }
         .background(SpatiumTheme.background.ignoresSafeArea())
+        .accessibilityIdentifier("onboarding-screen")
         .onAppear {
             #if DEBUG
             // 스크린샷 검증용: -UITestOnboardingPage <index>로 특정 슬라이드를 바로 연다.
@@ -107,6 +103,32 @@ struct OnboardingView: View {
             }
             #endif
         }
+    }
+
+    private var pageIndicator: some View {
+        HStack(spacing: 8) {
+            ForEach(pages.indices, id: \.self) { index in
+                Capsule()
+                    .fill(index == currentPage ? SpatiumTheme.accent : SpatiumTheme.border)
+                    .frame(width: index == currentPage ? 22 : 7, height: 7)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: currentPage)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("온보딩 \(currentPage + 1) / \(pages.count) 페이지")
+    }
+
+    private var nextButton: some View {
+        PrimaryButton(
+                title: isLastPage ? "Spatium 시작하기" : "다음",
+                systemImage: isLastPage ? "arrow.right.circle.fill" : "arrow.right"
+            ) {
+                if isLastPage {
+                    onFinished()
+                } else {
+                    withAnimation { currentPage += 1 }
+                }
+            }
     }
 }
 
@@ -122,70 +144,91 @@ private struct OnboardingPage {
 
 private struct OnboardingPageView: View {
     let page: OnboardingPage
+    let usesCompactHeight: Bool
 
     @State private var appeared = false
 
     private var tint: Color { page.tintIsSage ? SpatiumTheme.sage : SpatiumTheme.accent }
 
     var body: some View {
-        VStack(spacing: 20) {
-            // 실제 앱 화면: 폰 프레임 느낌의 카드로 감싼다.
-            Image(page.imageName)
-                .resizable()
-                .scaledToFit()
-                .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 26, style: .continuous)
-                        .stroke(SpatiumTheme.border, lineWidth: 1)
-                )
-                .padding(6)
-                .background(
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .fill(SpatiumTheme.elevatedSurface)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 32, style: .continuous)
-                        .stroke(tint.opacity(0.25), lineWidth: 1.5)
-                )
-                .shadow(color: SpatiumTheme.shadow.opacity(0.14), radius: 22, y: 12)
-                .frame(maxHeight: .infinity)
-                .padding(.horizontal, 56)
-                .padding(.top, 8)
-                .scaleEffect(appeared ? 1 : 0.94)
-                .opacity(appeared ? 1 : 0)
-
-            VStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: page.badgeSystemImage)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(tint)
-                        .frame(width: 30, height: 30)
-                        .background(tint.opacity(0.12))
-                        .clipShape(Circle())
-
-                    Text(page.title)
-                        .font(.title3.weight(.black))
-                        .foregroundStyle(SpatiumTheme.text)
+        Group {
+            if usesCompactHeight {
+                HStack(spacing: 24) {
+                    screenshot
+                        .frame(maxWidth: 360, maxHeight: .infinity)
+                    pageDescription
+                        .frame(maxWidth: 330)
                 }
-
-                Text(page.message)
-                    .font(.footnote)
-                    .foregroundStyle(SpatiumTheme.muted)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 34)
+                .padding(.vertical, 6)
+            } else {
+                VStack(spacing: 20) {
+                    screenshot
+                        .frame(maxHeight: .infinity)
+                        .padding(.horizontal, 56)
+                        .padding(.top, 8)
+                    pageDescription
+                        .padding(.horizontal, 32)
+                }
+                .padding(.bottom, 4)
             }
-            .padding(.horizontal, 32)
-            .offset(y: appeared ? 0 : 10)
-            .opacity(appeared ? 1 : 0)
         }
-        .padding(.bottom, 4)
         .onAppear {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
                 appeared = true
             }
         }
         .onDisappear { appeared = false }
+    }
+
+    private var screenshot: some View {
+        Image(page.imageName)
+            .resizable()
+            .scaledToFit()
+            .clipShape(RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                    .stroke(SpatiumTheme.border, lineWidth: 1)
+            )
+            .padding(6)
+            .background(
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .fill(SpatiumTheme.elevatedSurface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 32, style: .continuous)
+                    .stroke(tint.opacity(0.25), lineWidth: 1.5)
+            )
+            .shadow(color: SpatiumTheme.shadow.opacity(0.14), radius: 22, y: 12)
+            .scaleEffect(appeared ? 1 : 0.94)
+            .opacity(appeared ? 1 : 0)
+            .accessibilityLabel("\(page.title) 화면 예시")
+    }
+
+    private var pageDescription: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: page.badgeSystemImage)
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(tint)
+                    .frame(width: 30, height: 30)
+                    .background(tint.opacity(0.12))
+                    .clipShape(Circle())
+
+                Text(page.title)
+                    .font(.title3.weight(.black))
+                    .foregroundStyle(SpatiumTheme.text)
+            }
+
+            Text(page.message)
+                .font(.footnote)
+                .foregroundStyle(SpatiumTheme.muted)
+                .multilineTextAlignment(.center)
+                .lineSpacing(usesCompactHeight ? 2 : 4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .offset(y: appeared ? 0 : 10)
+        .opacity(appeared ? 1 : 0)
     }
 }
 

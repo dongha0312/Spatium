@@ -93,8 +93,8 @@
 }
 
 .lg-social-btn {
-  width: 44px;
-  height: 44px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   border: 1px solid var(--bd);
   background: #fff;
@@ -124,8 +124,8 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 44px;
-  border: 1px solid var(--bd);
-  border-radius: 50%;
+  /* border: 1px solid var(--bd);
+  border-radius: 50%; */
   background: #fff;
   overflow: hidden;
 }
@@ -135,7 +135,7 @@
   inset: 0;
   width: 100% !important;
   height: 100% !important;
-  opacity: 0;
+  opacity: 1;
   z-index: 2;
 }
 
@@ -145,12 +145,12 @@
   top: 50%;
   width: 20px;
   height: 20px;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) translate(-2px, -2px);
   pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1;
+  z-index: 3;
 }
 
 .lg-google-mark svg {

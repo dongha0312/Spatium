@@ -1,22 +1,20 @@
 # Image to 3D FastAPI
 
-Single-image to 3D backend. The default provider is the public Hugging Face Space `frogleo/Image-to-3D`, which returns a `.glb` model through the Gradio API.
+Single-image to 3D backend. The active providers are local TripoSR and local
+Stable Fast 3D, with YOLO or GroundingDINO+SAM2 segmentation.
 
 ## Setup
 
-```powershell
-$env:UV_CACHE_DIR=".uv-cache"
+```bash
 uv sync
-Copy-Item .env.example .env
-notepad .env
-uv run uvicorn app.main:app --reload --port 8000 --env-file .env
+cp .env.example .env
+uv run python run.py
 ```
 
-Open the UI:
-
-```text
-http://127.0.0.1:8000
-```
+Set a non-empty `AI_INTERNAL_API_KEY` in `.env`. Spring sends the same value in
+the `X-Internal-Api-Key` header. The key must never be committed, returned in an
+API response, or written to normal request logs. `RELOAD` defaults to `false`
+so the GPU worker is not duplicated in production.
 
 You can also run the server with:
 
@@ -83,30 +81,30 @@ Generate a GLB:
 
 ```powershell
 curl.exe -X POST "http://127.0.0.1:8000/v1/image-to-3d" `
+  -H "X-Internal-Api-Key: $env:AI_INTERNAL_API_KEY" `
   -F "image=@C:\path\to\object.png" `
   -F "foreground_ratio=0.85" `
   -F "mc_resolution=256" `
-  -F "remove_background=true"
+  -F "remove_background=true" `
+  --output generated-model.glb
 ```
 
-The response contains a `download_url`, for example:
-
-```json
-{
-  "id": "5f5d8dc9c69b4d6fb6b1dc516cfa36a3",
-  "provider": "stability",
-  "format": "glb",
-  "download_url": "/v1/assets/5f5d8dc9c69b4d6fb6b1dc516cfa36a3.glb"
-}
-```
+The response body is the GLB binary. Small UI metadata is returned as compact
+UTF-8 JSON encoded with unpadded base64url in `X-Spatium-AI-Metadata`. There is
+no result id or follow-up download URL.
 
 ## Notes
 
-- Hugging Face public Spaces are free to try, but they can sleep, queue, rate limit, or change availability.
-- The bundled default does not require `STABILITY_API_KEY`.
+- GPU work is limited to one concurrent request per API worker by default.
+  Keep a single Uvicorn worker when using one GPU; process-local semaphores do
+  not coordinate across multiple workers.
 - Best input: a single centered object, plain background, no heavy crop, PNG/JPEG/WebP.
 - Output quality depends heavily on the source image. Product/object images work better than scenes.
-- Keep generated files out of git; they are written to `storage/outputs/`.
+- Request-scoped files are removed immediately from `storage/tmp/`.
+- Response GLB and PNG files are streamed with `FileResponse` and deleted by a
+  best-effort background cleanup after the response completes. A process crash
+  can leave an orphan file; cleanup failure is logged and does not cancel an
+  otherwise successful AI response.
 
 ## Providers
 
@@ -173,9 +171,11 @@ Preview a Korean natural-language target:
 
 ```bash
 curl -X POST http://127.0.0.1:8000/v1/remove-background \
+  -H "X-Internal-Api-Key: ${AI_INTERNAL_API_KEY}" \
   -F "image=@/path/to/room.jpg" \
   -F "segmentation_provider=grounded_sam2" \
-  -F "object_query=회색 사무용 의자"
+  -F "object_query=회색 사무용 의자" \
+  --output segmented.png
 ```
 
 Generate a GLB in one request by adding the same fields to

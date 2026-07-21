@@ -73,10 +73,14 @@ import {
 import {
   createWallColliderVisuals,
   createWallColliders,
+  hideOutlierRoomMeshes,
   isUsdFloorMesh,
   prepareRoomModel,
 } from "../scene/wallColliders";
-import { calculateRoomMeasurements } from "../scene/roomMeasurements";
+import {
+  calculateRoomMeasurements,
+  framingBoundsFromMeasurements,
+} from "../scene/roomMeasurements";
 import {
   base64ToObjectUrl,
   createFallbackReferenceTemplate,
@@ -87,6 +91,7 @@ import {
   isReplaceableObject,
   normalizedDimensions,
   normalizedReferenceDimensions,
+  recoverOutOfRoomFurniture,
   REFERENCE_CATEGORIES,
   rotationDegreesFromObject,
   roundedTransform,
@@ -1559,6 +1564,16 @@ export function useRoomSceneEditor({
       controls.enabled = true;
       renderer.domElement.style.cursor = "default";
       releasePointer(event.pointerId);
+      // 벽에 박힌 채 시작해 제약이 임시 해제돼 있던 가구를 사용자가 벽 밖으로
+      // 꺼냈다면, 이 시점부터 정상 벽 제약을 다시 적용한다.
+      if (
+        object.userData.startsInWallCollision &&
+        !objectIntersectsWalls(object, activeColliders())
+      ) {
+        object.userData.startsInWallCollision = false;
+        object.userData.ignoreWallConstraint = false;
+        rememberValidTransform(object);
+      }
       syncSceneState(object, { changedObjects: [object] });
       markSceneChanged();
     }
@@ -2083,6 +2098,22 @@ export function useRoomSceneEditor({
         worldGroup.add(roomModel);
         const roomMeasurements = calculateRoomMeasurements(roomModel);
         addRoomMeasurements(roomMeasurements);
+        // 방 본체에서 멀리 떨어진 오염 mesh(스캔 아티팩트, 과거 저장 버그로 남은 벽 메움
+        // 등)를 숨긴다. 메인 바닥 폴리곤 기준 경계에 2m 여유를 둔 박스와 전혀 겹치지
+        // 않는 mesh만 대상이라 정상적인 벽/천장/단차 바닥은 건드리지 않는다.
+        const saneRoomBounds =
+          framingBoundsFromMeasurements(roomMeasurements)?.expandByScalar(2) ||
+          null;
+        const hiddenRoomMeshes = hideOutlierRoomMeshes(
+          roomModel,
+          saneRoomBounds,
+        );
+        if (hiddenRoomMeshes.length) {
+          console.warn(
+            "[roomSceneEditor] Hid room meshes far outside the room body:",
+            hiddenRoomMeshes,
+          );
+        }
         // 방이 월드 좌표축에서 얼마나 돌아가 있는지 추정해둔다 — 회전 슬라이더/표시 각도를
         // "방 기준 상대 각도"로 보여주기 위함(estimateRoomYawOffsetDegrees 참고). Skyview
         // 카메라도 이 값을 참고해서 화면상 방이 똑바로(축에 맞게) 보이도록 돌린다.
@@ -2192,6 +2223,20 @@ export function useRoomSceneEditor({
           editableRoots.push(furniture.root);
           pickTargets.push(...furniture.pickTargets);
         });
+
+        // 저장된 transform이 오염돼 방 밖 멀리 놓인 가구를 방 안쪽으로 되돌린다 —
+        // 이런 가구가 씬 bounding box를 부풀려 카메라 프레이밍까지 망가뜨린다.
+        const recoveredFurniture = recoverOutOfRoomFurniture(
+          editableRoots,
+          roomMeasurements,
+          floorY,
+        );
+        if (recoveredFurniture.length) {
+          console.warn(
+            "[roomSceneEditor] Recovered furniture with corrupted saved positions:",
+            recoveredFurniture.map((root) => root.name),
+          );
+        }
 
         // 저장된 피규어(decorations)를 복원해서 각 가구 root의 자식으로 다시 부착한다.
         // transform이 부모 로컬 기준으로 저장돼 있으므로 그대로 적용하면 된다.
@@ -3124,8 +3169,16 @@ export function useRoomSceneEditor({
         }
 
         // 문/창문/개구부를 씬에 등록하고, 카메라 각도에 따라 흐려지는 처리에 필요한
-        // roomFacingNormal을 계산해둔다.
+        // roomFacingNormal을 계산해둔다. 저장된 transform이 오염돼 방 밖 멀리 놓인
+        // 것들은 씬에 넣지 않는다(문/창문은 벽에 붙어 있어야 의미가 있어서, 가구처럼
+        // 방 안으로 옮겨봐야 쓸모가 없다).
+        const skippedReferences = [];
         [...doorItems, ...windowItems, ...openingItems].forEach((item) => {
+          if (saneRoomBounds && !saneRoomBounds.containsPoint(item.root.position)) {
+            skippedReferences.push(item.root.name || "reference");
+            disposeScene(item.root);
+            return;
+          }
           initializeReferenceFacingNormal(item.root, roomCenter);
           if (showReferenceLabels) {
             const debugLabel = createReferenceDebugLabel();
@@ -3138,6 +3191,12 @@ export function useRoomSceneEditor({
           referenceRoots.push(item.root);
           pickTargets.push(...item.pickTargets);
         });
+        if (skippedReferences.length) {
+          console.warn(
+            "[roomSceneEditor] Skipped doors/windows/openings far outside the room:",
+            skippedReferences,
+          );
+        }
         invalidateActiveColliders();
 
         // 문/창문까지 전부 로드된 뒤 마지막으로 한 번 더 벽 제약을 적용한다 — 이제
@@ -3148,10 +3207,88 @@ export function useRoomSceneEditor({
         if (editableRoots[0]) selectObject(editableRoots[0]);
         if (!editableRoots.length) syncSceneState(null);
         // 초기 프레이밍 거리보다 휠로 더 멀리 줌아웃할 수 없게 막는다.
-        const framedDistance = frameObject(camera, controls, worldGroup);
+        // 프레이밍은 raw bounding box 대신 메인 바닥 폴리곤 기준 박스를 우선 쓴다 —
+        // 오염 mesh 하나가 raw 박스를 부풀리면 카메라가 수백 km 밖에 놓이기 때문.
+        const framingBounds = framingBoundsFromMeasurements(roomMeasurements);
+        if (framingBounds && !roomBoundsBox.isEmpty()) {
+          const rawSize = roomBoundsBox.getSize(new THREE.Vector3());
+          const framedSize = framingBounds.getSize(new THREE.Vector3());
+          const rawMax = Math.max(rawSize.x, rawSize.y, rawSize.z);
+          const framedMax = Math.max(framedSize.x, framedSize.y, framedSize.z);
+          if (rawMax > framedMax * 3) {
+            console.warn(
+              "[roomSceneEditor] Room bounding box looks contaminated by outlier geometry.",
+              { rawSize, framedSize },
+            );
+          }
+        }
+        const framedDistance = frameObject(
+          camera,
+          controls,
+          worldGroup,
+          framingBounds,
+        );
         if (framedDistance) {
           controls.maxDistance = framedDistance;
         }
+
+        // 디버그용 씬 감사 도구. 브라우저 콘솔에서 spatiumSceneAudit()을 호출하면
+        // 씬의 모든 보이는 mesh 중 방 경계(메인 바닥 기준 + 3m)를 벗어난 것들을
+        // 벗어난 거리 순으로 정렬해 표로 보여준다 — "방 밖/밑에 렌더링되는 무언가"가
+        // 정확히 어떤 오브젝트인지 추적하기 위한 도구다.
+        window.spatiumSceneAudit = () => {
+          const auditBounds =
+            framingBoundsFromMeasurements(roomMeasurements)?.expandByScalar(3);
+          if (!auditBounds) {
+            console.warn("No floor-based room bounds available for audit.");
+            return [];
+          }
+          const rows = [];
+          const meshBox = new THREE.Box3();
+          worldGroup.updateWorldMatrix(true, true);
+          worldGroup.traverse((object) => {
+            if (!object.isMesh || !object.visible || !object.geometry) return;
+            meshBox.setFromObject(object);
+            if (meshBox.isEmpty()) return;
+            const overflow = Math.max(
+              auditBounds.min.x - meshBox.min.x,
+              auditBounds.min.y - meshBox.min.y,
+              auditBounds.min.z - meshBox.min.z,
+              meshBox.max.x - auditBounds.max.x,
+              meshBox.max.y - auditBounds.max.y,
+              meshBox.max.z - auditBounds.max.z,
+              0,
+            );
+            if (overflow <= 0) return;
+            const chain = [];
+            for (let node = object; node && node !== worldGroup; node = node.parent) {
+              if (node.name) chain.unshift(node.name);
+            }
+            rows.push({
+              path: chain.join(" / ") || "(unnamed)",
+              overflowM: +overflow.toFixed(2),
+              min: meshBox.min.toArray().map((v) => +v.toFixed(2)),
+              max: meshBox.max.toArray().map((v) => +v.toFixed(2)),
+            });
+          });
+          rows.sort((a, b) => b.overflowM - a.overflowM);
+          console.table(rows);
+          // 가구별 저장 상태(위치/scale/치수)도 함께 보여준다 — 오염이 transform의
+          // scale에 있는지 dimensions에 있는지 구분하기 위한 표.
+          console.table(
+            editableRoots.map((root) => ({
+              name: root.name,
+              position: root.position.toArray().map((v) => +v.toFixed(2)),
+              scale: root.scale.toArray().map((v) => +v.toFixed(4)),
+              dims: [
+                root.userData.roomItem?.dimensions?.x,
+                root.userData.roomItem?.dimensions?.y,
+                root.userData.roomItem?.dimensions?.z,
+              ],
+            })),
+          );
+          return rows;
+        };
         if (viewControllerRef.current) {
           viewControllerRef.current.baseMaxDistance = controls.maxDistance;
           viewControllerRef.current.defaultView = captureCameraView(
@@ -3236,7 +3373,7 @@ export function useRoomSceneEditor({
         viewFacingWallsDirty = false;
         updateViewFacingWalls(wallColliders, camera, referenceRoots);
         if (cameraAngleBadge) {
-          const nextCameraAngleText = formatCameraViewAngle(camera);
+          const nextCameraAngleText = formatCameraViewAngle(camera, controls);
           if (nextCameraAngleText !== lastCameraAngleText) {
             cameraAngleBadge.textContent = nextCameraAngleText;
             lastCameraAngleText = nextCameraAngleText;

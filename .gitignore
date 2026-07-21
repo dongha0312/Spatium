@@ -72,3 +72,6 @@ fastlane/test_output
 PROJECT_OVERVIEW.md
 
 outputs/
+
+*:Zone.Identifier
+/spatium-img-to-3d/vendor/

@@ -1,20 +1,11 @@
 import Foundation
-import simd
 
 /// 원시 RoomPlan export JSON(objects/doors/windows + transform.columns) 파서.
 /// 번들에 내장된 테스트 스캔을 CapturedRoom 없이 직접 편집기에 로드할 때 사용합니다.
-struct RoomPlanExportJSON: Decodable {
-    struct Dim: Decodable { let x: Float; let y: Float; let z: Float }
-    struct Transform: Decodable { let columns: [[Float]] }
-    struct Entry: Decodable {
-        let category: String?
-        let dimensions: Dim
-        let transform: Transform
-    }
-
-    let objects: [Entry]
-    let doors: [Entry]
-    let windows: [Entry]
+nonisolated struct RoomPlanExportJSON: Decodable, Sendable {
+    let objects: [FrontendRoomObject]
+    let doors: [FrontendRoomObject]
+    let windows: [FrontendRoomObject]
     /// 사용자가 편집기에서 확정한 객체(이동/회전/교체/추가/삭제 반영). 있으면 이걸 우선 사용한다.
     let editedObjects: [EditableScanItem]?
     /// 프런트엔드가 저장하는 선택 바닥색. 없으면 원본 USDZ 바닥 재질을 유지합니다.
@@ -27,24 +18,11 @@ struct RoomPlanExportJSON: Decodable {
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        objects = (try? c.decode([Entry].self, forKey: .objects)) ?? []
-        doors = (try? c.decode([Entry].self, forKey: .doors)) ?? []
-        windows = (try? c.decode([Entry].self, forKey: .windows)) ?? []
+        objects = (try? c.decode([FrontendRoomObject].self, forKey: .objects)) ?? []
+        doors = (try? c.decode([FrontendRoomObject].self, forKey: .doors)) ?? []
+        windows = (try? c.decode([FrontendRoomObject].self, forKey: .windows)) ?? []
         editedObjects = try? c.decode([EditableScanItem].self, forKey: .editedObjects)
         floorColor = try? c.decode(String.self, forKey: .floorColor)
-    }
-
-    private static func matrix(_ transform: Transform) -> simd_float4x4 {
-        func column(_ index: Int) -> SIMD4<Float> {
-            let values = index < transform.columns.count ? transform.columns[index] : []
-            func at(_ i: Int) -> Float { i < values.count ? values[i] : 0 }
-            return SIMD4<Float>(at(0), at(1), at(2), at(3))
-        }
-        return simd_float4x4(columns: (column(0), column(1), column(2), column(3)))
-    }
-
-    private static func dim(_ dimension: Dim) -> SIMD3<Float> {
-        SIMD3<Float>(dimension.x, dimension.y, dimension.z)
     }
 
     func items() -> [EditableScanItem] {
@@ -52,11 +30,9 @@ struct RoomPlanExportJSON: Decodable {
         if let editedObjects, !editedObjects.isEmpty {
             return editedObjects
         }
-        return EditableScanItem.makeItems(
-            objects: objects.map { ($0.category ?? "object", Self.dim($0.dimensions), Self.matrix($0.transform)) },
-            doors: doors.map { (Self.dim($0.dimensions), Self.matrix($0.transform)) },
-            windows: windows.map { (Self.dim($0.dimensions), Self.matrix($0.transform)) }
-        )
+        return objects.enumerated().map { $0.element.editableScanItem(sourceType: "가구", index: $0.offset) }
+            + doors.enumerated().map { $0.element.editableScanItem(sourceType: "문", index: $0.offset) }
+            + windows.enumerated().map { $0.element.editableScanItem(sourceType: "창문", index: $0.offset) }
     }
 }
 

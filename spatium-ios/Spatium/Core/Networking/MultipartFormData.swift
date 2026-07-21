@@ -36,11 +36,19 @@ nonisolated func sanitizedMultipartToken(_ value: String) -> String {
         .replacingOccurrences(of: "\"", with: "'")
 }
 
+nonisolated enum MultipartFormDataError: Error {
+    /// 파일 파트를 메모리 바디로 인코딩하려 한 경우. 대용량 USDZ/GLB가 통째로
+    /// 메모리에 올라가는 사고를 막기 위해 파일 파트는 `writeBodyFile`만 허용한다.
+    case filePartRequiresBodyFile
+}
+
 nonisolated struct MultipartFormData {
     let boundary: String
     let body: Data
 
-    init(parts: [MultipartFormPart], boundary: String = "Spatium-\(UUID().uuidString)") {
+    /// 작은 `.data` 파트 전용 메모리 바디 생성. 파일 파트가 하나라도 있으면 throw한다 —
+    /// 실제 업로드 경로는 파일을 1MiB 청크로 스트리밍하는 `writeBodyFile`을 사용해야 한다.
+    init(parts: [MultipartFormPart], boundary: String = "Spatium-\(UUID().uuidString)") throws {
         self.boundary = boundary
         var body = Data()
         for part in parts {
@@ -49,8 +57,8 @@ nonisolated struct MultipartFormData {
             switch part.source {
             case let .data(data):
                 body.append(data)
-            case let .file(url):
-                body.append((try? Data(contentsOf: url)) ?? Data())
+            case .file:
+                throw MultipartFormDataError.filePartRequiresBodyFile
             }
             body.append("\r\n")
         }
@@ -82,29 +90,34 @@ nonisolated struct MultipartFormData {
         guard FileManager.default.createFile(atPath: url.path, contents: nil) else {
             throw CocoaError(.fileWriteUnknown)
         }
-        let handle = try FileHandle(forWritingTo: url)
-        defer { try? handle.close() }
+        do {
+            let handle = try FileHandle(forWritingTo: url)
+            defer { try? handle.close() }
 
-        func write(_ string: String) throws {
-            try handle.write(contentsOf: Data(string.utf8))
-        }
-
-        for part in parts {
-            try write("--\(boundary)\r\n")
-            try write(partHeader(for: part))
-            switch part.source {
-            case let .data(data):
-                try handle.write(contentsOf: data)
-            case let .file(fileURL):
-                let reader = try FileHandle(forReadingFrom: fileURL)
-                defer { try? reader.close() }
-                while let chunk = try reader.read(upToCount: 1_048_576), !chunk.isEmpty {
-                    try handle.write(contentsOf: chunk)
-                }
+            func write(_ string: String) throws {
+                try handle.write(contentsOf: Data(string.utf8))
             }
-            try write("\r\n")
+
+            for part in parts {
+                try write("--\(boundary)\r\n")
+                try write(partHeader(for: part))
+                switch part.source {
+                case let .data(data):
+                    try handle.write(contentsOf: data)
+                case let .file(fileURL):
+                    let reader = try FileHandle(forReadingFrom: fileURL)
+                    defer { try? reader.close() }
+                    while let chunk = try reader.read(upToCount: 1_048_576), !chunk.isEmpty {
+                        try handle.write(contentsOf: chunk)
+                    }
+                }
+                try write("\r\n")
+            }
+            try write("--\(boundary)--\r\n")
+            return url
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            throw error
         }
-        try write("--\(boundary)--\r\n")
-        return url
     }
 }

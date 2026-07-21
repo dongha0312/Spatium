@@ -6,6 +6,7 @@ import { BrowserRouter } from "react-router-dom";
 import HomeRouters from "./routers/HomeRouters";
 import MemberRouters from "./routers/MemberRouters";
 import AuthRouters from "./routers/AuthRouters";
+import ScrollToTop from "./components/ScrollToTop";
 
 // 구글 인증처리 라이브러리(사전 설치 필요)
 //  - LoginPage.js 등 어디서든 구글 로그인을 사용할 수 있도록 앱 최상단에서 감싸줌
@@ -19,6 +20,7 @@ function App() {
   return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <BrowserRouter>
+        <ScrollToTop />
         <HomeRouters></HomeRouters>
         <MemberRouters></MemberRouters>
         <AuthRouters></AuthRouters>

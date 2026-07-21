@@ -1,5 +1,56 @@
 import SwiftUI
 
+/// 캐시 디렉터리 순회와 삭제를 메인 액터 밖에서 처리한다.
+enum SettingsCacheStorage {
+    nonisolated static let directoryNames = ["RoomScans", "RoomScenes", "Spatium"]
+
+    nonisolated static var defaultRoot: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+    }
+
+    nonisolated static func totalBytesInBackground(root: URL = defaultRoot) async -> Int64 {
+        let worker: Task<Int64, Never> = Task.detached(priority: .utility) {
+            totalBytes(root: root)
+        }
+        return await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+    }
+
+    nonisolated static func clearInBackground(root: URL = defaultRoot) async -> Int64 {
+        await Task.detached(priority: .utility) {
+            let fileManager = FileManager.default
+            for name in directoryNames where !Task.isCancelled {
+                try? fileManager.removeItem(
+                    at: root.appendingPathComponent(name, isDirectory: true)
+                )
+            }
+            return totalBytes(root: root)
+        }.value
+    }
+
+    nonisolated static func totalBytes(root: URL) -> Int64 {
+        let fileManager = FileManager.default
+        var total: Int64 = 0
+        for name in directoryNames where !Task.isCancelled {
+            let directory = root.appendingPathComponent(name, isDirectory: true)
+            guard let files = fileManager.enumerator(
+                at: directory,
+                includingPropertiesForKeys: [.fileSizeKey]
+            ) else {
+                continue
+            }
+            for case let file as URL in files {
+                guard !Task.isCancelled else { return total }
+                total += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+            }
+        }
+        return total
+    }
+}
+
 struct SettingsView: View {
     #if DEBUG
     @State private var versionTapCount = 0
@@ -8,8 +59,6 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SettingsAppHeader()
-
             AccountSection()
 
             StorageSection()
@@ -155,9 +204,6 @@ private struct StorageSection: View {
     @State private var cacheBytes: Int64 = 0
     @State private var isClearing = false
 
-    /// "Spatium"은 가구 만들기의 GeneratedModels/CorrectedModels 중간 산출물 폴더.
-    private static let cacheDirectoryNames = ["RoomScans", "RoomScenes", "Spatium"]
-
     var body: some View {
         SettingsGroup(title: "저장 공간") {
             SettingsInfoRow(systemImage: "internaldrive", title: "스캔·모델 캐시", value: Self.format(cacheBytes))
@@ -175,33 +221,20 @@ private struct StorageSection: View {
             .buttonStyle(.pressable)
             .disabled(isClearing || cacheBytes == 0)
         }
-        .task { cacheBytes = Self.totalBytes() }
+        .task {
+            let bytes = await SettingsCacheStorage.totalBytesInBackground()
+            guard !Task.isCancelled else { return }
+            cacheBytes = bytes
+        }
     }
 
     private func clearCache() {
         isClearing = true
         Task {
-            let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            for name in Self.cacheDirectoryNames {
-                try? FileManager.default.removeItem(at: root.appendingPathComponent(name, isDirectory: true))
-            }
-            cacheBytes = Self.totalBytes()
+            cacheBytes = await SettingsCacheStorage.clearInBackground()
             isClearing = false
             Haptics.success()
         }
-    }
-
-    private static func totalBytes() -> Int64 {
-        let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        var total: Int64 = 0
-        for name in cacheDirectoryNames {
-            let directory = root.appendingPathComponent(name, isDirectory: true)
-            guard let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.fileSizeKey]) else { continue }
-            for case let file as URL in files {
-                total += Int64((try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
-            }
-        }
-        return total
     }
 
     private static func format(_ bytes: Int64) -> String {
@@ -309,7 +342,6 @@ private struct DeveloperSettingsSheet: View {
                 SettingsGroup(title: "연결 (개발자 전용)") {
                     EndpointEditor(
                         springBaseURLString: $environment.baseURLString,
-                        imageTo3DBaseURLString: $environment.imageTo3DBaseURLString,
                         furnitureAssetBaseURLString: $environment.furnitureAssetBaseURLString
                     )
                 }
@@ -372,26 +404,6 @@ private struct DeveloperSettingsSheet: View {
 }
 #endif
 
-private struct SettingsAppHeader: View {
-    var body: some View {
-        HStack(spacing: 14) {
-            BrandMark(size: 58)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Spatium")
-                    .font(.title3.weight(.black))
-                    .foregroundStyle(SpatiumTheme.text)
-                Text("공간 스캔 및 3D 업로드")
-                    .font(.subheadline)
-                    .foregroundStyle(SpatiumTheme.soft)
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, 2)
-    }
-}
-
 private struct SettingsGroup<Content: View>: View {
     let title: String
     @ViewBuilder var content: Content
@@ -415,7 +427,6 @@ private struct SettingsGroup<Content: View>: View {
 #if DEBUG
 private struct EndpointEditor: View {
     @Binding var springBaseURLString: String
-    @Binding var imageTo3DBaseURLString: String
     @Binding var furnitureAssetBaseURLString: String
 
     var body: some View {
@@ -435,30 +446,7 @@ private struct EndpointEditor: View {
                 Spacer()
             }
 
-            TextField("http://서버IP:8080", text: $springBaseURLString)
-                .keyboardType(.URL)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.subheadline)
-                .padding(12)
-                .background(SpatiumTheme.background)
-                .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.md).stroke(SpatiumTheme.border, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
-
-            HStack(spacing: 12) {
-                SettingsIcon(systemImage: "cube.transparent", tint: SpatiumTheme.accent)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Image-to-3D FastAPI 서버")
-                        .font(.subheadline.weight(.black))
-                        .foregroundStyle(SpatiumTheme.text)
-                    Text("분리·GLB 생성 요청에 사용")
-                        .font(.caption)
-                        .foregroundStyle(SpatiumTheme.soft)
-                }
-                Spacer()
-            }
-
-            TextField("http://서버IP:8000", text: $imageTo3DBaseURLString)
+            TextField("https://spatium.kro.kr", text: $springBaseURLString)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -471,17 +459,17 @@ private struct EndpointEditor: View {
             HStack(spacing: 12) {
                 SettingsIcon(systemImage: "shippingbox", tint: SpatiumTheme.accent)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("사용자 GLB 파일 서버")
+                    Text("기본 가구 에셋 서버")
                         .font(.subheadline.weight(.black))
                         .foregroundStyle(SpatiumTheme.text)
-                    Text("Spring이 반환하는 /data 모델 경로의 호스트")
+                    Text("기본 카탈로그의 공개 /data 모델 경로에 사용")
                         .font(.caption)
                         .foregroundStyle(SpatiumTheme.soft)
                 }
                 Spacer()
             }
 
-            TextField("http://서버IP:3000", text: $furnitureAssetBaseURLString)
+            TextField("https://spatium.kro.kr", text: $furnitureAssetBaseURLString)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()

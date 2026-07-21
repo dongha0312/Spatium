@@ -3,7 +3,7 @@
  *  - 백엔드 서버가 여러개면 모두 이곳에 정의함
  *  - 사용 라이브러리 : axios 라이브러리 import 해야함
  * 
- * (중요) 이 파일이 작동하려면, src/setupProxy.js 파일이 있어야함
+ * (개발 환경) /api 요청은 src/setupProxy.js를 통해 Spring으로 전달됨
  *  - 꼭, src 폴더 밑에 파일이 위치해야 하며,
  *    파일명은 수정 불가(고정된 이름임)
  *  - React 서버 실행 시 자동으로 실행되는 파일임
@@ -19,10 +19,7 @@ import {
 
 /** SpringBoot 백엔드 서버 통신 설정 */
 export const springApi = axios.create({
-    // 프록시 서버에서 사용할 대표 URL 정의(이니셜)
-    //  - 해당 이름은 프록시서버 설정 파일에서 구분자로 사용되는 이름임
-    //  - 최초 사용자가 요청한 URL : http://localhost:3000/react/springboot_test
-    //  - baseURL로 변경됨 : http://localhost:3000/spring/react/springboot_test
+    // 모든 API 모듈은 /api 상대경로를 사용한다.
     baseURL: "",
 
     // HTTP 통신을 위한 헤더 전송정보 정의
@@ -58,6 +55,26 @@ springApi.interceptors.request.use((config) => {
 //    새 refreshToken도 응답의 Set-Cookie로 자동 갱신된다.
 let refreshPromise = null;
 
+const parseBlobErrorResponse = async (error) => {
+    const response = error?.response;
+    const blob = response?.data;
+    if (typeof Blob === "undefined" || !(blob instanceof Blob)) return;
+
+    const headers = response.headers;
+    const contentType =
+        (typeof headers?.get === "function" && headers.get("content-type")) ||
+        headers?.["content-type"] ||
+        blob.type ||
+        "";
+    if (!contentType.toLowerCase().includes("json")) return;
+
+    try {
+        response.data = JSON.parse(await blob.text());
+    } catch (_) {
+        // 원래 Blob 응답을 유지하면 status 기반 공통 오류 처리는 계속 동작한다.
+    }
+};
+
 const reissueTokens = async () => {
     const res = await axios.post("/api/auth/token");
     const data = res.data?.data;
@@ -72,12 +89,18 @@ const reissueTokens = async () => {
 springApi.interceptors.response.use(
     (response) => response,
     async (error) => {
+        await parseBlobErrorResponse(error);
+
         const status = error.response?.data?.statusCode || error.response?.status;
         const requestUrl = error.config?.url || "";
         const isAuthRequest =
             requestUrl.includes("/api/auth/sessions") ||
             requestUrl.includes("/api/auth/social-sessions") ||
             requestUrl.includes("/api/auth/token");
+
+        if (error.config?.signal?.aborted) {
+            return Promise.reject(error);
+        }
 
         // accessToken 만료(401) 시 : refreshToken으로 자동 재발급 후 원래 요청 1회 재시도
         if (status === 401 && !isAuthRequest && !error.config._retried) {
@@ -86,11 +109,18 @@ springApi.interceptors.response.use(
                 const newAccessToken = await refreshPromise;
                 refreshPromise = null;
 
+                if (error.config?.signal?.aborted) {
+                    return Promise.reject(error);
+                }
+
                 error.config._retried = true;
                 error.config.headers = error.config.headers || {};
                 error.config.headers.Authorization = `Bearer ${newAccessToken}`;
                 return springApi(error.config);
             } catch (refreshError) {
+                if (error.config?.signal?.aborted) {
+                    return Promise.reject(error);
+                }
                 // 재발급 실패(refreshToken 만료/폐기) : 세션 정리 후 로그인 페이지로
                 refreshPromise = null;
                 clearLoginSession();

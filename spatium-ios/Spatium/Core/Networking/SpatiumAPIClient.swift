@@ -37,6 +37,28 @@ private struct SpatiumAPIErrorBody: Decodable {
     var message: String?
 }
 
+/// JSON 엔벨로프가 아닌 파일 응답을 위한 공통 결과입니다.
+/// AI 생성물과 보호된 사용자 가구 모델처럼 본문 자체가 데이터인 API에서 사용합니다.
+struct SpatiumAPIRawResponse {
+    let data: Data
+    let httpResponse: HTTPURLResponse
+
+    func header(named name: String) -> String? {
+        httpResponse.value(forHTTPHeaderField: name)
+    }
+}
+
+/// 큰 바이너리 응답을 메모리 Data 대신 임시 파일로 전달합니다.
+/// 호출자는 파일을 최종 위치로 옮기거나 사용 후 삭제해야 합니다.
+struct SpatiumAPITemporaryFileResponse {
+    let fileURL: URL
+    let httpResponse: HTTPURLResponse
+
+    func header(named name: String) -> String? {
+        httpResponse.value(forHTTPHeaderField: name)
+    }
+}
+
 extension JSONEncoder {
     static let spatiumAPI: JSONEncoder = {
         let encoder = JSONEncoder()
@@ -71,9 +93,8 @@ actor AuthRefreshCoordinator {
     }
 }
 
-/// Thin client for the CODEX backend. Every endpoint returns the same
-/// {statusCode, message, data} envelope, so callers just specify the path,
-/// method, and expected `data` payload type.
+/// Spring API 공통 클라이언트. 일반 API의 `{statusCode, message, data}` 엔벨로프와
+/// AI·모델 다운로드의 바이너리 응답이 인증 및 토큰 재발급 흐름을 공유합니다.
 struct SpatiumAPIClient {
     static let shared = SpatiumAPIClient()
 
@@ -132,6 +153,93 @@ struct SpatiumAPIClient {
         }
     }
 
+    /// Spring API가 JSON 엔벨로프 대신 파일 본문을 직접 반환하는 요청을 보냅니다.
+    /// 인증 만료 시에도 일반 API와 동일하게 토큰을 재발급하고 한 번 재시도합니다.
+    func sendData(
+        method: String = "GET",
+        path: String,
+        query: [String: String] = [:],
+        requiresAuth: Bool = true,
+        timeout: TimeInterval = 120
+    ) async throws -> SpatiumAPIRawResponse {
+        try await sendResolvingAuthData(requiresAuth: requiresAuth) {
+            var request = try makeRequest(
+                method: method,
+                path: path,
+                query: query,
+                requiresAuth: requiresAuth
+            )
+            request.timeoutInterval = timeout
+            return request
+        }
+    }
+
+    /// Spring API의 큰 바이너리 본문을 URLSession 임시 파일로 내려받습니다.
+    /// 인증 만료 시에도 임시 파일을 정리한 뒤 토큰을 갱신해 한 번 재시도합니다.
+    func downloadFile(
+        method: String = "GET",
+        path: String,
+        query: [String: String] = [:],
+        requiresAuth: Bool = true,
+        timeout: TimeInterval = 120
+    ) async throws -> SpatiumAPITemporaryFileResponse {
+        try await sendResolvingAuthFile(requiresAuth: requiresAuth) {
+            var request = try makeRequest(
+                method: method,
+                path: path,
+                query: query,
+                requiresAuth: requiresAuth
+            )
+            request.timeoutInterval = timeout
+            return request
+        }
+    }
+
+    /// 멀티파트를 스트리밍 업로드하고 바이너리 응답을 그대로 돌려줍니다.
+    func sendMultipartData(
+        method: String = "POST",
+        path: String,
+        parts: [MultipartFormPart],
+        requiresAuth: Bool = true,
+        timeout: TimeInterval = 120
+    ) async throws -> SpatiumAPIRawResponse {
+        let boundary = "Spatium-\(UUID().uuidString)"
+        let bodyFileURL = try await Task.detached {
+            try MultipartFormData.writeBodyFile(parts: parts, boundary: boundary)
+        }.value
+        defer { try? FileManager.default.removeItem(at: bodyFileURL) }
+
+        return try await sendResolvingAuthData(requiresAuth: requiresAuth, uploadingFile: bodyFileURL) {
+            var request = try makeRequest(method: method, path: path, query: [:], requiresAuth: requiresAuth)
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = timeout
+            return request
+        }
+    }
+
+    /// 멀티파트 요청 바디와 큰 바이너리 응답을 모두 파일 기반으로 처리합니다.
+    /// URLSession download task에 임시 바디 파일의 InputStream을 연결해 GLB 응답을 Data로 합치지 않습니다.
+    func sendMultipartFile(
+        method: String = "POST",
+        path: String,
+        parts: [MultipartFormPart],
+        requiresAuth: Bool = true,
+        timeout: TimeInterval = 120
+    ) async throws -> SpatiumAPITemporaryFileResponse {
+        let boundary = "Spatium-\(UUID().uuidString)"
+        let bodyFileURL = try await Task.detached {
+            try MultipartFormData.writeBodyFile(parts: parts, boundary: boundary)
+        }.value
+        defer { try? FileManager.default.removeItem(at: bodyFileURL) }
+
+        return try await sendResolvingAuthFile(requiresAuth: requiresAuth, uploadingFile: bodyFileURL) {
+            var request = try makeRequest(method: method, path: path, query: [:], requiresAuth: requiresAuth)
+            request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+            request.timeoutInterval = timeout
+            return request
+        }
+    }
+
     /// 요청을 보내고, 액세스 토큰 만료(401)면 refreshToken으로 재발급 후 한 번 재시도합니다.
     /// 재발급 자체가 거부되면(세션 만료) 토큰을 비워 로그인 화면으로 돌아가게 합니다.
     private func sendResolvingAuth<ResponseData: Decodable>(
@@ -140,7 +248,8 @@ struct SpatiumAPIClient {
         makeRequest: () throws -> URLRequest
     ) async throws -> SpatiumAPIEnvelope<ResponseData> {
         do {
-            return try await perform(try makeRequest(), uploadingFile: bodyFileURL)
+            let response = try await performData(try makeRequest(), uploadingFile: bodyFileURL)
+            return try decodeEnvelope(response)
         } catch let error as SpatiumAPIError {
             guard requiresAuth, case .unauthorized = error,
                   let refreshToken = tokenStore.refreshToken, !refreshToken.hasPrefix("mock_") else {
@@ -153,11 +262,72 @@ struct SpatiumAPIClient {
                     tokenStore.clear()
                 }
                 throw SpatiumAPIError.unauthorized
+            } catch is CancellationError {
+                throw CancellationError()
             } catch {
                 throw SpatiumAPIError.unauthorized
             }
             // 새 액세스 토큰으로 요청을 다시 만들어 한 번만 재시도.
-            return try await perform(try makeRequest(), uploadingFile: bodyFileURL)
+            let response = try await performData(try makeRequest(), uploadingFile: bodyFileURL)
+            return try decodeEnvelope(response)
+        }
+    }
+
+    /// 바이너리 API도 엔벨로프 API와 같은 인증 재시도 규칙을 공유합니다.
+    private func sendResolvingAuthData(
+        requiresAuth: Bool,
+        uploadingFile bodyFileURL: URL? = nil,
+        makeRequest: () throws -> URLRequest
+    ) async throws -> SpatiumAPIRawResponse {
+        do {
+            return try await performData(try makeRequest(), uploadingFile: bodyFileURL)
+        } catch let error as SpatiumAPIError {
+            guard requiresAuth, case .unauthorized = error,
+                  let refreshToken = tokenStore.refreshToken, !refreshToken.hasPrefix("mock_") else {
+                throw error
+            }
+            do {
+                try await AuthRefreshCoordinator.shared.refreshIfNeeded()
+            } catch let refreshError as SpatiumAPIError {
+                if case .unauthorized = refreshError {
+                    tokenStore.clear()
+                }
+                throw SpatiumAPIError.unauthorized
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw SpatiumAPIError.unauthorized
+            }
+            return try await performData(try makeRequest(), uploadingFile: bodyFileURL)
+        }
+    }
+
+    /// 파일 응답에서도 일반 API와 같은 401 재발급 규칙을 유지합니다.
+    private func sendResolvingAuthFile(
+        requiresAuth: Bool,
+        uploadingFile bodyFileURL: URL? = nil,
+        makeRequest: () throws -> URLRequest
+    ) async throws -> SpatiumAPITemporaryFileResponse {
+        do {
+            return try await performFile(try makeRequest(), uploadingFile: bodyFileURL)
+        } catch let error as SpatiumAPIError {
+            guard requiresAuth, case .unauthorized = error,
+                  let refreshToken = tokenStore.refreshToken, !refreshToken.hasPrefix("mock_") else {
+                throw error
+            }
+            do {
+                try await AuthRefreshCoordinator.shared.refreshIfNeeded()
+            } catch let refreshError as SpatiumAPIError {
+                if case .unauthorized = refreshError {
+                    tokenStore.clear()
+                }
+                throw SpatiumAPIError.unauthorized
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw SpatiumAPIError.unauthorized
+            }
+            return try await performFile(try makeRequest(), uploadingFile: bodyFileURL)
         }
     }
 
@@ -188,10 +358,10 @@ struct SpatiumAPIClient {
         return request
     }
 
-    private func perform<ResponseData: Decodable>(
+    private func performData(
         _ request: URLRequest,
         uploadingFile bodyFileURL: URL? = nil
-    ) async throws -> SpatiumAPIEnvelope<ResponseData> {
+    ) async throws -> SpatiumAPIRawResponse {
         let data: Foundation.Data
         let response: URLResponse
         do {
@@ -201,6 +371,9 @@ struct SpatiumAPIClient {
                 (data, response) = try await URLSession.shared.data(for: request)
             }
         } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+                throw CancellationError()
+            }
             throw SpatiumAPIError.network(error)
         }
 
@@ -221,6 +394,84 @@ struct SpatiumAPIClient {
                 message: errorBody?.message ?? "요청을 처리하지 못했습니다."
             )
         }
+
+        return SpatiumAPIRawResponse(data: data, httpResponse: httpResponse)
+    }
+
+    /// download task가 응답을 디스크에 기록하게 하고, 멀티파트 요청일 때는 바디도 파일 스트림으로 공급합니다.
+    private func performFile(
+        _ originalRequest: URLRequest,
+        uploadingFile bodyFileURL: URL? = nil
+    ) async throws -> SpatiumAPITemporaryFileResponse {
+        var request = originalRequest
+        if let bodyFileURL {
+            do {
+                let size = try bodyFileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+                guard size > 0, let stream = InputStream(url: bodyFileURL) else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                request.httpBodyStream = stream
+                request.setValue(String(size), forHTTPHeaderField: "Content-Length")
+            } catch {
+                throw SpatiumAPIError.network(error)
+            }
+        }
+
+        let downloadedURL: URL
+        let response: URLResponse
+        do {
+            (downloadedURL, response) = try await URLSession.shared.download(for: request)
+        } catch {
+            if Task.isCancelled || (error as? URLError)?.code == .cancelled {
+                throw CancellationError()
+            }
+            throw SpatiumAPIError.network(error)
+        }
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            try? FileManager.default.removeItem(at: downloadedURL)
+            throw SpatiumAPIError.network(URLError(.badServerResponse))
+        }
+
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            let errorBody = Self.decodeErrorBody(from: downloadedURL)
+            try? FileManager.default.removeItem(at: downloadedURL)
+            if httpResponse.statusCode == 401 {
+                throw SpatiumAPIError.unauthorized
+            }
+            throw SpatiumAPIError.server(
+                statusCode: httpResponse.statusCode,
+                code: errorBody?.code,
+                message: errorBody?.message ?? "요청을 처리하지 못했습니다."
+            )
+        }
+
+        let ownedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-response-\(UUID().uuidString).tmp")
+        do {
+            try FileManager.default.moveItem(at: downloadedURL, to: ownedURL)
+        } catch {
+            try? FileManager.default.removeItem(at: downloadedURL)
+            try? FileManager.default.removeItem(at: ownedURL)
+            throw SpatiumAPIError.network(error)
+        }
+        return SpatiumAPITemporaryFileResponse(fileURL: ownedURL, httpResponse: httpResponse)
+    }
+
+    /// 비정상 응답은 백엔드 JSON 에러 바디만 필요하므로 최대 64KiB까지만 읽습니다.
+    private static func decodeErrorBody(from fileURL: URL) -> SpatiumAPIErrorBody? {
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: 64 * 1_024),
+              !data.isEmpty else { return nil }
+        return try? JSONDecoder.spatiumAPI.decode(SpatiumAPIErrorBody.self, from: data)
+    }
+
+    private func decodeEnvelope<ResponseData: Decodable>(
+        _ response: SpatiumAPIRawResponse
+    ) throws -> SpatiumAPIEnvelope<ResponseData> {
+        let data = response.data
+        let httpResponse = response.httpResponse
 
         if httpResponse.statusCode == 204 || data.isEmpty {
             return SpatiumAPIEnvelope(statusCode: httpResponse.statusCode, message: "", data: nil)

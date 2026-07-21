@@ -1,6 +1,74 @@
+import ImageIO
 import SwiftUI
 import PhotosUI
 import UIKit
+import UniformTypeIdentifiers
+
+/// 사진 보관함 원본을 전체 해상도로 디코딩하지 않고 아바타 표시·업로드 크기로 바로 줄인다.
+enum ProfileAvatarImagePreprocessor {
+    nonisolated static let maximumPixelDimension = 512
+    nonisolated static let jpegCompressionQuality: CGFloat = 0.85
+
+    struct Prepared: @unchecked Sendable {
+        let previewImage: UIImage
+        let uploadData: Data
+    }
+
+    nonisolated static func prepareInBackground(rawData: Data) async -> Prepared? {
+        let worker: Task<Prepared?, Never> = Task.detached(priority: .userInitiated) {
+            autoreleasepool {
+                guard !Task.isCancelled else { return nil }
+                return prepare(rawData: rawData)
+            }
+        }
+        return await withTaskCancellationHandler {
+            await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
+    }
+
+    nonisolated static func prepare(
+        rawData: Data,
+        maximumPixelDimension: Int = ProfileAvatarImagePreprocessor.maximumPixelDimension
+    ) -> Prepared? {
+        guard !Task.isCancelled,
+              maximumPixelDimension > 0,
+              let source = CGImageSourceCreateWithData(rawData as CFData, nil) else {
+            return nil
+        }
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maximumPixelDimension,
+            kCGImageSourceShouldCacheImmediately: true
+        ]
+        guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+              !Task.isCancelled else {
+            return nil
+        }
+
+        let encoded = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(
+            encoded,
+            UTType.jpeg.identifier as CFString,
+            1,
+            nil
+        ) else {
+            return nil
+        }
+        let destinationOptions: [CFString: Any] = [
+            kCGImageDestinationLossyCompressionQuality: jpegCompressionQuality
+        ]
+        CGImageDestinationAddImage(destination, thumbnail, destinationOptions as CFDictionary)
+        guard CGImageDestinationFinalize(destination), !Task.isCancelled else { return nil }
+
+        return Prepared(
+            previewImage: UIImage(cgImage: thumbnail),
+            uploadData: encoded as Data
+        )
+    }
+}
 
 struct ProfileEditView: View {
     @Environment(\.dismiss) private var dismiss
@@ -256,19 +324,20 @@ struct ProfileEditView: View {
         errorMessage = nil
         
         Task {
-            if let data = try? await item.loadTransferable(type: Data.self),
-               let uiImage = UIImage(data: data) {
-                avatarImage = uiImage
+            guard let data = try? await item.loadTransferable(type: Data.self),
+                  let prepared = await ProfileAvatarImagePreprocessor.prepareInBackground(rawData: data) else {
+                errorMessage = "선택한 프로필 사진을 처리하지 못했습니다."
+                isLoading = false
+                return
+            }
+            avatarImage = prepared.previewImage
 
-                // Upload to server immediately
-                do {
-                    // 원본은 수 MB HEIC일 수 있으므로 서버 명세(JPEG)에 맞게 줄여 인코딩해 올린다.
-                    let jpegData = Self.avatarUploadData(from: uiImage)
-                    let result = try await userService.uploadAvatar(imageData: jpegData)
-                    profile?.profileImageUrl = result.profileImageUrl
-                } catch {
-                    errorMessage = "프로필 사진 업로드 실패: \(error.localizedDescription)"
-                }
+            // Upload to server immediately
+            do {
+                let result = try await userService.uploadAvatar(imageData: prepared.uploadData)
+                profile?.profileImageUrl = result.profileImageUrl
+            } catch {
+                errorMessage = "프로필 사진 업로드 실패: \(error.localizedDescription)"
             }
             isLoading = false
         }
@@ -288,18 +357,6 @@ struct ProfileEditView: View {
             }
             isLoading = false
         }
-    }
-
-    /// 아바타 업로드용 데이터: 최대 512px로 줄이고 JPEG로 인코딩.
-    private static func avatarUploadData(from image: UIImage) -> Data {
-        let maxDimension: CGFloat = 512
-        let scale = min(1, maxDimension / max(image.size.width, image.size.height))
-        let targetSize = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-        let renderer = UIGraphicsImageRenderer(size: targetSize)
-        let resized = renderer.image { _ in
-            image.draw(in: CGRect(origin: .zero, size: targetSize))
-        }
-        return resized.jpegData(compressionQuality: 0.85) ?? Data()
     }
 
     private func saveProfile() {

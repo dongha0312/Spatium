@@ -5,6 +5,7 @@ import {
   referenceFallbackThickness,
   sceneColor,
 } from "./sceneConfig";
+import { normalizedDimensions } from "./editorTransforms";
 import { decomposeRoomTransform } from "./threeUtils";
 import { measureWallThicknessAtPosition } from "./wallColliders";
 
@@ -145,12 +146,15 @@ function cloneRenderableMaterials(object) {
 
 // GLB 템플릿이 없는 가구를 위한 fallback — 단색 반투명 박스로 가구를 표현한다.
 export function createEditableFurniture(item, index) {
-  const dimensions = item.dimensions || {};
+  // 저장 치수를 정규화(단위 오류·오염값 보정)하고 정리된 값을 item에 되쓴다
+  // (createEditableFurnitureModel과 동일한 이유).
+  const dimensions = normalizedDimensions(item.dimensions);
+  item.dimensions = dimensions;
   const category = item.category || "object";
   const color = categoryColor(category);
-  const width = Math.max(dimensions.x || 0.1, 0.04);
-  const height = Math.max(dimensions.y || 0.1, 0.04);
-  const depth = Math.max(dimensions.z || 0.1, 0.04);
+  const width = dimensions.x;
+  const height = dimensions.y;
+  const depth = dimensions.z;
   const localObb = createCenteredLocalObb(
     new THREE.Vector3(width, height, depth),
   );
@@ -307,13 +311,12 @@ function applyGlassTransparency(model) {
 // GLB 템플릿이 있는 일반 가구를 만든다. 템플릿을 clone하고 목표 크기로 fit한 뒤,
 // 그 결과 bounds로 충돌용 localObb/hitBox/edge를 만든다.
 export function createEditableFurnitureModel(modelTemplate, item, index) {
-  const dimensions = item.dimensions || {};
+  // 저장/카탈로그 치수를 정규화(단위 오류·오염값 보정)하고, 정리된 값을 item에 되써서
+  // 다음 저장 때 metadata의 오염된 dimensions도 함께 정리되게 한다.
+  const dimensions = normalizedDimensions(item.dimensions);
+  item.dimensions = dimensions;
   const category = item.category || "object";
-  const targetSize = new THREE.Vector3(
-    Math.max(dimensions.x || 0.1, 0.04),
-    Math.max(dimensions.y || 0.1, 0.04),
-    Math.max(dimensions.z || 0.1, 0.04),
-  );
+  const targetSize = new THREE.Vector3(dimensions.x, dimensions.y, dimensions.z);
   const root = new THREE.Group();
   const model = modelTemplate.clone(true);
   cloneRenderableMaterials(model);

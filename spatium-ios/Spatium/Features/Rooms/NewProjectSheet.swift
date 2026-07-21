@@ -18,38 +18,45 @@ struct NewProjectSheet: View {
             SpatiumTheme.background.ignoresSafeArea()
 
             NavigationStack {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("프로젝트 이름")
-                        .font(.headline.weight(.black))
-                        .foregroundStyle(SpatiumTheme.text)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("프로젝트 이름")
+                            .font(.headline.weight(.black))
+                            .foregroundStyle(SpatiumTheme.text)
 
-                    Text("예: 우리집, 신혼집 인테리어, 사무실 리모델링")
-                        .font(.footnote)
-                        .foregroundStyle(SpatiumTheme.soft)
-
-                    TextField("프로젝트 이름을 입력하세요", text: $name)
-                        .focused($isFocused)
-                        .submitLabel(.done)
-                        .padding(14)
-                        .background(SpatiumTheme.surface)
-                        .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border, lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
-                        .onSubmit(createProject)
-
-                    if let errorMessage {
-                        Text(errorMessage)
+                        Text("예: 우리집, 신혼집 인테리어, 사무실 리모델링")
                             .font(.footnote)
-                            .foregroundStyle(SpatiumTheme.coral)
+                            .foregroundStyle(SpatiumTheme.soft)
+
+                        TextField("프로젝트 이름을 입력하세요", text: $name)
+                            .focused($isFocused)
+                            .submitLabel(.done)
+                            .padding(14)
+                            .background(SpatiumTheme.surface)
+                            .overlay(RoundedRectangle(cornerRadius: SpatiumRadius.lg).stroke(SpatiumTheme.border, lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
+                            .onSubmit(createProject)
+
+                        if let errorMessage {
+                            Text(errorMessage)
+                                .font(.footnote)
+                                .foregroundStyle(SpatiumTheme.coral)
+                                .accessibilityLabel("프로젝트 생성 실패: \(errorMessage)")
+                        }
                     }
-
-                    Spacer()
-
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(20)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .background(SpatiumTheme.background.ignoresSafeArea())
+                .safeAreaInset(edge: .bottom, spacing: 0) {
                     NewProjectCreateButton(action: createProject)
                         .disabled(isCreating || trimmedName.isEmpty)
                         .opacity(showAction ? 1 : 0)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                        .background(.thinMaterial)
                 }
-                .padding(20)
-                .background(SpatiumTheme.background.ignoresSafeArea())
                 .navigationTitle("새 프로젝트")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

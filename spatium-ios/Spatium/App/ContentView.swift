@@ -23,7 +23,13 @@ struct ContentView: View {
         let testScan = TestRoomData.scans.first(where: { $0.id == requestedScanID })
             ?? TestRoomData.scans.first
 
-        if arguments.contains("-UITestEditor"),
+        if arguments.contains("-UITestScanPreparation") {
+            // 실제 하단 시트 높이와 고정 CTA까지 RoomPlan 지원 여부와 무관하게 검증한다.
+            ScanPreparationUITestHost()
+        } else if arguments.contains("-UITestOnboarding") {
+            // 가로모드·큰 글씨 검증용: 저장된 첫 실행 여부와 무관하게 온보딩을 바로 연다.
+            OnboardingView(onFinished: {})
+        } else if arguments.contains("-UITestEditor"),
            let scan = testScan,
            let test = scan.load() {
             // 스크린샷 검증용: 로그인 없이 내장 테스트 스캔으로 3D 에디터를 바로 연다.
@@ -37,6 +43,7 @@ struct ContentView: View {
         } else if ProcessInfo.processInfo.arguments.contains("-UITestSettings")
                     || ProcessInfo.processInfo.arguments.contains("-UITestHome")
                     || ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D")
+                    || ProcessInfo.processInfo.arguments.contains("-UITestGuestRestrictions")
                     || ProcessInfo.processInfo.arguments.contains("-UITestGuestCreate") {
             // 스크린샷 검증용: 로그인 게이트를 건너뛰고 메인 탭(설정·홈·가구만들기)으로 바로 진입.
             MainTabView()
@@ -78,9 +85,29 @@ struct ContentView: View {
     }
 }
 
+#if DEBUG
+/// UI 테스트가 준비 화면을 전체 화면 뷰가 아닌 실제 presentation detent로 검증하도록 한다.
+private struct ScanPreparationUITestHost: View {
+    @State private var showsPreparation = false
+
+    var body: some View {
+        SpatiumTheme.background
+            .ignoresSafeArea()
+            .task {
+                showsPreparation = true
+            }
+            .sheet(isPresented: $showsPreparation) {
+                ScanPreparationSheet(onStart: {})
+            }
+    }
+}
+#endif
+
 struct MainTabView: View {
     @StateObject private var projectStore = ProjectStore()
     @EnvironmentObject private var userFurnitureStore: UserFurnitureStore
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var tokenStore = AuthTokenStore.shared
     @State private var selectedTab: AppTab = .home
     /// 스크롤 컨테이너가 보여줄 탭. 가구 만들기(고정 레이아웃) 탭으로 가 있는 동안에는
@@ -92,6 +119,8 @@ struct MainTabView: View {
     @State private var showNewProjectSheet = false
     @State private var shouldStartScanAfterProjectSheetDismiss = false
     @State private var scanProject: ScanProject?
+    @State private var showScanPreparation = false
+    @State private var shouldOpenScannerAfterPreparationDismiss = false
     @State private var showScanner = false
     @State private var isScanning = false
     @State private var scanReturnTab: AppTab = .home
@@ -103,16 +132,20 @@ struct MainTabView: View {
     @State private var isRefreshing = false
     @State private var exportError: String?
     @State private var uploadMessage: String?
+    @State private var guestRestriction: GuestRestrictedAction?
+    @State private var showGuestLogin = false
+
+    private var usesCompactHeight: Bool {
+        verticalSizeClass == .compact
+    }
 
     var body: some View {
         ZStack {
             ModernBackground().ignoresSafeArea()
 
-            // 가구 만들기(고정 레이아웃)와 나머지 탭(스크롤)을 if/else로 갈아끼우면
-            // 분기 교체가 transition 없이 하드 컷으로 끝난다(프레임 캡처로 확인).
-            // 두 컨테이너를 상시 겹쳐두고 opacity/scale로 전환해 다른 탭 간 이동과
-            // 동일한 페이드+스케일을 보장한다. 부수 효과로 가구 만들기 진행 상태도
-            // 탭을 오가도 유지된다.
+            // iOS 26의 safeAreaBar가 헤더·푸터의 안전 영역과 스크롤 경계 효과를
+            // 직접 관리한다. 콘텐츠를 수동으로 겹치거나 마스킹하지 않아 큰 카드가
+            // 헤더 주변에서 잘린 박스처럼 보이지 않는다.
             ZStack {
                 ScrollView {
                     VStack(spacing: 18) {
@@ -123,9 +156,9 @@ struct MainTabView: View {
                     .id("main-screen-top")
                     .frame(maxWidth: 520)
                     .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 18)
-                    .padding(.top, 18)
-                    .padding(.bottom, 28)
+                    .padding(.horizontal, usesCompactHeight ? 14 : 18)
+                    .padding(.top, usesCompactHeight ? 10 : 18)
+                    .padding(.bottom, usesCompactHeight ? 16 : 28)
                 }
                 .scrollIndicators(.hidden)
                 .refreshable {
@@ -135,14 +168,27 @@ struct MainTabView: View {
                 .scaleEffect(selectedTab == .imgTo3D ? 0.97 : 1)
                 .allowsHitTesting(selectedTab != .imgTo3D)
 
-                ImgTo3DView {
-                    selectedProjectID = nil
-                    selectedTab = .rooms
+                Group {
+                    if showsGuestRestrictions {
+                        GuestFeatureRestrictionView(
+                            title: "가구 만들기는 로그인이 필요해요",
+                            message: "게스트 모드에서는 AI 배경 제거와 3D 모델 생성을 사용할 수 없어요. 로그인 후 이용해 주세요.",
+                            onLogin: { showGuestLogin = true }
+                        )
+                    } else {
+                        ImgTo3DView(isActive: selectedTab == .imgTo3D) {
+                            selectedProjectID = nil
+                            selectedTab = .rooms
+                        }
+                    }
                 }
-                    .frame(maxWidth: 520, maxHeight: .infinity)
+                    .frame(
+                        maxWidth: usesCompactHeight ? .infinity : 520,
+                        maxHeight: .infinity
+                    )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                    .padding(.horizontal, usesCompactHeight ? 10 : 12)
+                    .padding(.vertical, usesCompactHeight ? 5 : 8)
                     .opacity(selectedTab == .imgTo3D ? 1 : 0)
                     .scaleEffect(selectedTab == .imgTo3D ? 1 : 0.97)
                     .allowsHitTesting(selectedTab == .imgTo3D)
@@ -164,16 +210,12 @@ struct MainTabView: View {
                     }
                 }
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                AppFooter(selectedTab: $selectedTab)
-            }
+            .spatiumHeaderBar(selectedTab: selectedTab)
+            .spatiumFooterBar(selectedTab: $selectedTab)
             // 가구 만들기 탭은 입력 필드가 화면 위쪽에 있어 키보드에 맞춰
             // 전체 화면과 푸터를 압축하지 않는다. 입력 모달은 fullScreenCover가
             // 자체 안전영역을 관리한다.
             .ignoresSafeArea(.keyboard, edges: selectedTab == .imgTo3D ? .bottom : [])
-            .safeAreaInset(edge: .top, spacing: 0) {
-                AppHeader(selectedTab: selectedTab)
-            }
         }
         .fullScreenCover(isPresented: $showNewProjectSheet, onDismiss: {
             if shouldStartScanAfterProjectSheetDismiss {
@@ -182,6 +224,18 @@ struct MainTabView: View {
             }
         }) {
             NewProjectSheet(onCreate: handleProjectCreated)
+        }
+        .sheet(
+            isPresented: $showScanPreparation,
+            onDismiss: {
+                guard shouldOpenScannerAfterPreparationDismiss else { return }
+                shouldOpenScannerAfterPreparationDismiss = false
+                beginRoomScan()
+            }
+        ) {
+            ScanPreparationSheet {
+                shouldOpenScannerAfterPreparationDismiss = true
+            }
         }
         .sheet(isPresented: $showScanner) {
             ScanCaptureSheet(
@@ -210,27 +264,49 @@ struct MainTabView: View {
         .sheet(isPresented: $showShareSheet, onDismiss: cleanupSharedFiles) {
             ShareSheet(activityItems: shareItems)
         }
+        .sheet(isPresented: $showGuestLogin) {
+            LoginView(onLoggedIn: {
+                showGuestLogin = false
+            })
+        }
         .tint(SpatiumTheme.accent)
         .task(id: tokenStore.accessToken) {
             await userFurnitureStore.refreshFromBackend()
         }
         .alert(
-            "요청을 완료하지 못했습니다",
+            activeErrorTitle,
             isPresented: Binding(
-                get: { flowErrorMessage != nil || projectStore.lastErrorMessage != nil },
+                get: { activeErrorMessage != nil },
                 set: { isPresented in
                     guard !isPresented else { return }
-                    flowErrorMessage = nil
-                    projectStore.lastErrorMessage = nil
+                    dismissActiveError()
                 }
             )
         ) {
-            Button("확인", role: .cancel) {
-                flowErrorMessage = nil
-                projectStore.lastErrorMessage = nil
+            if isShowingLocalPersistenceError {
+                Button("다시 시도") {
+                    // Alert가 먼저 닫힌 다음 재시도 결과를 반영해야, 다시 실패했을 때
+                    // 동일한 경고와 재시도 버튼이 정상적으로 다시 나타난다.
+                    Task { @MainActor in
+                        await Task.yield()
+                        _ = await projectStore.retryLocalPersistence()
+                    }
+                }
             }
+            // 실제 상태 정리는 alert binding의 dismiss 경로에서 한 번만 수행한다.
+            Button(isShowingLocalPersistenceError ? "나중에" : "확인", role: .cancel) {}
         } message: {
-            Text(flowErrorMessage ?? projectStore.lastErrorMessage ?? "알 수 없는 오류가 발생했습니다.")
+            Text(activeErrorMessage ?? "알 수 없는 오류가 발생했습니다.")
+        }
+        .alert(item: $guestRestriction) { restriction in
+            Alert(
+                title: Text(restriction.title),
+                message: Text(restriction.message),
+                primaryButton: .default(Text("로그인")) {
+                    showGuestLogin = true
+                },
+                secondaryButton: .cancel(Text("취소"))
+            )
         }
         #if DEBUG
         .onAppear {
@@ -238,6 +314,9 @@ struct MainTabView: View {
                 selectedTab = .settings
             }
             if ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D") {
+                selectedTab = .imgTo3D
+            }
+            if ProcessInfo.processInfo.arguments.contains("-UITestGuestRestrictions") {
                 selectedTab = .imgTo3D
             }
             // 게스트 프로젝트 생성 크래시 재현용: 게스트 상태로 로컬 프로젝트를 자동 생성한다.
@@ -263,64 +342,65 @@ struct MainTabView: View {
         #endif
     }
 
+    private var activeErrorMessage: String? {
+        flowErrorMessage
+            ?? projectStore.localPersistenceErrorMessage
+            ?? projectStore.lastErrorMessage
+    }
+
+    private var showsGuestRestrictions: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-UITestGuestRestrictions") {
+            return true
+        }
+        // 기존 가구 만들기 UI 테스트는 네트워크 없이 단계별 화면을 직접 검증한다.
+        if ProcessInfo.processInfo.arguments.contains("-UITestImgTo3D") {
+            return false
+        }
+        #endif
+        return !tokenStore.isLoggedIn
+    }
+
+    private var isShowingLocalPersistenceError: Bool {
+        flowErrorMessage == nil && projectStore.localPersistenceErrorMessage != nil
+    }
+
+    private var activeErrorTitle: String {
+        isShowingLocalPersistenceError
+            ? "기기에 저장하지 못했습니다"
+            : "요청을 완료하지 못했습니다"
+    }
+
+    /// 동시에 여러 오류가 발생해도 현재 표시 중인 오류만 닫아 다음 오류가 이어서 보이게 한다.
+    private func dismissActiveError() {
+        if flowErrorMessage != nil {
+            flowErrorMessage = nil
+        } else if projectStore.localPersistenceErrorMessage != nil {
+            projectStore.dismissLocalPersistenceError()
+        } else {
+            projectStore.lastErrorMessage = nil
+        }
+    }
+
     @ViewBuilder
     private func screen(for tab: AppTab) -> some View {
         switch tab {
         case .home:
             HomeDashboardView(
                 projects: projectStore.projects,
+                // 가구 만들기 탭에서는 홈이 opacity 0으로 계층에 남는다. 숨겨진 동안
+                // 반복 애니메이션이 CPU/GPU를 계속 쓰지 않도록 실제 표시 여부를 내려준다.
+                isActive: selectedTab == .home,
                 onStartScan: startNewProjectFlow,
                 onOpenRooms: { selectedTab = .rooms },
                 onOpenSettings: { selectedTab = .settings },
                 onOpenProject: { project in
-                    selectedProjectID = project.id
+                    openProject(project)
                     selectedTab = .rooms
-                    Task { await projectStore.loadRooms(projectID: project.id) }
                 }
             )
         case .rooms:
-            if let project = projectStore.project(withID: selectedProjectID) {
-                ProjectDetailView(
-                    project: project,
-                    onBack: { selectedProjectID = nil },
-                    onAddRoom: { startScan(for: project) },
-                    onRenameProject: { newName in
-                        Task { await projectStore.renameProject(projectID: project.id, newName: newName) }
-                    },
-                    onRenameRoom: { room, newName in
-                        Task { await projectStore.renameRoom(roomID: room.id, projectID: project.id, newName: newName) }
-                    },
-                    onDeleteProject: {
-                        let projectID = project.id
-                        Task {
-                            await projectStore.deleteProject(projectID: projectID)
-                            guard projectStore.project(withID: projectID) == nil else { return }
-                            selectedProjectID = nil
-                            if activeProjectID == projectID {
-                                activeProjectID = nil
-                                activeRoomID = nil
-                                scanProject = nil
-                            }
-                        }
-                    },
-                    onDeleteRoom: { room in
-                        Task { await projectStore.deleteRoom(roomID: room.id, projectID: project.id) }
-                    }
-                )
-            } else {
-                ProjectListView(
-                    projects: projectStore.projects,
-                    userFurniture: userFurnitureStore.items,
-                    onCreateProject: startNewProjectFlow,
-                    onOpenProject: { project in
-                        selectedProjectID = project.id
-                        Task { await projectStore.loadRooms(projectID: project.id) }
-                    },
-                    onDeleteFurniture: { furniture in
-                        try await userFurnitureStore.delete(furniture)
-                    }
-                )
-            }
+            roomsScreen
         case .scan:
             if let scanProjectValue = scanProject {
                 // Binding($scanProject) 강제 언래핑 바인딩은 리뷰 화면이 떠 있는 동안
@@ -336,6 +416,7 @@ struct MainTabView: View {
                     uploading: uploading,
                     exportError: exportError,
                     uploadMessage: uploadMessage,
+                    isGuestMode: !tokenStore.isLoggedIn,
                     onStartScan: startNewScan,
                     onExport: exportScanPackage,
                     onUpload: uploadScanPackage,
@@ -359,6 +440,94 @@ struct MainTabView: View {
 
     private var tabContentAnimation: Animation {
         .spring(response: 0.38, dampingFraction: 0.85)
+    }
+
+    @ViewBuilder
+    private var roomsScreen: some View {
+        ZStack(alignment: .topLeading) {
+            if let project = projectStore.project(withID: selectedProjectID) {
+                ProjectDetailView(
+                    project: project,
+                    onBack: closeProject,
+                    onAddRoom: { startScan(for: project) },
+                    onRenameProject: { newName in
+                        Task { await projectStore.renameProject(projectID: project.id, newName: newName) }
+                    },
+                    onRenameRoom: { room, newName in
+                        Task { await projectStore.renameRoom(roomID: room.id, projectID: project.id, newName: newName) }
+                    },
+                    onDeleteProject: {
+                        let projectID = project.id
+                        Task {
+                            await projectStore.deleteProject(projectID: projectID)
+                            guard projectStore.project(withID: projectID) == nil else { return }
+                            closeProject()
+                            if activeProjectID == projectID {
+                                activeProjectID = nil
+                                activeRoomID = nil
+                                scanProject = nil
+                            }
+                        }
+                    },
+                    onDeleteRoom: { room in
+                        Task { await projectStore.deleteRoom(roomID: room.id, projectID: project.id) }
+                    }
+                )
+                .id("project-detail-\(project.id)")
+                .transition(projectDetailTransition)
+                .zIndex(1)
+            } else {
+                ProjectListView(
+                    projects: projectStore.projects,
+                    userFurniture: userFurnitureStore.items,
+                    onCreateProject: startNewProjectFlow,
+                    onOpenProject: openProject,
+                    onDeleteFurniture: { furniture in
+                        try await userFurnitureStore.delete(furniture)
+                    }
+                )
+                .id("project-list")
+                .transition(projectListTransition)
+                .zIndex(0)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .animation(projectNavigationAnimation, value: selectedProjectID)
+        .animation(
+            projectNavigationAnimation,
+            value: projectStore.project(withID: selectedProjectID) != nil
+        )
+    }
+
+    private var projectListTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .move(edge: .leading).combined(with: .opacity)
+    }
+
+    private var projectDetailTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .move(edge: .trailing).combined(with: .opacity)
+    }
+
+    private var projectNavigationAnimation: Animation {
+        reduceMotion
+            ? .easeOut(duration: 0.18)
+            : .spring(response: 0.38, dampingFraction: 0.88)
+    }
+
+    private func openProject(_ project: SpatiumProject) {
+        withAnimation(projectNavigationAnimation) {
+            selectedProjectID = project.id
+        }
+        Task { await projectStore.loadRooms(projectID: project.id) }
+    }
+
+    private func closeProject() {
+        withAnimation(projectNavigationAnimation) {
+            selectedProjectID = nil
+        }
     }
 
     /// 홈·프로젝트·스캔·설정 탭의 공통 당겨서 새로고침 동작.
@@ -408,6 +577,11 @@ struct MainTabView: View {
             flowErrorMessage = "이 기기는 RoomPlan 방 스캔을 지원하지 않아요. LiDAR가 탑재된 iPhone 또는 iPad에서 다시 시도해 주세요."
             return
         }
+        shouldOpenScannerAfterPreparationDismiss = false
+        showScanPreparation = true
+    }
+
+    private func beginRoomScan() {
         scanReturnTab = selectedTab
         // 주의: 여기서 scanProject를 nil로 만들면 안 된다. 리뷰 화면(ScanReviewView)이
         // Binding($scanProject) 강제 언래핑 바인딩을 들고 있어서, "다시 스캔"을 누르는 순간
@@ -471,6 +645,10 @@ struct MainTabView: View {
             uploadMessage = "먼저 프로젝트를 선택/생성해 주세요."
             return
         }
+        guard tokenStore.isLoggedIn else {
+            guestRestriction = .scanUpload
+            return
+        }
         // 이미 서버 룸이 된 스캔(에디터 저장 또는 이전 업로드)은 다시 올리면 중복 룸이 생긴다.
         if let activeRoomID, !activeRoomID.hasPrefix("local-") {
             uploadMessage = "이미 서버에 저장된 스캔입니다."
@@ -522,6 +700,106 @@ struct MainTabView: View {
             try? FileManager.default.removeItem(at: url)
         }
         shareItems = []
+    }
+}
+
+private extension View {
+    /// iOS 26은 상단 크롬을 네이티브 safe-area bar로 등록해 스크롤 콘텐츠의
+    /// 배치·굴절·soft edge를 시스템에 맡긴다. 이전 버전은 Material 헤더를
+    /// 일반 safe-area inset으로 배치한다.
+    @ViewBuilder
+    func spatiumHeaderBar(selectedTab: AppTab) -> some View {
+        if #available(iOS 26.0, *) {
+            self
+                .scrollEdgeEffectStyle(.soft, for: .top)
+                .safeAreaBar(edge: .top, spacing: 6) {
+                    AppHeader(selectedTab: selectedTab)
+                }
+        } else {
+            self.safeAreaInset(edge: .top, spacing: 0) {
+                AppHeader(selectedTab: selectedTab)
+            }
+        }
+    }
+
+    /// iOS 26의 커스텀 하단 바로 등록해 스크롤 콘텐츠가 풋터 아래에서 바로 잘리거나
+    /// 글자 형태로 선명하게 비치지 않고 부드러운 blur 경계로 사라지게 한다.
+    @ViewBuilder
+    func spatiumFooterBar(selectedTab: Binding<AppTab>) -> some View {
+        if #available(iOS 26.0, *) {
+            self
+                .scrollEdgeEffectStyle(.soft, for: .bottom)
+                .safeAreaBar(edge: .bottom, spacing: 0) {
+                    AppFooter(selectedTab: selectedTab)
+                }
+        } else {
+            self.safeAreaInset(edge: .bottom, spacing: 0) {
+                AppFooter(selectedTab: selectedTab)
+            }
+        }
+    }
+}
+
+private enum GuestRestrictedAction: String, Identifiable {
+    case scanUpload
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .scanUpload: "게스트 모드에서는 업로드할 수 없어요"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .scanUpload: "스캔 파일을 서버 프로젝트에 저장하려면 로그인이 필요해요. 파일 공유와 로컬 편집은 게스트 모드에서도 사용할 수 있습니다."
+        }
+    }
+}
+
+private struct GuestFeatureRestrictionView: View {
+    let title: String
+    let message: String
+    var onLogin: () -> Void
+
+    var body: some View {
+        VStack {
+            Card {
+                VStack(spacing: 18) {
+                    Image(systemName: "person.crop.circle.badge.exclamationmark")
+                        .font(.system(size: 42, weight: .semibold))
+                        .foregroundStyle(SpatiumTheme.accent)
+                        .frame(width: 78, height: 78)
+                        .background(SpatiumTheme.warmPanel, in: Circle())
+
+                    VStack(spacing: 8) {
+                        Text(title)
+                            .font(.title3.weight(.black))
+                            .foregroundStyle(SpatiumTheme.text)
+                            .multilineTextAlignment(.center)
+                        Text(message)
+                            .font(.subheadline)
+                            .foregroundStyle(SpatiumTheme.soft)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    PrimaryButton(
+                        title: "로그인하고 사용하기",
+                        systemImage: "person.crop.circle.badge.checkmark",
+                        action: onLogin
+                    )
+                }
+                .padding(.vertical, 14)
+            }
+            .frame(maxWidth: 460)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // 컨테이너를 하나의 접근성 요소 그룹으로 유지해 식별자가 자식들로
+        // 흩어지지 않게 한다 (UI 테스트가 otherElements로 카드를 찾는다).
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("guest-img-to-3d-restriction")
     }
 }
 

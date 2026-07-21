@@ -2,24 +2,31 @@ import SwiftUI
 
 struct AppHeader: View {
     let selectedTab: AppTab
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
     @ObservedObject private var tokenStore = AuthTokenStore.shared
     @ObservedObject private var currentUser = CurrentUserStore.shared
 
     @State private var showLoginSheet = false
     @State private var showProfileSheet = false
 
+    private var usesCompactHeight: Bool {
+        verticalSizeClass == .compact
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
-            BrandMark(size: 24)
+        HStack(spacing: usesCompactHeight ? 9 : 12) {
+            BrandMark(size: usesCompactHeight ? 21 : 24)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(selectedTab == .home ? "SPATIUM" : selectedTab.title)
-                    .font(.title3.weight(.black))
+                    .font((usesCompactHeight ? Font.headline : Font.title3).weight(.black))
                     .foregroundStyle(SpatiumTheme.text)
-                Text(selectedTab == .home ? "3D 공간 인테리어" : "SPATIUM · 3D 인테리어")
-                    .font(.caption2.weight(.bold))
-                    .tracking(0.5)
-                    .foregroundStyle(SpatiumTheme.soft)
+                if !usesCompactHeight {
+                    Text(selectedTab == .home ? "3D 공간 인테리어" : "SPATIUM · 3D 인테리어")
+                        .font(.caption2.weight(.bold))
+                        .tracking(0.5)
+                        .foregroundStyle(SpatiumTheme.soft)
+                }
             }
 
             Spacer()
@@ -27,16 +34,18 @@ struct AppHeader: View {
             // Login Status Badge on the top right
             loginStatusBadge
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
+        .padding(.horizontal, usesCompactHeight ? 14 : 20)
+        .padding(.vertical, usesCompactHeight ? 6 : 12)
         .frame(maxWidth: .infinity)
-        .background(SpatiumTheme.chromeSurface)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(SpatiumTheme.border.opacity(0.7))
-                .frame(height: 0.5)
-        }
+        .spatiumChromeGlass(
+            cornerRadius: usesCompactHeight ? 18 : 24,
+            stabilizesBackgroundColor: true
+        )
+        .padding(.horizontal, usesCompactHeight ? 8 : 10)
+        .padding(.top, usesCompactHeight ? 3 : 5)
+        .padding(.bottom, 2)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("app-header")
         .animation(.default, value: selectedTab)
         .task { await currentUser.refreshIfNeeded() }
         .onChange(of: tokenStore.isLoggedIn) { _, isLoggedIn in
