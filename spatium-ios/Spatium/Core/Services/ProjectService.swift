@@ -253,6 +253,7 @@ struct ProjectService {
         var roomName: String
         var items: [EditableScanItem]
         var usdzURL: URL?
+        var wallColor: String?
         var floorColor: String?
     }
 
@@ -288,6 +289,7 @@ struct ProjectService {
             roomName: data.roomName,
             items: items,
             usdzURL: usdzURL,
+            wallColor: data.metadata?.wallColor,
             floorColor: data.metadata?.floorColor
         )
     }

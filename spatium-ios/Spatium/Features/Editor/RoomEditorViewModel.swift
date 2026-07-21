@@ -174,6 +174,7 @@ final class RoomEditorViewModel: ObservableObject {
         scanItems: [EditableScanItem],
         roomName: String,
         usdzURL: URL?,
+        initialWallColor: String? = nil,
         initialFloorColor: String? = nil,
         area: Double,
         ceilingHeight: Double,
@@ -211,6 +212,7 @@ final class RoomEditorViewModel: ObservableObject {
                 name: roomName,
                 area: max(area, 4),
                 ceilingHeight: ceilingHeight,
+                wallColor: initialWallColor,
                 floorColor: initialFloorColor
             ),
             furnitures: []
@@ -352,11 +354,13 @@ final class RoomEditorViewModel: ObservableObject {
         var doors: [FrontendRoomObject] = []
         var windows: [FrontendRoomObject] = []
         var openings: [FrontendRoomObject] = []
+        var wallColor: String?
         var floorColor: String?
         var editedObjects: [EditableScanItem]
 
         enum CodingKeys: String, CodingKey {
             case objects, doors, windows, openings, editedObjects
+            case wallColor = "_spatiumWallColor"
             case floorColor = "_spatiumFloorColor"
         }
     }
@@ -450,7 +454,8 @@ final class RoomEditorViewModel: ObservableObject {
 
     /// 현재 편집된 가구 배치를 서버 metadata(JSON)로 내보낸다. 앱은 `editedObjects`를
     /// 우선 읽고, 프런트엔드는 `objects/doors/windows`를 읽으므로 두 표현을 함께 기록한다.
-    private func exportEditedMetadata() throws -> URL {
+    /// (internal: 벽·바닥 색 왕복 저장 계약을 유닛 테스트로 고정하기 위해 노출)
+    func exportEditedMetadata() throws -> URL {
         let editedObjects: [EditableScanItem] = layout.furnitures.map { f in
             // 앱 전용 EditableScanItem에는 scale 필드가 없으므로 현재 표시 치수에
             // scale을 반영해 저장한다. 다시 열 때 scale 1로 복원돼도 크기는 같다.
@@ -483,6 +488,7 @@ final class RoomEditorViewModel: ObservableObject {
             objects: objects.map(FrontendRoomObject.init),
             doors: doors.map(FrontendRoomObject.init),
             windows: windows.map(FrontendRoomObject.init),
+            wallColor: layout.space?.wallColor,
             floorColor: layout.space?.floorColor,
             editedObjects: editedObjects
         )

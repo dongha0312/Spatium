@@ -8,11 +8,14 @@ nonisolated struct RoomPlanExportJSON: Decodable, Sendable {
     let windows: [FrontendRoomObject]
     /// 사용자가 편집기에서 확정한 객체(이동/회전/교체/추가/삭제 반영). 있으면 이걸 우선 사용한다.
     let editedObjects: [EditableScanItem]?
+    /// 앱이 저장하는 선택 벽 색. 없으면 원본 USDZ 벽 재질을 유지합니다.
+    let wallColor: String?
     /// 프런트엔드가 저장하는 선택 바닥색. 없으면 원본 USDZ 바닥 재질을 유지합니다.
     let floorColor: String?
 
     enum CodingKeys: String, CodingKey {
         case objects, doors, windows, editedObjects
+        case wallColor = "_spatiumWallColor"
         case floorColor = "_spatiumFloorColor"
     }
 
@@ -22,6 +25,7 @@ nonisolated struct RoomPlanExportJSON: Decodable, Sendable {
         doors = (try? c.decode([FrontendRoomObject].self, forKey: .doors)) ?? []
         windows = (try? c.decode([FrontendRoomObject].self, forKey: .windows)) ?? []
         editedObjects = try? c.decode([EditableScanItem].self, forKey: .editedObjects)
+        wallColor = try? c.decode(String.self, forKey: .wallColor)
         floorColor = try? c.decode(String.self, forKey: .floorColor)
     }
 

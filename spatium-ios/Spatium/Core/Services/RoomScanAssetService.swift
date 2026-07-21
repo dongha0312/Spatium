@@ -3,11 +3,13 @@ import Foundation
 nonisolated struct RoomScanPackage: Sendable {
     var items: [EditableScanItem]
     var usdzURL: URL?
+    var wallColor: String?
     var floorColor: String?
 }
 
 private nonisolated struct RoomScanDecodedMetadata: Sendable {
     var items: [EditableScanItem]
+    var wallColor: String?
     var floorColor: String?
 }
 
@@ -85,6 +87,7 @@ private nonisolated final class RoomScanAssetDiskStore: @unchecked Sendable {
             }
             return RoomScanDecodedMetadata(
                 items: export.items(),
+                wallColor: export.wallColor,
                 floorColor: export.floorColor
             )
         }
@@ -206,19 +209,22 @@ nonisolated struct RoomScanAssetService: Sendable {
         }
 
         let items: [EditableScanItem]
+        let wallColor: String?
         let floorColor: String?
         if let localJSONURL {
             guard let metadata = try await diskStore.decodeMetadata(at: localJSONURL) else {
                 throw LoadError.invalidJSON
             }
             items = metadata.items
+            wallColor = metadata.wallColor
             floorColor = metadata.floorColor
         } else {
             items = []
+            wallColor = nil
             floorColor = nil
         }
 
-        return RoomScanPackage(items: items, usdzURL: localUSDZURL, floorColor: floorColor)
+        return RoomScanPackage(items: items, usdzURL: localUSDZURL, wallColor: wallColor, floorColor: floorColor)
     }
 
     /// 방 목록 표시용 항목 개수. 스캔 JSON만 내려받아 파싱합니다. (무거운 USDZ는 받지 않음)
