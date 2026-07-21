@@ -10,7 +10,6 @@ import "../../styles/imgto3d.css";
 
 import AccountPanel from "../../components/AccountPanel";
 import AvatarButton from "../../components/AvatarButton";
-import Footer from "../../components/Footer";
 import Header from "../../components/Header";
 import { getLoginSession } from "../../utils/authSession";
 import { getMyInfo } from "../../springApi/MemberSpringBootApi";
@@ -433,8 +432,6 @@ function ImgTo3dPage() {
           </footer>
         </div>
       </main>
-
-      <Footer />
 
       {/* 닉네임 클릭 시 열리는 "내 정보" 우측 패널 */}
       <AccountPanel
