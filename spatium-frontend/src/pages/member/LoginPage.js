@@ -44,9 +44,11 @@ function LoginPage({ onLoginSuccess }) {
   const navigate = useNavigate();
 
   // Apple JS SDK(index.html에서 <script async>로 불러옴)는 로드 시점이 보장되지
-  // 않으므로, 준비될 때까지 짧게 폴링한 뒤 초기화한다.
+  // 않으므로, 준비될 때까지 짧게 폴링한 뒤 초기화한다. (최대 5초, 25회 재시도)
   useEffect(() => {
     let cancelled = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 25;
 
     const initAppleAuth = () => {
       if (cancelled) return;
@@ -61,7 +63,16 @@ function LoginPage({ onLoginSuccess }) {
         return;
       }
 
-      // SDK가 아직 로드되지 않았으면 잠시 후 다시 시도 (최대 약 5초)
+      attempts += 1;
+      if (attempts >= MAX_ATTEMPTS) {
+        // 광고 차단 확장 프로그램이나 네트워크 문제로 SDK가 끝내 안 불러와진 경우
+        console.error(
+          "Apple JS SDK를 불러오지 못했습니다. (appleid.cdn-apple.com 접근 여부 확인 필요)",
+        );
+        return;
+      }
+
+      // SDK가 아직 로드되지 않았으면 잠시 후 다시 시도
       setTimeout(initAppleAuth, 200);
     };
 
