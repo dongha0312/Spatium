@@ -125,6 +125,31 @@ struct UserSummary: Decodable {
     var profileImageUrl: String?
 }
 
+/// 앱 재실행 직후에도 헤더가 서버 응답을 기다리지 않고 로그인 사용자를 표시하기 위한
+/// 최소 캐시입니다. 프로필 이미지(data URL일 수 있음)와 생년월일 등은 저장하지 않습니다.
+struct CachedUserIdentity: Codable, Equatable {
+    var userId: BackendID
+    var email: String
+    var nickname: String
+
+    init(user: UserSummary) {
+        userId = user.userId
+        email = user.email
+        nickname = user.nickname
+    }
+
+    init(profile: UserProfile) {
+        userId = profile.userId
+        email = profile.email
+        nickname = profile.nickname
+    }
+
+    var displayName: String? {
+        if !nickname.isEmpty { return nickname }
+        return email.split(separator: "@").first.map(String.init)
+    }
+}
+
 /// 로그인/소셜로그인 성공 응답(LoginResponse).
 struct LoginResponseData: Decodable {
     var accessToken: String

@@ -41,7 +41,7 @@ struct AuthService {
             method: "POST", path: "/api/auth/sessions", body: body, requiresAuth: false
         )
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
-        tokenStore.save(try makeTokens(from: data))
+        tokenStore.save(try makeTokens(from: data), user: data.user)
         return data.user
     }
 
@@ -87,7 +87,10 @@ struct AuthService {
                 nickname: request.provider == .apple ? "Apple 스페이스" : "Google 스페이스",
                 profileImageUrl: nil
             )
-            tokenStore.save(AuthTokens(accessToken: "mock_access_token", refreshToken: "mock_refresh_token"))
+            tokenStore.save(
+                AuthTokens(accessToken: "mock_access_token", refreshToken: "mock_refresh_token"),
+                user: dummyUser
+            )
             return dummyUser
         }
         #endif
@@ -98,7 +101,7 @@ struct AuthService {
             method: "POST", path: "/api/auth/social-sessions", body: request, requiresAuth: false
         )
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
-        tokenStore.save(try makeTokens(from: data))
+        tokenStore.save(try makeTokens(from: data), user: data.user)
         return data.user
     }
 
@@ -135,7 +138,7 @@ struct AuthService {
         guard let data = envelope.data else { throw SpatiumAPIError.decoding(URLError(.cannotParseResponse)) }
         // rotation된 새 refreshToken도 쿠키로만 오므로 쿠키에서 갱신값을 읽는다.
         let tokens = try makeTokens(from: data)
-        tokenStore.save(tokens)
+        tokenStore.save(tokens, user: data.user)
         return tokens
     }
 
