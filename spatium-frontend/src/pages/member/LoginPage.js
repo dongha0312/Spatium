@@ -14,7 +14,7 @@ import Header from "../../components/Header";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Apple Developer 콘솔(Service ID)에 등록된 값과 정확히 일치해야 함
-const APPLE_CLIENT_ID = "name.dongharyu.Spatium";
+const APPLE_CLIENT_ID = "name.dongharyu.spatium.auth";
 const APPLE_REDIRECT_URI = "https://spatium.kro.kr/auth/apple/callback";
 
 // ID Token(JWT)의 payload를 디코딩 (화면 표시용 - 실제 검증은 백엔드가 수행)
