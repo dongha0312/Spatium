@@ -47,6 +47,10 @@ enum ProfileAvatarImagePreprocessor {
               !Task.isCancelled else {
             return nil
         }
+        // JPEG는 알파를 지원하지 않는다. 알파 채널이 있는 원본(PNG·스크린샷 등)을 그대로 넘기면
+        // ImageIO가 "ignoring alpha" 경고와 함께 디코딩 메모리를 2배로 잡으므로,
+        // 인코딩 전에 불투명 비트맵으로 한 번 정리한다.
+        let encodableImage = makeOpaque(thumbnail)
 
         let encoded = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(
@@ -60,13 +64,41 @@ enum ProfileAvatarImagePreprocessor {
         let destinationOptions: [CFString: Any] = [
             kCGImageDestinationLossyCompressionQuality: jpegCompressionQuality
         ]
-        CGImageDestinationAddImage(destination, thumbnail, destinationOptions as CFDictionary)
+        CGImageDestinationAddImage(destination, encodableImage, destinationOptions as CFDictionary)
         guard CGImageDestinationFinalize(destination), !Task.isCancelled else { return nil }
 
         return Prepared(
-            previewImage: UIImage(cgImage: thumbnail),
+            previewImage: UIImage(cgImage: encodableImage),
             uploadData: encoded as Data
         )
+    }
+
+    /// 알파 채널이 있는 이미지를 불투명 RGB 비트맵으로 다시 그린다.
+    /// 이미 불투명하면 원본을 그대로 돌려주어 불필요한 재그리기를 하지 않는다.
+    nonisolated static func makeOpaque(_ image: CGImage) -> CGImage {
+        switch image.alphaInfo {
+        case .none, .noneSkipFirst, .noneSkipLast:
+            return image
+        default:
+            break
+        }
+        guard let context = CGContext(
+            data: nil,
+            width: image.width,
+            height: image.height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        ) else {
+            return image
+        }
+        // 투명 영역이 검게 나오지 않도록 흰 배경 위에 합성한다.
+        let bounds = CGRect(x: 0, y: 0, width: image.width, height: image.height)
+        context.setFillColor(UIColor.white.cgColor)
+        context.fill(bounds)
+        context.draw(image, in: bounds)
+        return context.makeImage() ?? image
     }
 }
 
@@ -213,6 +245,22 @@ struct ProfileEditView: View {
                     .clipShape(Circle())
                 }
             }
+            // 사진 보관함 원본을 읽어 줄이고 업로드하는 동안 아바타 자리에 진행 표시를 둔다.
+            // (없으면 큰 원본에서 몇 초간 아무 반응이 없는 것처럼 보인다)
+            .overlay {
+                if isLoading {
+                    ZStack {
+                        Circle().fill(.black.opacity(0.4))
+                        ProgressView()
+                            .tint(.white)
+                    }
+                    .frame(width: 86, height: 86)
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.15), value: isLoading)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(isLoading ? "프로필 사진 변경 중" : "프로필 사진")
             .overlay(alignment: .bottomTrailing) {
                 PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                     Image(systemName: "camera.fill")
