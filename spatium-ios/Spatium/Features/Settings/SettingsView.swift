@@ -59,8 +59,6 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            SettingsAppHeader()
-
             AccountSection()
 
             StorageSection()
@@ -406,26 +404,6 @@ private struct DeveloperSettingsSheet: View {
 }
 #endif
 
-private struct SettingsAppHeader: View {
-    var body: some View {
-        HStack(spacing: 14) {
-            BrandMark(size: 58)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Spatium")
-                    .font(.title3.weight(.black))
-                    .foregroundStyle(SpatiumTheme.text)
-                Text("공간 스캔 및 3D 업로드")
-                    .font(.subheadline)
-                    .foregroundStyle(SpatiumTheme.soft)
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, 2)
-    }
-}
-
 private struct SettingsGroup<Content: View>: View {
     let title: String
     @ViewBuilder var content: Content
@@ -468,7 +446,7 @@ private struct EndpointEditor: View {
                 Spacer()
             }
 
-            TextField("http://서버IP:8080", text: $springBaseURLString)
+            TextField("https://spatium.kro.kr", text: $springBaseURLString)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -491,7 +469,7 @@ private struct EndpointEditor: View {
                 Spacer()
             }
 
-            TextField("http://서버IP:3000", text: $furnitureAssetBaseURLString)
+            TextField("https://spatium.kro.kr", text: $furnitureAssetBaseURLString)
                 .keyboardType(.URL)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()

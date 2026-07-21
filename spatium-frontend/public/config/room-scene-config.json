@@ -58,7 +58,7 @@
   },
   "debug": {
     "showReferenceLabels": false,
-    "showCameraAngle": true
+    "showCameraAngle": false
   },
   "wallConstraints": {
     "collisionEpsilon": 0,

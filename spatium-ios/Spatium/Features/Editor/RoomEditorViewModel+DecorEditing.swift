@@ -22,6 +22,10 @@ extension RoomEditorViewModel {
 
     func beginDecorating() {
         guard let item = selectedFurniture, Self.isDecoratable(item) else { return }
+        guard viewMode == .threeD else {
+            statusMessage = "스카이뷰를 끈 뒤 책장 꾸미기를 시작해 주세요"
+            return
+        }
         decoratingItemID = item.itemId
         decorShelfLevels = Self.fallbackDecorShelfLevels(for: item)
         selectedItemID = nil
@@ -33,11 +37,18 @@ extension RoomEditorViewModel {
     }
 
     func endDecorating() {
+        let finishedItemID = decoratingItemID
         decoratingItemID = nil
         decorShelfLevels = []
         pendingFigure = nil
         selectedDecorID = nil
         statusMessage = nil
+        // 프런트엔드는 꾸미기 완료 후 대상 책장을 다시 선택한다. 앱도 같은 흐름으로
+        // 복귀해야 사용자가 곧바로 책장을 이동·교체하거나 다시 꾸밀 수 있다.
+        if let finishedItemID,
+           layout.furnitures.contains(where: { $0.itemId == finishedItemID }) {
+            selectedItemID = finishedItemID
+        }
     }
 
     static func figureDimensions(for item: FurnitureCatalogItem) -> (width: Double, height: Double, depth: Double) {
@@ -55,11 +66,18 @@ extension RoomEditorViewModel {
             .caseInsensitiveCompare("figure") == .orderedSame
     }
 
+    /// 프런트엔드 3dEditor의 꾸미기 카탈로그 규칙과 동일하게, 기본 카탈로그는
+    /// figure 카테고리만 허용하고 사용자가 만든 모델은 저장 카테고리와 무관하게 허용한다.
+    /// 큰 사용자 모델은 `figureDimensions(for:)`에서 최대 35cm로 비율 축소된다.
+    static func isDecorCatalogItem(_ item: FurnitureCatalogItem) -> Bool {
+        item.source == .user || isDecorFigure(item)
+    }
+
     func prepareDecorPlacement(_ item: FurnitureCatalogItem) {
         guard isDecorating else { return }
-        guard Self.isDecorFigure(item) else {
+        guard Self.isDecorCatalogItem(item) else {
             pendingFigure = nil
-            statusMessage = "꾸미기 책장에는 피규어만 올릴 수 있어요"
+            statusMessage = "꾸미기 책장에는 사용자 소품이나 피규어만 올릴 수 있어요"
             return
         }
         selectedDecorID = nil
@@ -70,20 +88,14 @@ extension RoomEditorViewModel {
     func placePendingFigure(atLocal position: FurnitureTransform.Vector3) {
         guard let decoratingItemID, let pendingFigure,
               let index = layout.furnitures.firstIndex(where: { $0.itemId == decoratingItemID }) else { return }
-        guard Self.isDecorFigure(pendingFigure) else {
+        guard Self.isDecorCatalogItem(pendingFigure) else {
             self.pendingFigure = nil
-            statusMessage = "꾸미기 책장에는 피규어만 올릴 수 있어요"
+            statusMessage = "꾸미기 책장에는 사용자 소품이나 피규어만 올릴 수 있어요"
             return
         }
+        guard Self.isFiniteDecorPosition(position) else { return }
         recordHistoryStep()
         let dims = Self.figureDimensions(for: pendingFigure)
-        let safePosition = clampedDecorPosition(
-            position,
-            itemWidth: dims.width,
-            itemDepth: dims.depth,
-            scale: 1,
-            furniture: layout.furnitures[index]
-        )
         let decoration = PlacedDecoration(
             decorId: nextDecorID,
             name: pendingFigure.name,
@@ -91,9 +103,12 @@ extension RoomEditorViewModel {
             width: dims.width,
             height: dims.height,
             depth: dims.depth,
-            position: safePosition,
+            position: position,
             rotationY: 0,
-            scale: 1
+            scale: 1,
+            catalogId: pendingFigure.id,
+            category: pendingFigure.category,
+            modelPath: pendingFigure.modelPath
         )
         nextDecorID += 1
         layout.furnitures[index].decorations = (layout.furnitures[index].decorations ?? []) + [decoration]
@@ -113,16 +128,9 @@ extension RoomEditorViewModel {
     func moveSelectedDecor(toLocal position: FurnitureTransform.Vector3) {
         guard let indices = selectedDecorIndices() else { return }
         guard let decoration = layout.furnitures[indices.furniture].decorations?[indices.decor] else { return }
-        let safePosition = clampedDecorPosition(
-            position,
-            itemWidth: decoration.width,
-            itemDepth: decoration.depth,
-            scale: decoration.scale,
-            furniture: layout.furnitures[indices.furniture]
-        )
-        guard decoration.position != safePosition else { return }
+        guard Self.isFiniteDecorPosition(position), decoration.position != position else { return }
         recordHistoryStep()
-        layout.furnitures[indices.furniture].decorations?[indices.decor].position = safePosition
+        layout.furnitures[indices.furniture].decorations?[indices.decor].position = position
         markLayoutChanged()
         statusMessage = nil
         sceneRevision += 1
@@ -130,14 +138,20 @@ extension RoomEditorViewModel {
 
     func nudgeSelectedDecor(deltaX: Double, deltaZ: Double) {
         guard deltaX.isFinite, deltaZ.isFinite,
-              let decoration = selectedDecoration else { return }
-        moveSelectedDecor(
-            toLocal: .init(
+              let indices = selectedDecorIndices(),
+              let decoration = layout.furnitures[indices.furniture].decorations?[indices.decor] else { return }
+        let safePosition = clampedDecorPosition(
+            .init(
                 x: decoration.position.x + deltaX,
                 y: decoration.position.y,
                 z: decoration.position.z + deltaZ
-            )
+            ),
+            itemWidth: decoration.width,
+            itemDepth: decoration.depth,
+            scale: decoration.scale,
+            furniture: layout.furnitures[indices.furniture]
         )
+        moveSelectedDecor(toLocal: safePosition)
     }
 
     func moveSelectedDecor(to shelf: DecorShelfLevel) {
@@ -211,19 +225,12 @@ extension RoomEditorViewModel {
     func replaceSelectedDecor(with item: FurnitureCatalogItem) {
         guard let indices = selectedDecorIndices(),
               let current = layout.furnitures[indices.furniture].decorations?[indices.decor] else { return }
-        guard Self.isDecorFigure(item) else {
-            statusMessage = "꾸미기 책장에는 피규어만 올릴 수 있어요"
+        guard Self.isDecorCatalogItem(item) else {
+            statusMessage = "꾸미기 책장에는 사용자 소품이나 피규어만 올릴 수 있어요"
             return
         }
         recordHistoryStep()
         let dimensions = Self.figureDimensions(for: item)
-        let position = clampedDecorPosition(
-            current.position,
-            itemWidth: dimensions.width,
-            itemDepth: dimensions.depth,
-            scale: 1,
-            furniture: layout.furnitures[indices.furniture]
-        )
         layout.furnitures[indices.furniture].decorations?[indices.decor] = PlacedDecoration(
             decorId: current.decorId,
             name: item.name,
@@ -231,9 +238,14 @@ extension RoomEditorViewModel {
             width: dimensions.width,
             height: dimensions.height,
             depth: dimensions.depth,
-            position: position,
+            // 프런트엔드 replaceSelectedFigure와 같이 기존 바닥 지지점은 그대로 유지한다.
+            // 새 모델이 더 커도 위치를 다시 중앙 쪽으로 당기지 않아 교체 전후가 튀지 않는다.
+            position: current.position,
             rotationY: current.rotationY,
-            scale: 1
+            scale: 1,
+            catalogId: item.id,
+            category: item.category,
+            modelPath: item.modelPath
         )
         markLayoutChanged()
         statusMessage = nil
@@ -324,6 +336,10 @@ extension RoomEditorViewModel {
               let decorIndex = layout.furnitures[furnitureIndex].decorations?
                   .firstIndex(where: { $0.decorId == selectedDecorID }) else { return nil }
         return (furnitureIndex, decorIndex)
+    }
+
+    private static func isFiniteDecorPosition(_ position: FurnitureTransform.Vector3) -> Bool {
+        position.x.isFinite && position.y.isFinite && position.z.isFinite
     }
 
     private func horizontalPositionDescription(_ x: Double) -> String {

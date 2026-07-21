@@ -100,6 +100,41 @@ final class SpatiumUITests: XCTestCase {
     }
 
     @MainActor
+    func testScanPreparationExplainsOneRoomPerScan() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestScanPreparation"]
+        app.launch()
+
+        XCTAssertTrue(
+            app.descendants(matching: .any)["scan-one-room-guidance"].waitForExistence(timeout: 8)
+        )
+        XCTAssertTrue(app.staticTexts["한 번에 방 하나만 스캔해 주세요"].exists)
+        XCTAssertTrue(app.staticTexts["한 방 = 스캔 1회"].exists)
+        XCTAssertTrue(app.staticTexts["현재 방 안에서만 이동하기"].exists)
+        XCTAssertTrue(app.staticTexts["다른 방은 새 스캔으로 시작하기"].exists)
+        XCTAssertTrue(app.buttons["scan-preparation-close-button"].isHittable)
+        XCTAssertTrue(app.buttons["scan-preparation-start-button"].isHittable)
+    }
+
+    @MainActor
+    func testScanPreparationKeepsStartActionVisibleAtAccessibilityTextSize() throws {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "-UITestScanPreparation",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"
+        ]
+        app.launchEnvironment["UIPreferredContentSizeCategoryName"] = "UICTContentSizeCategoryAccessibilityXXXL"
+        app.launch()
+
+        let guidance = app.descendants(matching: .any)["scan-one-room-guidance"]
+        let startButton = app.buttons["scan-preparation-start-button"]
+        XCTAssertTrue(guidance.waitForExistence(timeout: 8))
+        XCTAssertTrue(startButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(startButton.isHittable)
+        XCTAssertLessThanOrEqual(startButton.frame.maxY, app.windows.firstMatch.frame.maxY)
+    }
+
+    @MainActor
     func testRoomCatalogShowsUserFurnitureAndOtherCategories() throws {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -205,12 +240,23 @@ final class SpatiumUITests: XCTestCase {
         beforePlacement.lifetime = .keepAlways
         add(beforePlacement)
 
-        // 정면 카메라에서 보이는 가운데 선반의 윗면을 직접 탭한다. 별도 칸 버튼 없이
+        // 정면 카메라에서 보이는 선반의 "윗면"을 직접 탭한다. 별도 칸 버튼 없이
         // 프런트와 같은 카탈로그 선택 → 3D 선반 탭 흐름으로 배치되어야 한다.
-        app.windows.firstMatch
-            .coordinate(withNormalizedOffset: CGVector(dx: 0.47, dy: 0.35))
-            .tap()
+        // 배치는 윗면(법선 Y ≥ 0.7)에서만 성립하므로, 카메라 프레이밍이 조금
+        // 바뀌어도 견디도록 보이는 선반 상판 후보 지점을 순서대로 시도한다.
         let selectionControls = app.descendants(matching: .any)["decor-selection-controls"]
+        let shelfTopCandidates: [CGVector] = [
+            CGVector(dx: 0.47, dy: 0.484), // 가운데 선반 상판
+            CGVector(dx: 0.47, dy: 0.326), // 위 선반 상판
+            CGVector(dx: 0.52, dy: 0.49),
+            CGVector(dx: 0.42, dy: 0.48),
+        ]
+        for candidate in shelfTopCandidates where !selectionControls.exists {
+            app.windows.firstMatch
+                .coordinate(withNormalizedOffset: candidate)
+                .tap()
+            _ = selectionControls.waitForExistence(timeout: 2)
+        }
         XCTAssertTrue(selectionControls.waitForExistence(timeout: 5))
         XCTAssertFalse(placementBanner.exists)
         XCTAssertTrue(app.buttons["decor-shelf-menu"].exists)
@@ -317,8 +363,16 @@ final class SpatiumUITests: XCTestCase {
                 .waitForExistence(timeout: 5)
         )
         XCTAssertTrue(app.buttons["decor-move-left"].exists)
-        controls.swipeUp()
-        XCTAssertTrue(app.buttons["소품 만들기"].waitForExistence(timeout: 3))
+        // 소품이 선택된 상태에서는 카탈로그가 숨겨지고 위치 조절 컨트롤만 보인다.
+        // "교체"를 눌러 교체 모드로 들어가면 카탈로그가 다시 나타나며,
+        // 큰 글씨에서는 컨트롤 목록이 길어져 카탈로그의 "소품 만들기"까지
+        // 세로 스크롤해야 도달한다 — 스크롤로 도달 가능함을 검증한다.
+        app.buttons["교체"].tap()
+        let createFigureButton = app.buttons["소품 만들기"]
+        for _ in 0..<5 where !createFigureButton.exists {
+            controls.swipeUp()
+        }
+        XCTAssertTrue(createFigureButton.waitForExistence(timeout: 3))
     }
 
     @MainActor
@@ -365,7 +419,8 @@ final class SpatiumUITests: XCTestCase {
         XCTAssertLessThanOrEqual(header.frame.height, 50)
         // iPhone 가로모드의 홈 인디케이터 안전영역까지 포함한 전체 푸터 높이입니다.
         XCTAssertLessThanOrEqual(footer.frame.height, 60)
-        XCTAssertGreaterThanOrEqual(header.frame.minY, windowFrame.minY)
+        // Liquid Glass 헤더 배경이 가로모드 안전영역 위로 1~2pt 번지는 것은 허용한다.
+        XCTAssertGreaterThanOrEqual(header.frame.minY, windowFrame.minY - 2)
         XCTAssertLessThanOrEqual(footer.frame.maxY, windowFrame.maxY)
         XCTAssertLessThan(header.frame.maxY, footer.frame.minY)
         XCTAssertTrue(app.buttons["프로젝트"].isHittable)

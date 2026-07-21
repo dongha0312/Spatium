@@ -21,15 +21,72 @@ struct RoomEditorSceneView: UIViewRepresentable {
         return normal.y / length >= 0.7
     }
 
-    /// 꾸미기 책장 모델은 열린 선반 면이 로컬 +Z를 향하도록 제작되어 있다.
-    /// 방 중심 위치와 무관하게 이 축을 그대로 사용해야 배치/회전된 책장의 뒤판으로
-    /// 카메라가 뒤집히지 않는다.
+    /// 앱의 editable_bookcase GLB는 열린 선반 면이 항상 로컬 +Z다. 가구의 현재
+    /// 회전으로 변환된 이 축을 그대로 사용해야 방 중심 위치와 무관하게 뒤판으로 뒤집히지 않는다.
     static func decorFrontDirection(from worldLocalPositiveZ: SCNVector3) -> SIMD2<Float> {
         var direction = SIMD2(worldLocalPositiveZ.x, worldLocalPositiveZ.z)
         let length = simd_length(direction)
         guard length.isFinite, length > 0.001 else { return SIMD2(0, 1) }
         direction /= length
         return direction
+    }
+
+    /// 프런트엔드 `computeDecorView`의 투영 기반 거리 계산. 세로 FOV와 화면 비율에
+    /// 책장 OBB의 가로·세로가 모두 들어오도록 맞춘 뒤 1.2배 여백과 깊이를 더한다.
+    static func decorCameraDistance(
+        halfWidth: Float,
+        halfHeight: Float,
+        halfDepth: Float,
+        verticalFieldOfViewDegrees: Float,
+        aspectRatio: Float
+    ) -> Float {
+        let halfFOV = max(verticalFieldOfViewDegrees, 1) * .pi / 360
+        let halfFOVTangent = max(tanf(halfFOV), 0.001)
+        let aspect = max(aspectRatio, 0.5)
+        let fitDistance = max(
+            max(halfHeight, 0) / halfFOVTangent,
+            max(halfWidth, 0) / (halfFOVTangent * aspect)
+        )
+        return max(fitDistance * 1.2 + max(halfDepth, 0), 0.8)
+    }
+
+    /// 프런트엔드 `constrainedSupportPoint`의 순수 계산 부분. 요청 이동을 2cm 단위로
+    /// 나누고 지지면이 끊기는 지점에서는 X/Z를 따로 시도해 선반 가장자리를 따라 미끄러진다.
+    static func constrainedDecorSupportPoint(
+        from current: SIMD3<Float>,
+        toward requested: SIMD3<Float>,
+        supportHeight: (_ x: Float, _ z: Float, _ nearY: Float) -> Float?
+    ) -> SIMD3<Float> {
+        var position = current
+        let totalX = requested.x - current.x
+        let totalZ = requested.z - current.z
+        let distance = hypotf(totalX, totalZ)
+        guard distance.isFinite, distance >= 0.000_001 else { return current }
+
+        let stepCount = min(max(1, Int(ceilf(distance / 0.02))), 64)
+        let stepX = totalX / Float(stepCount)
+        let stepZ = totalZ / Float(stepCount)
+
+        for _ in 0..<stepCount {
+            if let height = supportHeight(position.x + stepX, position.z + stepZ, position.y) {
+                position.x += stepX
+                position.z += stepZ
+                position.y = height
+                continue
+            }
+            if let height = supportHeight(position.x + stepX, position.z, position.y) {
+                position.x += stepX
+                position.y = height
+                continue
+            }
+            if let height = supportHeight(position.x, position.z + stepZ, position.y) {
+                position.z += stepZ
+                position.y = height
+                continue
+            }
+            break
+        }
+        return position
     }
 
     func makeUIView(context: Context) -> SCNView {
@@ -49,7 +106,13 @@ struct RoomEditorSceneView: UIViewRepresentable {
             let size = view.bounds.size
             guard size.width > 0, size.height > 0, coordinator.cameraLayoutSize != size else { return }
             coordinator.cameraLayoutSize = size
-            coordinator.applyCamera(mode: coordinator.viewModel.viewMode, animated: false)
+            if coordinator.viewModel.isDecorating {
+                // 꾸미기 전환 중에는 진행 중인 애니메이션을 건드리지 않고, 전환이 끝난 뒤의
+                // 회전·멀티태스킹 크기 변경만 새 화면 비율에 맞춰 다시 프레이밍한다.
+                _ = coordinator.refitDecorCameraForCurrentLayout()
+            } else {
+                coordinator.applyCamera(mode: coordinator.viewModel.viewMode, animated: false)
+            }
         }
 
         let tap = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
@@ -63,6 +126,26 @@ struct RoomEditorSceneView: UIViewRepresentable {
         pan.delegate = context.coordinator
         view.addGestureRecognizer(pan)
         context.coordinator.movePanGesture = pan
+
+        // 꾸미기 모드에서는 SceneKit 기본 컨트롤 대신 웹 OrbitControls와 같은 제한형
+        // 정면 orbit/zoom을 사용한다. 피규어에서 시작한 팬은 위 movePan이 먼저 가져간다.
+        let decorOrbit = UIPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleDecorCameraOrbit(_:))
+        )
+        decorOrbit.maximumNumberOfTouches = 1
+        decorOrbit.isEnabled = false
+        decorOrbit.require(toFail: pan)
+        view.addGestureRecognizer(decorOrbit)
+        context.coordinator.decorCameraOrbitGesture = decorOrbit
+
+        let decorZoom = UIPinchGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleDecorCameraZoom(_:))
+        )
+        decorZoom.isEnabled = false
+        view.addGestureRecognizer(decorZoom)
+        context.coordinator.decorCameraZoomGesture = decorZoom
 
         // 사람 뷰 전용 조작(시선/걷기/전진). SceneKit 기본 카메라 컨트롤은 이동 위치를
         // 가로챌 수 없어 가구/벽 충돌을 걸 수 없으므로, 사람 뷰에서는 직접 처리한다.
@@ -134,8 +217,12 @@ struct RoomEditorSceneView: UIViewRepresentable {
         let isEditingSelection = viewModel.isMovingSelectedFurniture && viewModel.selectedItemID != nil
         let isEditingDecor = viewModel.isDecorating && viewModel.pendingFigure == nil
         let isPersonMode = viewModel.viewMode == .person
-        view.allowsCameraControl = !isPersonMode
+        let usesDecorCamera = viewModel.isDecorating
+        let enablesDecorCameraInput = usesDecorCamera && !coordinator.isDecorCameraTransitioning
+        view.allowsCameraControl = !isPersonMode && !usesDecorCamera && !coordinator.isDecorCameraTransitioning
         coordinator.movePanGesture?.isEnabled = isEditingSelection || isEditingDecor
+        coordinator.decorCameraOrbitGesture?.isEnabled = enablesDecorCameraInput
+        coordinator.decorCameraZoomGesture?.isEnabled = enablesDecorCameraInput
         coordinator.personLookGesture?.isEnabled = isPersonMode
         coordinator.personWalkGesture?.isEnabled = isPersonMode
         coordinator.personPinchGesture?.isEnabled = isPersonMode
@@ -145,6 +232,9 @@ struct RoomEditorSceneView: UIViewRepresentable {
     static func dismantleUIView(_ uiView: SCNView, coordinator: Coordinator) {
         // CADisplayLink가 사람뷰 coordinator를 유지하지 않도록 화면 종료 시 확실히 정리한다.
         coordinator.stopPersonComfortMotion()
+        coordinator.decorCameraTransitionRevision &+= 1
+        coordinator.decorCameraOrbitGesture?.isEnabled = false
+        coordinator.decorCameraZoomGesture?.isEnabled = false
     }
 
     func makeCoordinator() -> Coordinator {
@@ -161,6 +251,8 @@ struct RoomEditorSceneView: UIViewRepresentable {
 
         weak var sceneView: SCNView?
         var movePanGesture: UIPanGestureRecognizer?
+        var decorCameraOrbitGesture: UIPanGestureRecognizer?
+        var decorCameraZoomGesture: UIPinchGestureRecognizer?
         /// SwiftUI의 넓은 ObservableObject 갱신이 들어와도 같은 선택 노드의
         /// 하이라이트 geometry를 매번 지웠다가 만들지 않도록 현재 대상을 기억한다.
         weak var highlightedFurnitureNode: SCNNode?
@@ -224,6 +316,11 @@ struct RoomEditorSceneView: UIViewRepresentable {
         var renderedBaseStates: [Int: (width: Double, depth: Double, height: Double, scale: SCNVector3)] = [:]
         /// 꾸미기 카메라가 적용된 책장 itemId. viewModel.decoratingItemID와 비교해 전환을 감지한다.
         var decorCameraItemID: Int?
+        var savedDecorCameraState: DecorCameraState?
+        var decorCameraView: DecorCameraView?
+        var isDecorCameraTransitioning = false
+        var decorCameraTransitionRevision = 0
+        var lastDecorCameraOrbitTranslation = CGPoint.zero
         let floorNode = SCNNode()
         let measurementContainer = SCNNode()
         let selectionHighlightName = "__selection_highlight"

@@ -37,13 +37,13 @@ struct AppHeader: View {
         .padding(.horizontal, usesCompactHeight ? 14 : 20)
         .padding(.vertical, usesCompactHeight ? 6 : 12)
         .frame(maxWidth: .infinity)
-        .background(SpatiumTheme.chromeSurface)
-        .background(.ultraThinMaterial)
-        .overlay(alignment: .bottom) {
-            Rectangle()
-                .fill(SpatiumTheme.border.opacity(0.7))
-                .frame(height: 0.5)
-        }
+        .spatiumChromeGlass(
+            cornerRadius: usesCompactHeight ? 18 : 24,
+            stabilizesBackgroundColor: true
+        )
+        .padding(.horizontal, usesCompactHeight ? 8 : 10)
+        .padding(.top, usesCompactHeight ? 3 : 5)
+        .padding(.bottom, 2)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("app-header")
         .animation(.default, value: selectedTab)
