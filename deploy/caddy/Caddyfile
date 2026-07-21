@@ -1,0 +1,8 @@
+{
+    email {$CADDY_ACME_EMAIL}
+    acme_ca https://acme.zerossl.com/v2/DV90
+}
+
+spatium.kro.kr {
+    reverse_proxy nginx:80
+}

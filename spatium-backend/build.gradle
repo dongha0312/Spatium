@@ -45,7 +45,7 @@ dependencies {
 	/* 오라클 데이터베이스 연결 담당
 	   - ojdbc11을 사용(Java 11, 17, 21 환경 최적화 버전) */
 	// implementation 'com.oracle.database.jdbc:ojdbc11:21.1.0.0'
-	runtimeOnly 'com.oracle.database.jdbc:ojdbc11:21.1.0.0'
+	runtimeOnly 'com.oracle.database.jdbc:ojdbc11'
 
 	// (선택 사항) 만약 한글 깨짐 방지나 추가 기능을 사용한다면 아래 라이브러리도 권장합니다.
     // implementation 'com.oracle.database.nls:orai18n:21.1.0.0'

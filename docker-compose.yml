@@ -1,0 +1,137 @@
+name: spatium
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  oracle:
+    image: container-registry.oracle.com/database/free:latest-lite
+    container_name: spatium-oracle
+    restart: unless-stopped
+    shm_size: "1gb"
+    mem_limit: "4g"
+    environment:
+      ORACLE_PWD: "${ORACLE_PWD:?ORACLE_PWD must be set}"
+      ORACLE_CHARACTERSET: "${ORACLE_CHARACTERSET:-AL32UTF8}"
+      DB_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set}"
+      NLS_LANG: ".AL32UTF8"
+      INIT_SGA_SIZE: "1536"
+      INIT_PGA_SIZE: "512"
+      TZ: "Asia/Seoul"
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./deploy/oracle/setup:/opt/oracle/scripts/setup:ro
+    networks:
+      - db-network
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - /opt/oracle/checkDBStatus.sh >/dev/null 2>&1 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 60
+      start_period: 10m
+    stop_grace_period: 2m
+    logging: *default-logging
+
+  spring:
+    build:
+      context: ./spatium-backend
+      dockerfile: Dockerfile
+    image: spatium-spring:local
+    container_name: spatium-spring
+    restart: unless-stopped
+    mem_limit: "1536m"
+    depends_on:
+      oracle:
+        condition: service_healthy
+    environment:
+      APPLE_CLIENT_ID: "${APPLE_CLIENT_ID}"
+      APPLE_TEAM_ID: "${APPLE_TEAM_ID}"
+      APPLE_KEY_ID: "${APPLE_KEY_ID}"
+      APPLE_PRIVATE_KEY_B64: "${APPLE_PRIVATE_KEY_B64}"
+      SPRING_PROFILES_ACTIVE: "${SPRING_PROFILES_ACTIVE:-prod}"
+      SPRING_DATASOURCE_URL: "${DB_URL:?DB_URL must be set}"
+      SPRING_DATASOURCE_USERNAME: "${DB_USERNAME:-SPATIUM}"
+      SPRING_DATASOURCE_PASSWORD: "${DB_PASSWORD:?DB_PASSWORD must be set}"
+      SPRING_JPA_HIBERNATE_DDL_AUTO: "none"
+      SPATIUM_JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set}"
+      SPATIUM_AI_BASE_URL: "${AI_BASE_URL:?AI_BASE_URL must be set}"
+      SPATIUM_AI_INTERNAL_API_KEY: "${AI_INTERNAL_API_KEY:?AI_INTERNAL_API_KEY must be set}"
+      SPATIUM_AI_REQUEST_TIMEOUT: "${AI_REQUEST_TIMEOUT:-PT15M}"
+      SPRING_MVC_ASYNC_REQUEST_TIMEOUT: "${SPRING_ASYNC_REQUEST_TIMEOUT:-930000}"
+      SPATIUM_STORAGE_ROOT: "${SPATIUM_STORAGE_ROOT:-/app/data}"
+      SPATIUM_COOKIE_SECURE: "${COOKIE_SECURE:-true}"
+      SERVER_FORWARD_HEADERS_STRATEGY: "${FORWARD_HEADERS_STRATEGY:-framework}"
+      JAVA_TOOL_OPTIONS: >-
+        -XX:InitialRAMPercentage=20.0
+        -XX:MaxRAMPercentage=65.0
+        -Duser.timezone=Asia/Seoul
+      TZ: "Asia/Seoul"
+    volumes:
+      - spring-data:/app/data
+    networks:
+      - db-network
+      - web-network
+    stop_grace_period: 30s
+    logging: *default-logging
+
+  nginx:
+    build:
+      context: .
+      dockerfile: spatium-frontend/Dockerfile
+    image: spatium-web:local
+    container_name: spatium-nginx
+    restart: unless-stopped
+    mem_limit: "256m"
+    depends_on:
+      spring:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8080:80"
+    networks:
+      - web-network
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q --spider http://127.0.0.1/ || exit 1
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: spatium-caddy
+    restart: unless-stopped
+    mem_limit: "128m"
+    environment:
+      CADDY_ACME_EMAIL: ${CADDY_ACME_EMAIL}
+    depends_on:
+      nginx:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - web-network
+    logging: *default-logging
+
+volumes:
+  oracle-data:
+  spring-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  db-network:
+    internal: true
+  web-network:

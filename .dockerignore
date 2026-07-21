@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.env.*
+.claude
+docs
+spatium-backend
+spatium-frontend/node_modules
+spatium-frontend/build
+deploy/oracle
+*.md
+sever_starter.bat
