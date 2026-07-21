@@ -1980,18 +1980,19 @@ struct BackendContractTests {
     }
 
     @Test func onlySpringFurnitureModelURLsReceiveAPIAuthentication() {
-        let apiBaseURL = URL(string: "http://210.119.12.115:8080")!
+        let apiBaseURL = URL(string: "https://spatium.kro.kr")!
 
         #expect(FurnitureService.protectedModelAPIPath(
             from: "/api/furniture/usr_123/model",
             apiBaseURL: apiBaseURL
         ) == "/api/furniture/usr_123/model")
         #expect(FurnitureService.protectedModelAPIPath(
-            from: "http://210.119.12.115:8080/api/furniture/usr_123/model",
+            from: "https://spatium.kro.kr/api/furniture/usr_123/model",
             apiBaseURL: apiBaseURL
         ) == "/api/furniture/usr_123/model")
+        // 같은 경로라도 다른 오리진(외부 호스트)에는 인증 토큰을 붙이지 않는다.
         #expect(FurnitureService.protectedModelAPIPath(
-            from: "http://210.119.12.115:3000/api/furniture/usr_123/model",
+            from: "https://assets.example.com/api/furniture/usr_123/model",
             apiBaseURL: apiBaseURL
         ) == nil)
         #expect(FurnitureService.protectedModelAPIPath(
