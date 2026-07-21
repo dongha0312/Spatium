@@ -969,6 +969,29 @@ struct ImgTo3DUploadImageTests {
         #expect(max(preview.width, preview.height) <= ProfileAvatarImagePreprocessor.maximumPixelDimension)
         #expect(prepared.uploadData.starts(with: [0xFF, 0xD8]))
     }
+
+    // JPEG는 알파를 지원하지 않는다. 알파가 있는 원본을 그대로 인코딩하면 ImageIO가
+    // "ignoring alpha" 경고와 함께 디코딩 메모리를 2배로 잡으므로, 인코딩 대상은 불투명이어야 한다.
+    @Test func profileAvatarPreprocessingStripsAlphaBeforeJPEGEncoding() throws {
+        // 투명 영역이 있는 원본(알파 채널 포함 PNG).
+        let size = CGSize(width: 64, height: 64)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let transparent = renderer.image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 32, height: 64))
+            // 나머지 절반은 칠하지 않아 투명하게 둔다.
+        }
+        let png = try #require(transparent.pngData())
+        let sourceAlpha = try #require(transparent.cgImage).alphaInfo
+        #expect(sourceAlpha != .none && sourceAlpha != .noneSkipLast && sourceAlpha != .noneSkipFirst)
+
+        let prepared = try #require(ProfileAvatarImagePreprocessor.prepare(rawData: png))
+        let preview = try #require(prepared.previewImage.cgImage)
+
+        let opaqueAlphaInfos: [CGImageAlphaInfo] = [.none, .noneSkipFirst, .noneSkipLast]
+        #expect(opaqueAlphaInfos.contains(preview.alphaInfo))
+        #expect(prepared.uploadData.starts(with: [0xFF, 0xD8]))
+    }
 }
 
 @MainActor
