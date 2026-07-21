@@ -239,6 +239,7 @@ private struct RoomRenderLoaderView: View {
                     scanItems: package.items,
                     roomName: currentRoom.roomType,
                     usdzURL: package.usdzURL,
+                    initialWallColor: package.wallColor,
                     initialFloorColor: package.floorColor,
                     area: currentRoom.area ?? 16,
                     ceilingHeight: 2.4,
@@ -317,6 +318,7 @@ private struct RoomRenderLoaderView: View {
                 state = .loaded(RoomScanPackage(
                     items: scene.items,
                     usdzURL: scene.usdzURL,
+                    wallColor: scene.wallColor,
                     floorColor: scene.floorColor
                 ))
                 return
