@@ -32,9 +32,11 @@ final class CurrentUserStore: ObservableObject {
 
     /// 표시용 닉네임. 없으면 이메일 앞부분으로 폴백.
     var displayName: String? {
-        guard let profile else { return nil }
-        if !profile.nickname.isEmpty { return profile.nickname }
-        return profile.email.split(separator: "@").first.map(String.init)
+        if let profile {
+            if !profile.nickname.isEmpty { return profile.nickname }
+            return profile.email.split(separator: "@").first.map(String.init)
+        }
+        return AuthTokenStore.shared.cachedUserIdentity?.displayName
     }
 
     /// 백엔드는 일반 URL 또는 data URL(base64)을 내려줄 수 있습니다.
@@ -66,6 +68,7 @@ final class CurrentUserStore: ObservableObject {
                 return
             }
             profile = refreshedProfile
+            AuthTokenStore.shared.updateCachedUser(refreshedProfile)
         } catch is CancellationError {
             return
         } catch {

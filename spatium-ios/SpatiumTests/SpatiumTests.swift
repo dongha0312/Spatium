@@ -1861,6 +1861,37 @@ struct UserFurnitureStoreTests {
 
 @MainActor
 struct BackendContractTests {
+    @Test func cachedUserIdentityRoundTripsForRelaunchHeader() throws {
+        let identity = CachedUserIdentity(
+            user: UserSummary(
+                userId: "42",
+                email: "user@example.com",
+                nickname: "스파티",
+                profileImageUrl: "data:image/jpeg;base64,not-persisted"
+            )
+        )
+
+        let encoded = try JSONEncoder().encode(identity)
+        let decoded = try JSONDecoder().decode(CachedUserIdentity.self, from: encoded)
+
+        #expect(decoded == identity)
+        #expect(decoded.displayName == "스파티")
+        #expect(String(data: encoded, encoding: .utf8)?.contains("profileImageUrl") == false)
+    }
+
+    @Test func cachedUserIdentityFallsBackToEmailPrefix() {
+        let identity = CachedUserIdentity(
+            user: UserSummary(
+                userId: "42",
+                email: "user@example.com",
+                nickname: "",
+                profileImageUrl: nil
+            )
+        )
+
+        #expect(identity.displayName == "user")
+    }
+
     @Test func signupResponseDecodesCurrentUserPayload() throws {
         let json = """
         {"statusCode":201,"message":"회원가입이 완료되었습니다.","data":{"userId":42,"email":"user@example.com","nickname":"스파티","profileImageUrl":null}}
