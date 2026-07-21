@@ -17,10 +17,13 @@ import {
 } from "../../components/legal/LegalDocumentContent";
 
 function SignupPage() {
-  // 로그인 페이지의 구글 소셜 로그인에서 넘어온 경우, 구글 인증 결과(이메일)가 담겨있음
+  // 로그인 페이지의 소셜 로그인(구글/Apple)에서 넘어온 경우, 인증 결과(이메일)가 담겨있음
   const location = useLocation();
   const socialState = location.state || {};
-  const isGoogleSignup = socialState.socialProvider === "google";
+  // provider는 LoginPage에서 "GOOGLE" | "APPLE"로 넘어옴
+  const isSocialSignup = Boolean(socialState.provider);
+  const isGoogleSignup = socialState.provider === "GOOGLE";
+  const isAppleSignup = socialState.provider === "APPLE";
 
   // 이메일을 저장할 수 있는 상태변수(객체) 정의 (구글 가입인 경우 구글 이메일로 미리 채움)
   const [email, setEmail] = useState(socialState.email || "");
@@ -69,8 +72,8 @@ function SignupPage() {
     try {
       let loginData;
 
-      if (isGoogleSignup) {
-        // 소셜 회원가입 : LoginPage에서 넘겨받은 ID Token으로 가입
+      if (isSocialSignup) {
+        // 소셜 회원가입(구글/Apple 공통) : LoginPage에서 넘겨받은 ID Token으로 가입
         //  - 이메일/고유ID는 백엔드가 ID Token을 직접 검증해서 얻음 (프론트 값은 표시용)
         await postSocialSignup({
           provider: socialState.provider,
@@ -108,7 +111,7 @@ function SignupPage() {
       saveLoginSession(
         email,
         loginData.user?.nickname || nickname,
-        isGoogleSignup ? "GOOGLE" : "LOCAL",
+        isSocialSignup ? socialState.provider : "LOCAL",
         {
           // refreshToken은 httpOnly 쿠키로 관리되므로 저장하지 않음
           accessToken: loginData.accessToken,
@@ -142,6 +145,8 @@ function SignupPage() {
             <div className="su-auth-form-sub">
               {isGoogleSignup ? (
                 <>구글 계정으로 회원가입을 진행합니다.</>
+              ) : isAppleSignup ? (
+                <>Apple 계정으로 회원가입을 진행합니다.</>
               ) : (
                 <>
                   이미 계정이 있으신가요? <Link to="/auth/login">로그인 →</Link>
@@ -156,7 +161,7 @@ function SignupPage() {
                 type="email"
                 value={email}
                 required
-                readOnly={isGoogleSignup}
+                readOnly={isSocialSignup}
                 placeholder="name@example.com"
                 onChange={(e) => setEmail(e.target.value)}
               />
@@ -176,8 +181,8 @@ function SignupPage() {
               />
             </div>
 
-            {/* 소셜(구글) 회원가입인 경우, 이미 구글 인증으로 신원이 확인됐으므로 비밀번호 입력 생략 */}
-            {!isGoogleSignup && (
+            {/* 소셜(구글/Apple) 회원가입인 경우, 이미 소셜 인증으로 신원이 확인됐으므로 비밀번호 입력 생략 */}
+            {!isSocialSignup && (
               <div className="su-fgrp">
                 <label className="su-flabel">비밀번호</label>
                 <input
