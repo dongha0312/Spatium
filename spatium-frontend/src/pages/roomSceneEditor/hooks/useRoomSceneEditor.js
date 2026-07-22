@@ -721,6 +721,14 @@ export function useRoomSceneEditor({
     // 벽/문/창문 구성이 바뀌면 다음 프레임에 벽 투명 처리(updateViewFacingWalls)를
     // 강제로 1회 실행하기 위한 플래그. 평소에는 카메라가 움직인 프레임에만 실행된다.
     let viewFacingWallsDirty = true;
+    // 렌더 루프 최적화(on-demand rendering)용 플래그. 카메라가 그대로고 씬도 안 바뀐
+    // 프레임에는 renderer.render()/labelRenderer.render() 자체를 건너뛰어, 사용자가
+    // 아무것도 안 할 때 GPU를 계속 점유하지 않게 한다. 초기값 true — 최초 프레임은
+    // 무조건 한 번 그린다. syncSceneState/syncDragState(가구 추가·이동·회전·삭제·교체,
+    // undo/redo, 선택 변경 전반), resize, 벽/바닥 색상 변경, 초기 씬 로딩 완료 시점에서
+    // true로 세팅되고, animate()가 렌더링한 직후 false로 리셋한다. 카메라 이동(오빗
+    // 드래그/줌/댐핑 관성/1인칭 이동)은 아래 animate()의 cameraMoved로 별도 처리한다.
+    let needsRender = true;
     const personKeys = new Set();
     let personLookPointerId = null;
     let personLastPointer = null;
@@ -1512,6 +1520,9 @@ export function useRoomSceneEditor({
           }
         }
         updateSelectionOverlay(object);
+        // 피규어 드래그는 syncDragState를 거치지 않으므로 여기서 직접 렌더를 요청한다
+        // (안 그러면 needsRender가 false로 남아 드래그 중 화면이 멈춘 것처럼 보인다).
+        needsRender = true;
         return;
       }
 
@@ -1674,6 +1685,7 @@ export function useRoomSceneEditor({
       selectedObject = selectedObjectRef.current,
       options = {},
     ) {
+      needsRender = true;
       const collisions = refreshCollisionState(
         editableRoots,
         selectedObject,
@@ -1729,6 +1741,7 @@ export function useRoomSceneEditor({
     // 않고, 정보 패널에 표시되는 값(치수/각도/높이)도 이동으로는 바뀌지 않기 때문에
     // 화면에 보이는 결과는 동일하다.
     function syncDragState(object) {
+      needsRender = true;
       if (shouldCheckFurnitureCollision(object)) {
         const intersectingWalls = getIntersectingWalls(
           object,
@@ -3139,9 +3152,11 @@ export function useRoomSceneEditor({
           setWallColor: (color) => {
             invalidateRoomModelJsonCache();
             applyRoomWallColor(wallColliders, color);
+            needsRender = true;
           },
           setFloorColor: (color) => {
             applyRoomFloorColor(roomModel, color);
+            needsRender = true;
           },
         };
 
@@ -3323,6 +3338,10 @@ export function useRoomSceneEditor({
         }
         trimHistoryRoomCache();
         setHistoryVersion((value) => value + 1);
+        // 비동기 초기 로딩(방/가구/문/창문 복원)이 이 시점 이후에 끝나므로, 렌더 루프가
+        // 이미 이전 프레임들에서 needsRender를 소비해 false로 바꿔놨을 수 있다 — 로딩이
+        // 끝난 씬이 실제로 화면에 그려지도록 여기서 다시 true로 세팅한다.
+        needsRender = true;
         setStatus("");
       })
       .catch((caughtError) => {
@@ -3380,8 +3399,17 @@ export function useRoomSceneEditor({
           }
         }
       }
-      renderer.render(scene, camera);
-      labelRenderer.render(scene, camera);
+      // GPU를 계속 점유하지 않도록, 실제로 화면이 바뀔 때만 그린다(on-demand rendering).
+      // needsRender: 가구 추가/이동/회전/삭제/교체, undo/redo, 벽/바닥 색상 변경, 창 리사이즈,
+      // 초기 씬 로딩 완료 등 syncSceneState/syncDragState를 거치는 모든 조작에서 true가 된다.
+      // cameraMoved: 오빗 컨트롤 드래그·줌·댐핑 관성, 1인칭 이동까지 전부 포함해 카메라
+      // 위치/자세가 실제로 바뀐 프레임을 잡아낸다. isCameraTransitioning은 스카이뷰 등
+      // 카메라 전환 애니메이션 중 안전장치로 둔다.
+      if (needsRender || cameraMoved || isCameraTransitioning) {
+        renderer.render(scene, camera);
+        labelRenderer.render(scene, camera);
+        needsRender = false;
+      }
     }
     animate();
 
@@ -3393,6 +3421,7 @@ export function useRoomSceneEditor({
       camera.updateProjectionMatrix();
       renderer.setSize(nextWidth, nextHeight);
       labelRenderer.setSize(nextWidth, nextHeight);
+      needsRender = true;
     }
 
     window.addEventListener("resize", resize);
