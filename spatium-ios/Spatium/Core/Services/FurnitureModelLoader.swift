@@ -234,6 +234,7 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
         guard !scene.rootNode.childNodes.isEmpty else { return nil }
 
         let container = containerNode(from: scene)
+        normalizeSceneKitTextureImages(in: container)
         let template = ModelTemplate(node: container, bounds: hierarchyBoundingBox(container))
         let sourceBytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         Self.nodeCache.insert(template, forKey: key, cost: sourceBytes)
@@ -246,14 +247,16 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
             container.addChildNode(child.clone())
         }
         removeModelArtifacts(from: container)
+        removeDistantRootFragments(from: container)
         return container
     }
 
     /// 프런트엔드 `removeReferenceModelArtifacts()`와 같은 GLB 부산물 제거.
-    /// 넓은 키워드 매칭 대신 번들에 실제 존재하는 UI-kit 잔여물만 지워 모델 본체를 보존합니다.
+    /// 넓은 키워드 매칭 대신 카메라·조명과 번들에 실제 존재하는 UI-kit 잔여물만 지워
+    /// 모델 본체를 보존합니다. 멀리 떨어진 복제 파편은 아래의 공간 기준으로 따로 정리합니다.
     private func removeModelArtifacts(from node: SCNNode) {
         for child in node.childNodes {
-            if isModelArtifact(child) {
+            if child.camera != nil || child.light != nil || isModelArtifact(child) {
                 child.removeFromParentNode()
             } else {
                 removeModelArtifacts(from: child)
@@ -272,6 +275,123 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
                 name.caseInsensitiveCompare("Monitor Screen") == .orderedSame
         }
         return isArtifactName || hasArtifactMaterial
+    }
+
+    /// Blender 작업 중 완성 모델 옆에 복제된 부품이 멀리 떨어진 채 export되는 경우가 있다.
+    /// 웹의 `removeDistantRootFragments()`와 같이 정점이 가장 많은 최상위 조립체를 본체로
+    /// 보고, 본체 크기의 2.5배보다 멀리 떨어진 최상위 파편만 제거한다.
+    private func removeDistantRootFragments(from model: SCNNode) {
+        let branches = model.childNodes.compactMap { node -> (
+            node: SCNNode,
+            bounds: ModelBounds,
+            diagonal: Float,
+            vertexCount: Int
+        )? in
+            guard let bounds = hierarchyBoundingBox(node) else { return nil }
+            let size = SIMD3<Float>(
+                bounds.max.x - bounds.min.x,
+                bounds.max.y - bounds.min.y,
+                bounds.max.z - bounds.min.z
+            )
+            let diagonal = simd_length(size)
+            guard diagonal > 0 else { return nil }
+            return (node, bounds, diagonal, hierarchyVertexCount(node))
+        }
+        guard branches.count >= 2,
+              let anchor = branches.max(by: { $0.vertexCount < $1.vertexCount }) else { return }
+
+        for branch in branches where branch.node !== anchor.node {
+            let gapX = max(
+                0,
+                max(
+                    anchor.bounds.min.x - branch.bounds.max.x,
+                    branch.bounds.min.x - anchor.bounds.max.x
+                )
+            )
+            let gapY = max(
+                0,
+                max(
+                    anchor.bounds.min.y - branch.bounds.max.y,
+                    branch.bounds.min.y - anchor.bounds.max.y
+                )
+            )
+            let gapZ = max(
+                0,
+                max(
+                    anchor.bounds.min.z - branch.bounds.max.z,
+                    branch.bounds.min.z - anchor.bounds.max.z
+                )
+            )
+            let gap = simd_length(SIMD3<Float>(gapX, gapY, gapZ))
+            let referenceSize = max(anchor.diagonal, branch.diagonal)
+            if gap > referenceSize * 2.5 {
+                branch.node.removeFromParentNode()
+            }
+        }
+    }
+
+    private func hierarchyVertexCount(_ node: SCNNode) -> Int {
+        let localCount = node.geometry?.sources(for: .vertex).first?.vectorCount ?? 0
+        return localCount + node.childNodes.reduce(0) { count, child in
+            count + hierarchyVertexCount(child)
+        }
+    }
+
+    /// SceneKit은 일부 1채널 JPEG를 Metal의 유효하지 않은 픽셀 포맷으로 전달해
+    /// 렌더 스레드에서 중단될 수 있다. 웹 GLB 원본은 그대로 두고, SceneKit 재질에
+    /// 연결된 회색조 이미지만 지원되는 RGBA8 CGImage로 바꾼다.
+    private func normalizeSceneKitTextureImages(in node: SCNNode) {
+        node.geometry?.materials.forEach { material in
+            let properties = [
+                material.diffuse,
+                material.ambient,
+                material.specular,
+                material.emission,
+                material.transparent,
+                material.reflective,
+                material.multiply,
+                material.normal,
+                material.displacement,
+                material.ambientOcclusion,
+                material.selfIllumination,
+                material.metalness,
+                material.roughness,
+                material.clearCoat,
+                material.clearCoatRoughness,
+                material.clearCoatNormal
+            ]
+            for property in properties {
+                guard let image = cgImage(from: property.contents),
+                      image.bitsPerPixel < 24 || image.colorSpace?.model == .monochrome,
+                      let normalized = rgbaImage(from: image) else { continue }
+                property.contents = normalized
+            }
+        }
+        node.childNodes.forEach { normalizeSceneKitTextureImages(in: $0) }
+    }
+
+    private func cgImage(from contents: Any?) -> CGImage? {
+        guard let contents else { return nil }
+        let object = contents as AnyObject
+        guard CFGetTypeID(object) == CGImage.typeID else { return nil }
+        return unsafeBitCast(object, to: CGImage.self)
+    }
+
+    private func rgbaImage(from image: CGImage) -> CGImage? {
+        let width = image.width
+        let height = image.height
+        guard width > 0, height > 0,
+              let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: width * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
     }
 
     private func prepareModelNode(
@@ -322,7 +442,35 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
 
         func accumulate(_ node: SCNNode, _ parent: simd_float4x4) {
             let world = parent * node.simdTransform
-            if node.geometry != nil {
+            var didReadVertices = false
+            if let source = node.geometry?.sources(for: .vertex).first,
+               source.usesFloatComponents,
+               source.componentsPerVector >= 3,
+               source.bytesPerComponent == MemoryLayout<Float>.size,
+               source.dataStride >= source.bytesPerComponent * source.componentsPerVector {
+                source.data.withUnsafeBytes { rawBuffer in
+                    for index in 0..<source.vectorCount {
+                        let offset = source.dataOffset + index * source.dataStride
+                        guard offset + MemoryLayout<Float>.size * 3 <= rawBuffer.count else { continue }
+                        let x = rawBuffer.loadUnaligned(fromByteOffset: offset, as: Float.self)
+                        let y = rawBuffer.loadUnaligned(
+                            fromByteOffset: offset + MemoryLayout<Float>.size,
+                            as: Float.self
+                        )
+                        let z = rawBuffer.loadUnaligned(
+                            fromByteOffset: offset + MemoryLayout<Float>.size * 2,
+                            as: Float.self
+                        )
+                        let point = world * SIMD4<Float>(x, y, z, 1)
+                        lo = simd_min(lo, SIMD3(point.x, point.y, point.z))
+                        hi = simd_max(hi, SIMD3(point.x, point.y, point.z))
+                        found = true
+                        didReadVertices = true
+                    }
+                }
+            }
+            // 지원하지 않는 vertex 포맷은 기존 SceneKit bounds로 안전하게 폴백합니다.
+            if node.geometry != nil, !didReadVertices {
                 let (bMin, bMax) = node.boundingBox
                 let corners: [SIMD4<Float>] = [
                     .init(bMin.x, bMin.y, bMin.z, 1), .init(bMax.x, bMin.y, bMin.z, 1),
@@ -390,10 +538,7 @@ struct TestDataFurnitureModelLoader: FurnitureModelLoader {
     }
 
     private func isDoorOrWindow(_ category: String) -> Bool {
-        category.localizedCaseInsensitiveContains("door") ||
-            category.localizedCaseInsensitiveContains("window") ||
-            category.localizedCaseInsensitiveContains("문") ||
-            category.localizedCaseInsensitiveContains("창문")
+        FurnitureCatalog.isReferenceName(category)
     }
 
     private func makePlaceholderNode(

@@ -245,8 +245,67 @@ export function fitModelToTargetSize(model, targetSize) {
   model.updateWorldMatrix(true, true);
 }
 
+const DISTANT_FRAGMENT_GAP_RATIO = 2.5;
+
+function hasRenderableMesh(object) {
+  let result = false;
+  object.traverse((child) => {
+    if (child.isMesh && child.geometry) result = true;
+  });
+  return result;
+}
+
+function geometryVertexCount(object) {
+  let count = 0;
+  object.traverse((child) => {
+    count += child.geometry?.attributes?.position?.count || 0;
+  });
+  return count;
+}
+
+function gapBetweenBoxes(first, second) {
+  const x = Math.max(0, first.min.x - second.max.x, second.min.x - first.max.x);
+  const y = Math.max(0, first.min.y - second.max.y, second.min.y - first.max.y);
+  const z = Math.max(0, first.min.z - second.max.z, second.min.z - first.max.z);
+  return Math.hypot(x, y, z);
+}
+
+// Blender 작업 중 완성 모델 옆에 복제된 부품이 멀리 떨어진 채 export되는 경우가 있다.
+// 최상위 렌더링 루트 중 정점이 가장 많은 조립체를 본체로 보고, 본체 크기에 비해
+// 비정상적으로 멀리 떨어진 루트만 제거한다. 가까운 다중 파트 가구는 그대로 유지한다.
+function removeDistantRootFragments(model) {
+  model.updateWorldMatrix(true, true);
+  const branches = model.children
+    .filter(hasRenderableMesh)
+    .map((object) => {
+      const bounds = new THREE.Box3().setFromObject(object, true);
+      return {
+        object,
+        bounds,
+        diagonal: bounds.getSize(new THREE.Vector3()).length(),
+        vertexCount: geometryVertexCount(object),
+      };
+    })
+    .filter(({ bounds, diagonal }) => !bounds.isEmpty() && diagonal > 0);
+
+  if (branches.length < 2) return;
+
+  const anchor = branches.reduce((best, branch) =>
+    branch.vertexCount > best.vertexCount ? branch : best,
+  );
+
+  branches.forEach((branch) => {
+    if (branch === anchor) return;
+    const referenceSize = Math.max(anchor.diagonal, branch.diagonal);
+    const gap = gapBetweenBoxes(anchor.bounds, branch.bounds);
+    if (gap > referenceSize * DISTANT_FRAGMENT_GAP_RATIO) {
+      branch.object.parent?.remove(branch.object);
+    }
+  });
+}
+
 // 일부 GLB 템플릿(문/창문/가구 공통)에 섞여 있는, 원래 모델과 무관한 부산물
-// (예: UI 킷 잔여물의 검은/흰 판, 화면/스크린 mesh)을 이름 패턴으로 찾아서 제거한다.
+// (예: UI 킷 잔여물, Blender 카메라/조명, 멀리 떨어진 복제 파편)을 제거한다.
 function removeModelArtifacts(model) {
   const artifactNamePatterns = [/^Blender Bros Sci-Fi UI Pack/i, /^Solid 25$/i];
   const artifactMaterialPatterns = [
@@ -262,7 +321,9 @@ function removeModelArtifacts(model) {
       : [object.material];
     if (
       object !== model &&
-      (artifactNamePatterns.some((pattern) =>
+      (object.isCamera ||
+        object.isLight ||
+        artifactNamePatterns.some((pattern) =>
         pattern.test(object.name || ""),
       ) ||
         materials.some((material) =>
@@ -278,6 +339,8 @@ function removeModelArtifacts(model) {
   artifacts.forEach((object) => {
     object.parent?.remove(object);
   });
+
+  removeDistantRootFragments(model);
 }
 
 const GLASS_MATERIAL_NAME_PATTERN = /glass/i;

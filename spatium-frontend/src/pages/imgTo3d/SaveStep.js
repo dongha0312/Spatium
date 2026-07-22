@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { createUserFurniture } from "../../springApi/FurnitureSpringBootApi";
 
 const CATEGORIES = [
@@ -38,6 +39,7 @@ function formatFileSize(bytes) {
 }
 
 function SaveStep({ objectName, normalizedName, correctedModel }) {
+  const navigate = useNavigate();
   const [name, setName] = useState(objectName || "");
   const [category, setCategory] = useState(CATEGORIES[0].code);
   const [saving, setSaving] = useState(false);
@@ -80,6 +82,13 @@ function SaveStep({ objectName, normalizedName, correctedModel }) {
         <p className="it3-step-desc">
           “{name}” 모델이 사용자 가구로 등록되었습니다.
         </p>
+        <button
+          type="button"
+          className="it3-btn-prim"
+          onClick={() => navigate("/member/mypage?tab=furniture")}
+        >
+          내 가구 보러가기 →
+        </button>
       </div>
     );
   }

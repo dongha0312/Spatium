@@ -82,6 +82,54 @@ struct SpatiumTests {
         #expect(outcome == .ready(expectedURL))
     }
 
+    @Test func scanEditorRequiresFirstServerSaveOnlyForSignedInLocalRoom() {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let localRoom = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "새 스캔",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            projectID: "project-1",
+            draftDirectoryURL: draftDirectory
+        )
+        let savedRoom = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "저장된 공간",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            roomID: "server-room-1",
+            projectID: "project-1",
+            draftDirectoryURL: draftDirectory
+        )
+        let guestRoom = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "게스트 스캔",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            projectID: "local-project-1",
+            draftDirectoryURL: draftDirectory
+        )
+        let standaloneRoom = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "독립 스캔",
+            usdzURL: nil,
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory
+        )
+
+        #expect(localRoom.needsInitialServerSave)
+        #expect(!savedRoom.needsInitialServerSave)
+        #expect(!guestRoom.needsInitialServerSave)
+        #expect(!standaloneRoom.needsInitialServerSave)
+    }
+
     @Test func scanEditorPreparationShowsRetryStateInsteadOfOpeningAfterFailure() async {
         let outcome = await ScanEditorPreparation.run {
             throw CocoaError(.fileWriteOutOfSpace)
@@ -164,6 +212,131 @@ struct SpatiumTests {
         #expect(abs((restoredDecoration?.scale ?? 0) - decoration.scale) < 0.0001)
         #expect(restoredDecoration?.modelName == decoration.modelName)
         #expect(restoredDecoration?.modelPath == decoration.modelPath)
+    }
+
+    @Test func builtInFurnitureCatalogMatchesWebCatalogAndBundledModels() throws {
+        let expectedIDs: Set<String> = [
+            "default_bathtub", "default_bed", "default_chair", "default_dishwasher",
+            "default_door", "default_oven", "default_refrigerator", "default_sink",
+            "default_sofa", "default_stairs", "default_storage", "default_stove",
+            "default_table", "default_television", "default_toilet", "default_washer_dryer",
+            "default_window", "bunkbed", "simple_bed", "wooden_bed", "modern_chair",
+            "wooden_chair", "white_door", "wooden_door", "def_editable_bookcase",
+            "editable_case", "bedside_drawer", "closet", "makeup_table", "computer_desk",
+            "ikea_desk", "wooden_desk", "double_window", "tong_glass", "single_window"
+        ]
+
+        #expect(FurnitureCatalog.items.count == 35)
+        #expect(Set(FurnitureCatalog.items.map(\.id)) == expectedIDs)
+        #expect(Set(FurnitureCatalog.items.map(\.modelFileName)).count == 35)
+
+        for item in FurnitureCatalog.items {
+            let url = try #require(
+                Bundle.main.url(forResource: item.modelFileName, withExtension: "glb"),
+                "\(item.name)의 \(item.modelFileName).glb가 앱 번들에 없습니다."
+            )
+            let modelData = try Data(contentsOf: url, options: .mappedIfSafe)
+            let header = modelData.prefix(12)
+            #expect(header.count == 12)
+            #expect(header.prefix(4) == Data("glTF".utf8))
+            #expect(littleEndianUInt32(in: header, at: 4) == 2)
+            #expect(littleEndianUInt32(in: header, at: 8) == UInt32(modelData.count))
+        }
+
+        let glass = try #require(FurnitureCatalog.items.first { $0.id == "tong_glass" })
+        #expect(glass.modelFileName == "glass")
+        #expect(FurnitureCatalog.isWindowName(glass.modelFileName))
+        #expect(FurnitureCatalog.isReferenceName(glass.name))
+
+        let editableCase = try #require(FurnitureCatalog.items.first { $0.id == "editable_case" })
+        #expect(editableCase.category == "storage/editable")
+        #expect(editableCase.group == "수납/편집 가능")
+        #expect(FurnitureCatalog.option(named: "bunkbed")?.displayName == "이층 침대")
+        #expect(FurnitureCatalog.option(named: "editable_case")?.displayName == "꾸미기 장")
+        #expect(FurnitureCatalog.option(named: "glass")?.displayName == "통유리")
+        #expect(FurnitureCatalog.option(named: "stairs")?.displayName == "계단")
+    }
+
+    private func littleEndianUInt32(in data: Data, at offset: Int) -> UInt32 {
+        UInt32(data[offset]) |
+            (UInt32(data[offset + 1]) << 8) |
+            (UInt32(data[offset + 2]) << 16) |
+            (UInt32(data[offset + 3]) << 24)
+    }
+
+    @Test func grayscaleFurnitureTexturesAreNormalizedForSceneKit() throws {
+        let catalog = try #require(FurnitureCatalog.items.first { $0.id == "bunkbed" })
+        let furniture = PlacedFurniture(
+            itemId: -101,
+            furnitureId: 101,
+            furnitureName: catalog.name,
+            position: .zero,
+            rotation: .zero,
+            scale: .one,
+            width: catalog.width,
+            depth: catalog.depth,
+            height: catalog.height,
+            modelName: catalog.modelFileName
+        )
+        let node = TestDataFurnitureModelLoader().makeNode(for: furniture)
+        var textureImages: [CGImage] = []
+
+        func collectTextureImages(from node: SCNNode) {
+            node.geometry?.materials.forEach { material in
+                let properties = [
+                    material.diffuse, material.ambient, material.specular, material.emission,
+                    material.transparent, material.reflective, material.multiply, material.normal,
+                    material.displacement, material.ambientOcclusion, material.selfIllumination,
+                    material.metalness, material.roughness, material.clearCoat,
+                    material.clearCoatRoughness, material.clearCoatNormal
+                ]
+                textureImages.append(contentsOf: properties.compactMap { property in
+                    guard let contents = property.contents else { return nil }
+                    let object = contents as AnyObject
+                    guard CFGetTypeID(object) == CGImage.typeID else { return nil }
+                    return unsafeBitCast(object, to: CGImage.self)
+                })
+            }
+            node.childNodes.forEach(collectTextureImages)
+        }
+
+        collectTextureImages(from: node)
+        #expect(!textureImages.isEmpty)
+        #expect(textureImages.allSatisfy {
+            $0.bitsPerPixel >= 24 && $0.colorSpace?.model != .monochrome
+        })
+    }
+
+    @Test func synchronizedWebFurnitureLoadsAsSceneKitModels() throws {
+        let synchronizedIDs = [
+            "bunkbed", "editable_case", "tong_glass", "default_stairs",
+            "default_refrigerator", "default_washer_dryer"
+        ]
+        let loader = TestDataFurnitureModelLoader()
+
+        for (offset, id) in synchronizedIDs.enumerated() {
+            let catalog = try #require(FurnitureCatalog.items.first { $0.id == id })
+            let node = loader.makeNode(for: PlacedFurniture(
+                itemId: -200 - offset,
+                furnitureId: 200 + offset,
+                furnitureName: catalog.name,
+                position: .zero,
+                rotation: .zero,
+                scale: .one,
+                width: catalog.width,
+                depth: catalog.depth,
+                height: catalog.height,
+                modelName: catalog.modelFileName
+            ))
+            let isPlaceholder = node.geometry is SCNBox && node.childNodes.isEmpty
+            #expect(!isPlaceholder, "\(catalog.name)이 GLB 대신 placeholder로 로드되었습니다.")
+            if id == "default_refrigerator" || id == "default_washer_dryer" {
+                #expect(
+                    node.childNodes.count == 1,
+                    "\(catalog.name)의 본체와 멀리 떨어진 복제 파편이 함께 남았습니다."
+                )
+            }
+        }
     }
 
     @Test func decorSupportNormalIsNormalizedBeforeCheckingItsDirection() {
@@ -1186,7 +1359,34 @@ struct FurnitureModelLoaderTests {
         var found = false
 
         func accumulate(_ node: SCNNode) {
-            if node.geometry != nil {
+            var didReadVertices = false
+            if let source = node.geometry?.sources(for: .vertex).first,
+               source.usesFloatComponents,
+               source.componentsPerVector >= 3,
+               source.bytesPerComponent == MemoryLayout<Float>.size,
+               source.dataStride >= source.bytesPerComponent * source.componentsPerVector {
+                source.data.withUnsafeBytes { rawBuffer in
+                    for index in 0..<source.vectorCount {
+                        let offset = source.dataOffset + index * source.dataStride
+                        guard offset + MemoryLayout<Float>.size * 3 <= rawBuffer.count else { continue }
+                        let x = rawBuffer.loadUnaligned(fromByteOffset: offset, as: Float.self)
+                        let y = rawBuffer.loadUnaligned(
+                            fromByteOffset: offset + MemoryLayout<Float>.size,
+                            as: Float.self
+                        )
+                        let z = rawBuffer.loadUnaligned(
+                            fromByteOffset: offset + MemoryLayout<Float>.size * 2,
+                            as: Float.self
+                        )
+                        let point = node.convertPosition(SCNVector3(x, y, z), to: frame)
+                        minimum = simd_min(minimum, SIMD3(point.x, point.y, point.z))
+                        maximum = simd_max(maximum, SIMD3(point.x, point.y, point.z))
+                        found = true
+                        didReadVertices = true
+                    }
+                }
+            }
+            if node.geometry != nil, !didReadVertices {
                 let (lower, upper) = node.boundingBox
                 let corners = [
                     SCNVector3(lower.x, lower.y, lower.z), SCNVector3(upper.x, lower.y, lower.z),
@@ -1377,6 +1577,64 @@ private final class DiskOperationThreadRecorder: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return values
+    }
+}
+
+@MainActor
+struct ProfileAvatarSourceDiskStoreTests {
+    @Test func cachedAvatarRestoresOnlyForTheSameUser() async {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-avatar-cache-\(UUID().uuidString)", isDirectory: true)
+        let cacheFileURL = testRoot.appendingPathComponent("avatar.json")
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let source = "data:image/jpeg;base64,dGVzdC1hdmF0YXI="
+        let firstLaunchStore = ProfileAvatarSourceDiskStore(cacheFileURL: cacheFileURL)
+
+        await firstLaunchStore.save(source, for: "user-1")
+
+        // 새 인스턴스로 앱 재실행을 모사해 메모리가 아니라 디스크에서 복원되는지 확인한다.
+        let relaunchedStore = ProfileAvatarSourceDiskStore(cacheFileURL: cacheFileURL)
+        #expect(await relaunchedStore.load(for: "user-1") == source)
+        #expect(await relaunchedStore.load(for: "user-2") == nil)
+    }
+
+    @Test func deletingAvatarRemovesOnlyItsOwnersCachedSource() async {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-avatar-delete-\(UUID().uuidString)", isDirectory: true)
+        let cacheFileURL = testRoot.appendingPathComponent("avatar.json")
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let source = "https://example.com/avatar.png"
+        let store = ProfileAvatarSourceDiskStore(cacheFileURL: cacheFileURL)
+        await store.save(source, for: "user-1")
+
+        await store.save(nil, for: "user-2")
+        #expect(await store.load(for: "user-1") == source)
+
+        await store.save(nil, for: "user-1")
+        #expect(await store.load(for: "user-1") == nil)
+    }
+
+    @Test func avatarCacheFileWorkRunsOutsideMainThread() async {
+        let testRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spatium-avatar-thread-\(UUID().uuidString)", isDirectory: true)
+        let cacheFileURL = testRoot.appendingPathComponent("avatar.json")
+        defer { try? FileManager.default.removeItem(at: testRoot) }
+
+        let recorder = DiskOperationThreadRecorder()
+        let store = ProfileAvatarSourceDiskStore(
+            cacheFileURL: cacheFileURL,
+            operationObserver: { recorder.record(isMainThread: $0) }
+        )
+
+        await store.save("data:image/png;base64,dGVzdA==", for: "user-1")
+        _ = await store.load(for: "user-1")
+        await store.clear()
+
+        let observedThreads = recorder.recordedMainThreadValues
+        #expect(observedThreads.count == 3)
+        #expect(observedThreads.allSatisfy { !$0 })
     }
 }
 
@@ -2036,6 +2294,90 @@ struct BackendContractTests {
         let image = try #require(decoded.cgImage)
 
         #expect(max(image.width, image.height) <= ProfileImageDataDecoder.maximumDisplayPixelDimension)
+    }
+
+    @Test func uploadFilePreparationMatchesBackendSizeLimits() {
+        #expect(UploadFileKind.furnitureGLB.maximumBytes == 100 * 1_024 * 1_024)
+        #expect(UploadFileKind.roomUSDZ.maximumBytes == 100 * 1_024 * 1_024)
+        #expect(UploadFileKind.roomJSON.maximumBytes == 10 * 1_024 * 1_024)
+    }
+
+    @Test func validGLB2FileIsPreparedForFurnitureUpload() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let sourceURL = directory.appendingPathComponent("내 의자.glb")
+        try Data([
+            0x67, 0x6C, 0x54, 0x46, // glTF
+            0x02, 0x00, 0x00, 0x00, // version 2
+            0x0C, 0x00, 0x00, 0x00  // declared length 12
+        ]).write(to: sourceURL)
+
+        let prepared = try await UploadFilePreparation.prepare(
+            sourceURL: sourceURL,
+            kind: .furnitureGLB
+        )
+        defer { UploadFilePreparation.remove(prepared) }
+
+        #expect(prepared.originalFileName == "내 의자.glb")
+        #expect(prepared.byteCount == 12)
+        #expect(prepared.url != sourceURL)
+        #expect(FileManager.default.fileExists(atPath: prepared.url.path))
+    }
+
+    @Test func malformedGLBIsRejectedBeforeFurnitureUpload() async throws {
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("invalid-\(UUID().uuidString).glb")
+        try Data("not-a-glb".utf8).write(to: sourceURL)
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+        do {
+            _ = try await UploadFilePreparation.prepare(
+                sourceURL: sourceURL,
+                kind: .furnitureGLB
+            )
+            Issue.record("잘못된 GLB는 업로드 준비에 성공하면 안 됩니다.")
+        } catch let error as UploadFilePreparationError {
+            #expect(error == .invalidGLB)
+        }
+    }
+
+    @Test func roomUSDZAndJSONArePreparedAndMetadataItemsAreCounted() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let usdzURL = directory.appendingPathComponent("거실.usdz")
+        try Data([0x50, 0x4B, 0x03, 0x04]).write(to: usdzURL)
+
+        let jsonURL = directory.appendingPathComponent("거실.json")
+        let item = EditableScanItem(
+            userAddedNamed: "테스트 소파",
+            width: 2,
+            height: 0.8,
+            depth: 0.9
+        )
+        try JSONEncoder().encode(["editedObjects": [item]]).write(to: jsonURL)
+
+        let preparedUSDZ = try await UploadFilePreparation.prepare(
+            sourceURL: usdzURL,
+            kind: .roomUSDZ
+        )
+        let preparedJSON = try await UploadFilePreparation.prepare(
+            sourceURL: jsonURL,
+            kind: .roomJSON
+        )
+        defer {
+            UploadFilePreparation.remove(preparedUSDZ)
+            UploadFilePreparation.remove(preparedJSON)
+        }
+
+        #expect(await UploadFilePreparation.roomItemCount(at: preparedJSON.url) == 1)
+        #expect(preparedUSDZ.originalFileName == "거실.usdz")
+        #expect(preparedJSON.originalFileName == "거실.json")
     }
 
     @Test func imgTo3DOptionsMatchSpringGatewayAndFastAPI() {

@@ -62,30 +62,41 @@ nonisolated enum FurnitureCatalog {
     static let userFurnitureFilterID = "__userFurniture__"
     static let otherGroup = "기타"
 
-    /// 프런트엔드 furniture_catalog.json과 맞춘 전체 상품 목록(22종·8그룹).
+    /// 웹/백엔드 기본 카탈로그와 맞춘 전체 상품 목록(35종).
     static let items: [FurnitureCatalogItem] = [
         .init(id: "default_bed", name: "기본 침대", group: "침대", category: "bed", width: 1.2, height: 0.55, depth: 2.1, modelFileName: "bed"),
+        .init(id: "bunkbed", name: "이층 침대", group: "침대", category: "bed", width: 1.0, height: 1.7, depth: 2.1, modelFileName: "bunkbed"),
         .init(id: "wooden_bed", name: "원목 침대", group: "침대", category: "bed", width: 1.2, height: 0.55, depth: 2.1, modelFileName: "wooden_bed"),
         .init(id: "simple_bed", name: "심플 침대", group: "침대", category: "bed", width: 1.2, height: 0.55, depth: 2.1, modelFileName: "simple_bed"),
         .init(id: "default_chair", name: "기본 의자", group: "의자", category: "chair", width: 0.55, height: 0.85, depth: 0.55, modelFileName: "chair"),
         .init(id: "modern_chair", name: "모던 의자", group: "의자", category: "chair", width: 0.55, height: 0.85, depth: 0.55, modelFileName: "modern_chair"),
         .init(id: "wooden_chair", name: "원목 의자", group: "의자", category: "chair", width: 0.55, height: 0.85, depth: 0.55, modelFileName: "wooden_chair"),
         .init(id: "default_storage", name: "기본 수납", group: "수납", category: "storage", width: 1.0, height: 1.2, depth: 0.45, modelFileName: "storage"),
-        // 꾸미기(피규어 올려놓기) 전용 모델 — 선반 안쪽 표면이 뚫려 있어 위에 소품을 올릴 수 있다.
-        // 프런트엔드의 editable_furniture 폴더 규칙 대응: modelFileName의 "editable_" 접두사로 판정한다.
-        .init(id: "def_editable_bookcase", name: "꾸미기 책장", group: "수납", category: "storage", width: 0.8, height: 1.8, depth: 0.3, modelFileName: "editable_bookcase"),
         .init(id: "closet", name: "옷장", group: "수납", category: "storage", width: 1.2, height: 2.0, depth: 0.55, modelFileName: "closet"),
         .init(id: "bedside_drawer", name: "협탁 서랍", group: "수납", category: "storage", width: 0.5, height: 0.6, depth: 0.45, modelFileName: "bedside_drawer"),
         .init(id: "makeup_table", name: "화장대", group: "수납", category: "storage", width: 1.0, height: 0.8, depth: 0.45, modelFileName: "makeup_table"),
+        // 꾸미기(피규어 올려놓기) 전용 모델. 웹과 같은 별도 그룹/카테고리로 노출한다.
+        .init(id: "def_editable_bookcase", name: "꾸미기 책장", group: "수납/편집 가능", category: "storage/editable", width: 0.8, height: 1.8, depth: 0.3, modelFileName: "editable_bookcase"),
+        .init(id: "editable_case", name: "꾸미기 장", group: "수납/편집 가능", category: "storage/editable", width: 0.8, height: 1.8, depth: 0.3, modelFileName: "editable_case"),
         .init(id: "default_table", name: "기본 책상", group: "책상", category: "table", width: 1.2, height: 0.75, depth: 0.65, modelFileName: "table"),
         .init(id: "wooden_desk", name: "원목 책상", group: "책상", category: "table", width: 1.2, height: 0.75, depth: 0.65, modelFileName: "wooden_desk"),
         .init(id: "ikea_desk", name: "이케아 책상", group: "책상", category: "table", width: 1.2, height: 0.75, depth: 0.65, modelFileName: "ikea_desk"),
         .init(id: "computer_desk", name: "컴퓨터 책상", group: "책상", category: "table", width: 1.25, height: 0.75, depth: 0.7, modelFileName: "computer_desk"),
+        .init(id: "default_bathtub", name: "기본 욕조", group: "욕조", category: "bathtub", width: 1.7, height: 0.6, depth: 0.75, modelFileName: "bathtub"),
+        .init(id: "default_dishwasher", name: "기본 식기세척기", group: "식기 세척기", category: "dishwasher", width: 0.6, height: 0.85, depth: 0.6, modelFileName: "dishwasher"),
+        .init(id: "default_oven", name: "기본 오븐", group: "오븐", category: "oven", width: 0.6, height: 0.6, depth: 0.6, modelFileName: "oven"),
+        .init(id: "default_refrigerator", name: "기본 냉장고", group: "냉장고", category: "refrigerator", width: 0.75, height: 1.8, depth: 0.75, modelFileName: "refrigerator"),
+        .init(id: "default_sink", name: "기본 싱크대", group: "싱크대", category: "sink", width: 1.0, height: 0.85, depth: 0.6, modelFileName: "sink"),
+        .init(id: "default_sofa", name: "기본 소파", group: "소파", category: "sofa", width: 2.0, height: 0.85, depth: 0.9, modelFileName: "sofa"),
+        .init(id: "default_stove", name: "기본 가스레인지", group: "가스레인지", category: "stove", width: 0.6, height: 0.85, depth: 0.6, modelFileName: "stove"),
+        .init(id: "default_television", name: "기본 TV", group: "TV", category: "television", width: 1.2, height: 0.7, depth: 0.08, modelFileName: "television"),
+        .init(id: "default_toilet", name: "기본 변기", group: "변기", category: "toilet", width: 0.4, height: 0.75, depth: 0.7, modelFileName: "toilet"),
+        .init(id: "default_washer_dryer", name: "기본 세탁기", group: "세탁기·건조기", category: "washerDryer", width: 0.65, height: 0.9, depth: 0.65, modelFileName: "washerDryer"),
         .init(id: "default_door", name: "기본 문", group: "문", category: "door", width: 0.9, height: 2.1, depth: 0.12, modelFileName: "door"),
         .init(id: "white_door", name: "화이트 도어", group: "문", category: "door", width: 0.9, height: 2.1, depth: 0.12, modelFileName: "white_door"),
         .init(id: "wooden_door", name: "우드 도어", group: "문", category: "door", width: 0.9, height: 2.1, depth: 0.12, modelFileName: "wooden_door"),
         .init(id: "default_window", name: "기본 창문", group: "창문", category: "window", width: 0.9, height: 1.0, depth: 0.1, modelFileName: "window"),
-        .init(id: "tong_glass", name: "통유리", group: "창문", category: "window", width: 0.9, height: 1.0, depth: 0.1, modelFileName: "window"),
+        .init(id: "tong_glass", name: "통유리", group: "창문", category: "window", width: 0.9, height: 1.0, depth: 0.1, modelFileName: "glass"),
         .init(id: "single_window", name: "싱글 창문", group: "창문", category: "window", width: 0.75, height: 1.0, depth: 0.1, modelFileName: "single_window"),
         .init(id: "double_window", name: "더블 창문", group: "창문", category: "window", width: 1.2, height: 1.0, depth: 0.1, modelFileName: "double_window"),
         .init(id: "default_stairs", name: "계단", group: "계단", category: "stairs", width: 1.2, height: 2.8, depth: 4.59, modelFileName: "stairs")
@@ -137,6 +148,7 @@ nonisolated enum FurnitureCatalog {
             id: "bed", displayName: "침대", keywords: ["bed", "침대"],
             defaultOption: .init(fileName: "bed", displayName: "기본 침대"),
             variantOptions: [
+                .init(fileName: "bunkbed", displayName: "이층 침대"),
                 .init(fileName: "simple_bed", displayName: "심플 침대"),
                 .init(fileName: "wooden_bed", displayName: "원목 침대")
             ]
@@ -148,7 +160,9 @@ nonisolated enum FurnitureCatalog {
             variantOptions: [
                 .init(fileName: "closet", displayName: "옷장"),
                 .init(fileName: "bedside_drawer", displayName: "협탁 서랍"),
-                .init(fileName: "makeup_table", displayName: "화장대")
+                .init(fileName: "makeup_table", displayName: "화장대"),
+                .init(fileName: "editable_bookcase", displayName: "꾸미기 책장"),
+                .init(fileName: "editable_case", displayName: "꾸미기 장")
             ]
         ),
         .init(
@@ -204,8 +218,13 @@ nonisolated enum FurnitureCatalog {
             defaultOption: .init(fileName: "window", displayName: "기본 창문"),
             variantOptions: [
                 .init(fileName: "double_window", displayName: "이중창"),
-                .init(fileName: "single_window", displayName: "단창")
+                .init(fileName: "single_window", displayName: "단창"),
+                .init(fileName: "glass", displayName: "통유리")
             ]
+        ),
+        .init(
+            id: "stairs", displayName: "계단", keywords: ["stairs", "staircase", "계단"],
+            defaultOption: .init(fileName: "stairs", displayName: "계단"), variantOptions: []
         )
     ]
 
@@ -239,5 +258,21 @@ nonisolated enum FurnitureCatalog {
             }
         }
         return nil
+    }
+
+    /// 웹의 glass 모델과 한글 이름까지 같은 창문 참조물로 처리합니다.
+    static func isWindowName(_ name: String?) -> Bool {
+        guard let name else { return false }
+        return name.localizedCaseInsensitiveContains("window") ||
+            name.localizedCaseInsensitiveContains("glass") ||
+            name.localizedCaseInsensitiveContains("창문") ||
+            name.localizedCaseInsensitiveContains("유리")
+    }
+
+    static func isReferenceName(_ name: String?) -> Bool {
+        guard let name else { return false }
+        return isWindowName(name) ||
+            name.localizedCaseInsensitiveContains("door") ||
+            name.localizedCaseInsensitiveContains("문")
     }
 }

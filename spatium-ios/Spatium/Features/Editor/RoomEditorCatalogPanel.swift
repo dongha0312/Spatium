@@ -363,7 +363,7 @@ private func furnitureGroupIcon(_ group: String) -> String {
     case "싱크대": "sink.fill"
     case "소파": "sofa.fill"
     case "책상": "table.furniture.fill"
-    case "수납": "cabinet.fill"
+    case "수납", "수납/편집 가능": "cabinet.fill"
     case "조명": "lamp.table.fill"
     case "문": "door.left.hand.open"
     case "창문": "window.vertical.open"

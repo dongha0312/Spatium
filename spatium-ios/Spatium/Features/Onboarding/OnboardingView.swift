@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// 첫 실행 시 한 번만 보여주는 기능 소개 온보딩.
-/// 실제 앱 화면 스크린샷 4장으로 핵심 흐름(스캔 → 편집 → 가구 생성 → 동기화)을 보여주고,
-/// 어느 페이지에서든 "건너뛰기"로 바로 시작할 수 있습니다.
+/// 실제 앱 화면 스크린샷 4장으로 핵심 흐름(스캔 → 가구 배치 → 저장 → 로그인 기능)을 보여주고,
+/// 어느 페이지에서든 "건너뛰기"로 로그인/게스트 선택 화면으로 이동할 수 있습니다.
 struct OnboardingView: View {
     var onFinished: () -> Void
 
@@ -11,7 +11,7 @@ struct OnboardingView: View {
 
     private let pages: [OnboardingPage] = [
         OnboardingPage(
-            imageName: "OnboardingEditor",
+            imageName: "OnboardingHome",
             badgeSystemImage: "camera.viewfinder",
             tintIsSage: false,
             title: "내 방을 3D로 스캔",
@@ -25,18 +25,18 @@ struct OnboardingView: View {
             message: "스캔한 방 안에서 가구를 옮기고 돌리고 바꿔보세요.\n구매 전에 크기와 어울림을 미리 확인할 수 있어요."
         ),
         OnboardingPage(
-            imageName: "OnboardingImgTo3D",
-            badgeSystemImage: "photo.on.rectangle.angled",
+            imageName: "OnboardingEditor",
+            badgeSystemImage: "square.and.arrow.down.fill",
             tintIsSage: false,
-            title: "사진 한 장이 3D 가구로",
-            message: "마음에 드는 가구 사진을 올리면\nAI가 3D 모델로 만들어 방에 놓아볼 수 있어요."
+            title: "편집을 마치면 꼭 저장",
+            message: "로그인한 프로젝트는 ‘저장하기’를 눌러야 웹에 반영돼요.\n게스트 공간은 이 기기에만 보관됩니다."
         ),
         OnboardingPage(
-            imageName: "OnboardingHome",
-            badgeSystemImage: "arrow.triangle.2.circlepath.circle",
+            imageName: "OnboardingLogin",
+            badgeSystemImage: "person.crop.circle.badge.checkmark",
             tintIsSage: true,
-            title: "웹과 실시간 연동",
-            message: "앱에서 스캔한 공간을 웹에서 이어서 편집하세요.\n로그인하면 프로젝트가 기기 간에 동기화됩니다."
+            title: "웹과 AI는 로그인 후에",
+            message: "게스트 공간은 웹에 표시되지 않아요.\n로그인하면 웹 연동과 AI 가구 만들기를 사용할 수 있어요."
         ),
     ]
 
@@ -120,8 +120,8 @@ struct OnboardingView: View {
 
     private var nextButton: some View {
         PrimaryButton(
-                title: isLastPage ? "Spatium 시작하기" : "다음",
-                systemImage: isLastPage ? "arrow.right.circle.fill" : "arrow.right"
+                title: isLastPage ? "시작 방법 선택하기" : "다음",
+                systemImage: isLastPage ? "person.2.fill" : "arrow.right"
             ) {
                 if isLastPage {
                     onFinished()
