@@ -775,7 +775,8 @@ function ViewerStep({ modelUrl, modelName, objectLabel, onComplete }) {
 
   const loadGeneratedModel = useCallback(() => {
     if (!modelUrl) return;
-    const name = modelName || modelUrl.split("/").pop() || "generated-model.glb";
+    const name =
+      modelName || modelUrl.split("/").pop() || "generated-model.glb";
     loadGlb(modelUrl, { displayName: name });
   }, [loadGlb, modelName, modelUrl]);
 
@@ -895,24 +896,6 @@ function ViewerStep({ modelUrl, modelName, objectLabel, onComplete }) {
         </div>
 
         <div className="it3-viewer-panel">
-          <div className="it3-ctrl-group-label">모델</div>
-          {modelError && (
-            <div className="it3-result-card">
-              <div className="it3-result-label">모델 로드 실패</div>
-              <div>{modelError}</div>
-              {modelUrl && (
-                <button
-                  type="button"
-                  className="it3-btn-ghost"
-                  onClick={loadGeneratedModel}
-                >
-                  다시 불러오기
-                </button>
-              )}
-            </div>
-          )}
-          {loadingModel && <div className="it3-hint">GLB 불러오는 중…</div>}
-
           <div className="it3-ctrl-group-label">보정</div>
           <button
             type="button"

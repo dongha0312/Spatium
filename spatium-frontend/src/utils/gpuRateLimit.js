@@ -21,6 +21,18 @@ const PER_WINDOW = readNumber(process.env.REACT_APP_GPU_LIMIT_PER_WINDOW, 1);
 const PER_DAY = readNumber(process.env.REACT_APP_GPU_LIMIT_PER_DAY, 5);
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+// 관리자 이메일 목록 (.env의 REACT_APP_ADMIN_EMAILS, 콤마로 구분) : 횟수 제한에서 제외
+const ADMIN_EMAILS = (process.env.REACT_APP_ADMIN_EMAILS || "")
+  .split(",")
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
+
+// 현재 로그인 사용자가 관리자인지 (email이 화이트리스트에 있으면 true)
+function isAdminUser() {
+  const email = getLoginSession()?.email?.trim().toLowerCase();
+  return Boolean(email) && ADMIN_EMAILS.includes(email);
+}
+
 // 현재 로그인 사용자 식별 키 (세션의 email 사용, 없으면 게스트 공용 키)
 function currentUserKey() {
   const session = getLoginSession();
@@ -58,6 +70,11 @@ function minutesLabel(ms) {
 // 생성 요청 직전에 호출 : 제한을 넘었으면 { allowed:false, reason } 반환
 //  - allowed:true 인 경우에만 실제 생성 요청을 진행한다.
 export function checkGpuRateLimit() {
+  // 관리자는 횟수 제한 없이 항상 통과
+  if (isAdminUser()) {
+    return { allowed: true };
+  }
+
   const now = Date.now();
   const userKey = currentUserKey();
   const store = readStore();
@@ -93,6 +110,11 @@ export function checkGpuRateLimit() {
 
 // 생성 요청을 실제로 보낸 시점에 호출 : 사용 1회 기록
 export function recordGpuUsage() {
+  // 관리자는 제한이 없으므로 사용 기록도 남기지 않는다
+  if (isAdminUser()) {
+    return;
+  }
+
   const now = Date.now();
   const userKey = currentUserKey();
   const store = readStore();
