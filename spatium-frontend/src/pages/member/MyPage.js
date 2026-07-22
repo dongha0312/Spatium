@@ -102,7 +102,13 @@ function MyPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [panelOpen, setPanelOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("project");
+  const [activeTab, setActiveTab] = useState(() => {
+    const requestedTab = new URLSearchParams(location.search).get("tab");
+    return requestedTab === "furniture" ||
+      location.state?.activeTab === "furniture"
+      ? "furniture"
+      : "project";
+  });
   const [user, setUser] = useState(DEFAULT_USER);
   const [projects, setProjects] = useState([]);
   const [expandedProjectIds, setExpandedProjectIds] = useState(() => new Set());
@@ -206,10 +212,24 @@ function MyPage() {
     }
   }, [activeTab, loadMyFurniture]);
 
-  // 홈에서 "시작하기"로 진입한 경우, 새로고침/뒤로가기 시 모달이 다시 열리지 않도록 state 제거
+  // URL의 tab 값을 탭 상태와 동기화한다. 다른 페이지에서 뒤로 왔을 때도 탭이 복원된다.
   useEffect(() => {
-    if (location.state?.openNewProject) {
-      navigate(location.pathname, { replace: true, state: {} });
+    const requestedTab = new URLSearchParams(location.search).get("tab");
+    setActiveTab(requestedTab === "furniture" ? "furniture" : "project");
+  }, [location.search]);
+
+  // 다른 화면에서 전달한 일회성 진입 상태는 새로고침/뒤로가기에서 반복되지 않게 제거한다.
+  useEffect(() => {
+    if (location.state?.activeTab === "furniture") {
+      navigate(`${location.pathname}?tab=furniture`, {
+        replace: true,
+        state: {},
+      });
+    } else if (location.state?.openNewProject) {
+      navigate(`${location.pathname}${location.search}`, {
+        replace: true,
+        state: {},
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -219,11 +239,11 @@ function MyPage() {
     if (loading || autoModalHandled.current) return;
 
     autoModalHandled.current = true;
-    if (projects.length === 0) {
+    if (activeTab === "project" && projects.length === 0) {
       openProjectModal("project");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, projects]);
+  }, [activeTab, loading, projects]);
 
   /*
   const totalRoomCount = projects.reduce((sum, p) => sum + p.rooms.length, 0);
@@ -236,6 +256,24 @@ function MyPage() {
     (p) => p.id === modalTargetProjectId,
   );
   const togglePanel = () => setPanelOpen((prev) => !prev);
+
+  const handleTabChange = (nextTab) => {
+    const params = new URLSearchParams(location.search);
+    if (nextTab === "furniture") {
+      params.set("tab", "furniture");
+    } else {
+      params.set("tab", "project");
+    }
+
+    setActiveTab(nextTab);
+    navigate(
+      {
+        pathname: location.pathname,
+        search: params.toString() ? `?${params.toString()}` : "",
+      },
+      { replace: true, state: {} },
+    );
+  };
 
   /*
    * 기존 토글은 화면만 펼치고 접었으며 룸 데이터는 진입 시 이미 모두 조회했다.
@@ -620,7 +658,7 @@ function MyPage() {
             className={`mp-tab-btn ${
               activeTab === "project" ? "mp-tab-active" : ""
             }`}
-            onClick={() => setActiveTab("project")}
+            onClick={() => handleTabChange("project")}
           >
             내 프로젝트
           </button>
@@ -629,7 +667,7 @@ function MyPage() {
             className={`mp-tab-btn ${
               activeTab === "furniture" ? "mp-tab-active" : ""
             }`}
-            onClick={() => setActiveTab("furniture")}
+            onClick={() => handleTabChange("furniture")}
           >
             내 가구관리
           </button>
