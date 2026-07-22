@@ -12,6 +12,7 @@ import AccountPanel from "../../components/AccountPanel";
 import AvatarButton from "../../components/AvatarButton";
 import Header from "../../components/Header";
 import { getLoginSession } from "../../utils/authSession";
+import { checkGpuRateLimit, recordGpuUsage } from "../../utils/gpuRateLimit";
 import { getMyInfo } from "../../springApi/MemberSpringBootApi";
 import useLogout from "../../hooks/useLogout";
 import useProjectStats from "../../hooks/useProjectStats";
@@ -258,10 +259,21 @@ function ImgTo3dPage() {
     )
       return;
 
+    // 사용자별 생성 횟수 제한 (3분 1회 / 하루 5회) : 초과 시 요청을 보내지 않고 안내
+    const limit = checkGpuRateLimit();
+    if (!limit.allowed) {
+      setGenerationStatus("error");
+      setGenerationError(limit.reason);
+      return;
+    }
+
     const controller = new AbortController();
     generationRequestRef.current = controller;
     setGenerationStatus("loading");
     setGenerationError("");
+
+    // 실제 생성 요청을 보내는 시점에 사용 1회 기록
+    recordGpuUsage();
 
     try {
       const result = await generateModel({
