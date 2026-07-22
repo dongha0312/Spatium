@@ -133,7 +133,7 @@ struct FurniturePanelView: View {
         case "refrigerator": return "refrigerator"
         case "sink": return "sink"
         case "sofa": return "sofa"
-        case "storage": return "cabinet"
+        case "storage", "storage/editable": return "cabinet"
         case "table": return "table.furniture"
         case "lamp": return "lamp.table"
         case "door": return "door.left.hand.closed"

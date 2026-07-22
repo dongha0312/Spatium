@@ -93,6 +93,8 @@ struct ScanReviewView: View {
     @State private var editorPreparationTask: Task<Void, Never>?
     /// URL과 편집 스냅샷이 함께 준비된 경우에만 전체 화면 편집기를 표시한다.
     @State private var editorPresentation: ScanEditorPresentation?
+    @State private var showsEditorSaveReminder = false
+    @State private var shouldPrepareEditorAfterReminder = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -100,8 +102,9 @@ struct ScanReviewView: View {
             RoomTypeCard(project: $project)
             ScanEditEntryCard(
                 itemCount: project.items.count,
+                isGuestMode: isGuestMode,
                 preparationState: editorPreparationState,
-                onOpen: prepareScanEditor
+                onOpen: { showsEditorSaveReminder = true }
             )
             DetectedItemsCard(items: $project.items)
             ExportCard(
@@ -126,6 +129,14 @@ struct ScanReviewView: View {
                 projectName: projectName,
                 onRoomCreated: onRoomUploaded
             )
+        }
+        .sheet(
+            isPresented: $showsEditorSaveReminder,
+            onDismiss: prepareEditorAfterReminderIfNeeded
+        ) {
+            ScanEditorSaveReminderSheet(isGuestMode: isGuestMode) {
+                shouldPrepareEditorAfterReminder = true
+            }
         }
         .onChange(of: project.createdAt) { _, _ in
             cancelEditorPreparation()
@@ -173,7 +184,15 @@ struct ScanReviewView: View {
         }
     }
 
+    private func prepareEditorAfterReminderIfNeeded() {
+        guard shouldPrepareEditorAfterReminder else { return }
+        shouldPrepareEditorAfterReminder = false
+        prepareScanEditor()
+    }
+
     private func cancelEditorPreparation() {
+        showsEditorSaveReminder = false
+        shouldPrepareEditorAfterReminder = false
         editorPreparationTask?.cancel()
         editorPreparationTask = nil
         editorPreparationState = .idle
@@ -181,9 +200,111 @@ struct ScanReviewView: View {
     }
 }
 
+struct ScanEditorSaveReminderSheet: View {
+    let isGuestMode: Bool
+    var onContinue: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var needsExpandedSheet: Bool {
+        verticalSizeClass == .compact || dynamicTypeSize.isAccessibilitySize
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top, spacing: 13) {
+                    Image(systemName: isGuestMode ? "person.crop.circle.badge.exclamationmark" : "square.and.arrow.down.fill")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(isGuestMode ? SpatiumTheme.coral : SpatiumTheme.accent)
+                        .frame(width: 48, height: 48)
+                        .background(
+                            (isGuestMode ? SpatiumTheme.coral : SpatiumTheme.accent).opacity(0.11),
+                            in: Circle()
+                        )
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(isGuestMode ? "웹에서 보려면 로그인이 필요해요" : "3D 공간에서 꼭 저장해 주세요")
+                            .font(.headline.weight(.black))
+                            .foregroundStyle(SpatiumTheme.text)
+                        Text(reminderMessage)
+                            .font(.subheadline)
+                            .foregroundStyle(SpatiumTheme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Label(reminderLabel, systemImage: isGuestMode ? "person.crop.circle.badge.checkmark" : "icloud.and.arrow.up.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(isGuestMode ? SpatiumTheme.coral : SpatiumTheme.accent)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        (isGuestMode ? SpatiumTheme.coral : SpatiumTheme.accent).opacity(0.08),
+                        in: RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous)
+                    )
+
+                HStack(spacing: 8) {
+                    Button("돌아가기") { dismiss() }
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(SpatiumTheme.muted)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 13)
+                        .background(SpatiumTheme.warmPanel)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: SpatiumRadius.md)
+                                .stroke(SpatiumTheme.border, lineWidth: 1)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                        .buttonStyle(.pressable)
+
+                    Button {
+                        onContinue()
+                        dismiss()
+                    } label: {
+                        Label("3D 공간 열기", systemImage: "cube.transparent")
+                            .font(.subheadline.weight(.black))
+                            .foregroundStyle(SpatiumTheme.onCta)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(SpatiumTheme.ctaFill)
+                            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityIdentifier("scan-editor-reminder-continue")
+                }
+            }
+            .padding(20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(SpatiumTheme.background.ignoresSafeArea())
+        .presentationDetents(needsExpandedSheet ? [.large] : [.height(isGuestMode ? 260 : 240)])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(SpatiumTheme.background)
+        .accessibilityIdentifier("scan-editor-save-reminder")
+    }
+
+    private var reminderMessage: String {
+        if isGuestMode {
+            return "게스트 모드에서는 3D 공간을 서버에 저장할 수 없어요. 로그인 후 저장하면 웹에서도 확인할 수 있어요."
+        }
+        return "편집 화면 하단의 ‘저장하기’를 눌러야 스캔 결과와 편집 내용이 서버에 저장되고 웹에서도 확인할 수 있어요."
+    }
+
+    private var reminderLabel: String {
+        isGuestMode
+            ? "로그인한 프로젝트만 웹과 동기화돼요"
+            : "‘저장하기’를 눌러야 웹에 반영돼요"
+    }
+}
+
 /// 스캔 결과를 실제 3D로 열어 객체를 편집하는 진입 카드.
 private struct ScanEditEntryCard: View {
     let itemCount: Int
+    let isGuestMode: Bool
     let preparationState: ScanEditorPreparationState
     var onOpen: () -> Void
 
@@ -217,7 +338,7 @@ private struct ScanEditEntryCard: View {
         }
         .buttonStyle(.pressable)
         .disabled(preparationState.isPreparing)
-        .accessibilityHint(preparationState.isFailed ? "스캔 파일 준비를 다시 시도합니다" : "스캔된 방을 3D 편집기로 엽니다")
+        .accessibilityHint(entryAccessibilityHint)
         .animation(.easeOut(duration: 0.2), value: preparationState)
     }
 
@@ -272,12 +393,23 @@ private struct ScanEditEntryCard: View {
     private var message: String {
         switch preparationState {
         case .idle:
-            "스캔된 방에서 객체 \(itemCount)개를 이동·수정·추가·삭제"
+            isGuestMode
+                ? "객체 \(itemCount)개를 편집할 수 있어요 · 게스트 공간은 이 기기에만 보관돼요"
+                : "객체 \(itemCount)개를 편집한 뒤 저장하면 웹에서도 확인할 수 있어요"
         case .preparing:
             "스캔 메시를 만드는 동안 잠시 기다려 주세요"
         case let .failed(message):
             message
         }
+    }
+
+    private var entryAccessibilityHint: String {
+        if preparationState.isFailed {
+            return "스캔 파일 준비를 다시 시도합니다"
+        }
+        return isGuestMode
+            ? "게스트 보관 안내를 확인한 뒤 스캔된 방을 3D 편집기로 엽니다"
+            : "저장 안내를 확인한 뒤 스캔된 방을 3D 편집기로 엽니다"
     }
 
     private var iconGradient: [Color] {
@@ -351,27 +483,82 @@ private struct RoomTypeCard: View {
     }
 }
 
-private struct DetectedItemsCard: View {
+struct DetectedItemsCard: View {
     @Binding var items: [EditableScanItem]
+    @State private var showsAllItems = false
+
+    private static let previewCount = 3
+
+    private var visibleItemIndices: Range<Int> {
+        0..<(showsAllItems ? items.count : min(items.count, Self.previewCount))
+    }
+
+    private var hiddenItemCount: Int {
+        max(items.count - Self.previewCount, 0)
+    }
 
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: 12) {
-                Text("감지된 공간 요소")
-                    .font(.headline)
-                    .foregroundStyle(SpatiumTheme.text)
+                HStack(spacing: 8) {
+                    Text("감지된 공간 요소")
+                        .font(.headline)
+                        .foregroundStyle(SpatiumTheme.text)
+
+                    Text("\(items.count)개")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(SpatiumTheme.accent)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(SpatiumTheme.accent.opacity(0.09), in: Capsule())
+                }
 
                 if items.isEmpty {
                     ContentUnavailableView("감지된 항목 없음", systemImage: "cube.transparent", description: Text("스캔을 다시 시도해 주세요."))
                         .frame(minHeight: 180)
                 } else {
                     LazyVStack(spacing: 10) {
-                        ForEach($items) { $item in
-                            EditableScanItemRow(item: $item)
+                        ForEach(visibleItemIndices, id: \.self) { index in
+                            EditableScanItemRow(item: $items[index])
+                                .transition(.opacity.combined(with: .move(edge: .top)))
                         }
+                    }
+
+                    if hiddenItemCount > 0 {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.22)) {
+                                showsAllItems.toggle()
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(showsAllItems ? "접기" : "\(hiddenItemCount)개 더 보기")
+                                    .font(.subheadline.weight(.bold))
+
+                                Spacer()
+
+                                Image(systemName: "chevron.down")
+                                    .font(.caption.weight(.black))
+                                    .rotationEffect(.degrees(showsAllItems ? 180 : 0))
+                            }
+                            .foregroundStyle(SpatiumTheme.accent)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .background(SpatiumTheme.accent.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous)
+                                    .stroke(SpatiumTheme.accent.opacity(0.15), lineWidth: 1)
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+                        }
+                        .buttonStyle(.pressable)
+                        .accessibilityHint(showsAllItems ? "추가 감지 요소를 숨깁니다" : "나머지 감지 요소를 펼쳐 봅니다")
+                        .accessibilityIdentifier("detected-items-toggle")
                     }
                 }
             }
+        }
+        .onChange(of: items.map(\.id)) { _, _ in
+            showsAllItems = false
         }
     }
 }

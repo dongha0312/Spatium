@@ -511,6 +511,7 @@ final class UserFurnitureStore: ObservableObject {
             let refreshedItems = (localOnlyItems + synchronized).sorted {
                 $0.createdAt > $1.createdAt
             }
+            guard refreshedItems != items else { return }
             try await diskStore.persist(refreshedItems)
             items = refreshedItems
         }
@@ -579,8 +580,11 @@ final class UserFurnitureStore: ObservableObject {
             // 서버가 중복 ID를 내려줘도 크래시하지 않도록 첫 항목 유지로 병합한다.
             let remoteByID = Dictionary(defaults.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             let knownIDs = Set(FurnitureCatalog.items.map(\.id))
-            builtInItems = FurnitureCatalog.items.map { remoteByID[$0.id] ?? $0 }
+            let refreshedBuiltInItems = FurnitureCatalog.items.map { remoteByID[$0.id] ?? $0 }
                 + defaults.filter { !knownIDs.contains($0.id) }
+            if refreshedBuiltInItems != builtInItems {
+                builtInItems = refreshedBuiltInItems
+            }
         }
     }
 
@@ -712,7 +716,9 @@ final class UserFurnitureStore: ObservableObject {
 
     private func loadInitialCatalog() async {
         let loadedItems = await diskStore.load()
-        items = loadedItems
+        if loadedItems != items {
+            items = loadedItems
+        }
         initialLoadTask = nil
     }
 

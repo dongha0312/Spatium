@@ -4,19 +4,21 @@ import UIKit
 struct ImgTo3DUploadStep: View {
     let image: UIImage?
     let isPreparingImage: Bool
+    let isImportingModel: Bool
     let convertedFromIncompatibleFormat: Bool
     let canUseCamera: Bool
     let onChoosePhoto: () -> Void
     let onOpenCamera: () -> Void
+    let onChooseGLB: () -> Void
 
     var body: some View {
         ImgTo3DStepShell(
             systemImage: "photo.badge.plus",
-            title: "가구 사진을 올려주세요",
-            description: "3D로 만들 가구의 전체 형태가 잘 보이는 사진 한 장이면 충분해요."
+            title: "사진이나 GLB로 시작하세요",
+            description: "사진으로 새 3D 가구를 만들거나, 가지고 있는 GLB를 바로 내 가구에 추가할 수 있어요."
         ) {
-            if isPreparingImage {
-                preparingImageContent
+            if isPreparingImage || isImportingModel {
+                preparingContent
             } else if let image {
                 selectedImageContent(image)
             } else {
@@ -25,16 +27,18 @@ struct ImgTo3DUploadStep: View {
         }
     }
 
-    private var preparingImageContent: some View {
+    private var preparingContent: some View {
         VStack(spacing: 14) {
             Spacer(minLength: 0)
             ProgressView()
                 .controlSize(.large)
                 .tint(SpatiumTheme.accent)
-            Text("사진을 최적화하고 있어요…")
+            Text(isImportingModel ? "GLB 파일을 확인하고 있어요…" : "사진을 최적화하고 있어요…")
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(SpatiumTheme.text)
-            Text("화질은 유지하면서 업로드 크기와 메모리 사용을 줄이고 있습니다.")
+            Text(isImportingModel
+                 ? "백엔드 업로드 규칙에 맞는 GLB 2.0 파일인지 확인하고 있습니다."
+                 : "화질은 유지하면서 업로드 크기와 메모리 사용을 줄이고 있습니다.")
                 .font(.caption)
                 .foregroundStyle(SpatiumTheme.soft)
                 .multilineTextAlignment(.center)
@@ -42,7 +46,7 @@ struct ImgTo3DUploadStep: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("사진 최적화 중")
+        .accessibilityLabel(isImportingModel ? "GLB 파일 확인 중" : "사진 최적화 중")
     }
 
     private func selectedImageContent(_ image: UIImage) -> some View {
@@ -100,6 +104,29 @@ struct ImgTo3DUploadStep: View {
                     .buttonStyle(.pressable)
                 }
             }
+
+            HStack(spacing: 9) {
+                Rectangle()
+                    .fill(SpatiumTheme.border)
+                    .frame(height: 1)
+                Text("또는")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(SpatiumTheme.soft)
+                Rectangle()
+                    .fill(SpatiumTheme.border)
+                    .frame(height: 1)
+            }
+
+            SecondaryButton(
+                title: "GLB 파일로 바로 시작",
+                systemImage: "cube.transparent",
+                action: onChooseGLB
+            )
+            .accessibilityIdentifier("img-to-3d-glb-import-button")
+
+            Text("GLB 2.0 · 최대 100MB")
+                .font(.caption2)
+                .foregroundStyle(SpatiumTheme.soft)
         }
         .padding(.vertical, 24)
         .padding(.horizontal, 14)
