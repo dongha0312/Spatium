@@ -370,6 +370,42 @@ struct SpatiumTests {
         await viewModel.discardCurrentDraft()
     }
 
+    // 벽·바닥 색은 서버 metadata의 _spatiumWallColor/_spatiumFloorColor 키로 저장되고,
+    // 같은 키를 다시 읽어 복원된다. 서버 저장 후 방을 다시 열면 벽 색이 사라지던 회귀 방지.
+    @Test func editedMetadataRoundTripsWallAndFloorColors() async throws {
+        let draftDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: draftDirectory) }
+
+        let viewModel = RoomEditorViewModel(
+            scanItems: [],
+            roomName: "색 저장 테스트",
+            usdzURL: nil,
+            initialWallColor: "#D9CBB8",
+            initialFloorColor: "#C9C9C9",
+            area: 16,
+            ceilingHeight: 2.4,
+            draftDirectoryURL: draftDirectory
+        )
+        // 서버에서 내려준 초기 색이 레이아웃에 복원된다.
+        #expect(viewModel.wallColorHex == "#D9CBB8")
+        #expect(viewModel.floorColorHex == "#C9C9C9")
+
+        viewModel.setWallColor("#B7C4B1")
+        viewModel.setFloorColor("#6B4A34")
+
+        let metadataURL = try viewModel.exportEditedMetadata()
+        defer { try? FileManager.default.removeItem(at: metadataURL) }
+        let export = try JSONDecoder().decode(
+            RoomPlanExportJSON.self,
+            from: Data(contentsOf: metadataURL)
+        )
+
+        #expect(export.wallColor == "#B7C4B1")
+        #expect(export.floorColor == "#6B4A34")
+        await viewModel.discardCurrentDraft()
+    }
+
     @Test func decorAccessibilityControlsPlaceMoveAndDescribeFigure() async throws {
         let draftDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -933,6 +969,29 @@ struct ImgTo3DUploadImageTests {
         #expect(max(preview.width, preview.height) <= ProfileAvatarImagePreprocessor.maximumPixelDimension)
         #expect(prepared.uploadData.starts(with: [0xFF, 0xD8]))
     }
+
+    // JPEG는 알파를 지원하지 않는다. 알파가 있는 원본을 그대로 인코딩하면 ImageIO가
+    // "ignoring alpha" 경고와 함께 디코딩 메모리를 2배로 잡으므로, 인코딩 대상은 불투명이어야 한다.
+    @Test func profileAvatarPreprocessingStripsAlphaBeforeJPEGEncoding() throws {
+        // 투명 영역이 있는 원본(알파 채널 포함 PNG).
+        let size = CGSize(width: 64, height: 64)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let transparent = renderer.image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 32, height: 64))
+            // 나머지 절반은 칠하지 않아 투명하게 둔다.
+        }
+        let png = try #require(transparent.pngData())
+        let sourceAlpha = try #require(transparent.cgImage).alphaInfo
+        #expect(sourceAlpha != .none && sourceAlpha != .noneSkipLast && sourceAlpha != .noneSkipFirst)
+
+        let prepared = try #require(ProfileAvatarImagePreprocessor.prepare(rawData: png))
+        let preview = try #require(prepared.previewImage.cgImage)
+
+        let opaqueAlphaInfos: [CGImageAlphaInfo] = [.none, .noneSkipFirst, .noneSkipLast]
+        #expect(opaqueAlphaInfos.contains(preview.alphaInfo))
+        #expect(prepared.uploadData.starts(with: [0xFF, 0xD8]))
+    }
 }
 
 @MainActor
@@ -1387,6 +1446,7 @@ struct RoomScanAssetServiceTests {
         #expect(item.detectedCategory == "chair")
         #expect(item.positionX == 1)
         #expect(item.positionZ == 2)
+        #expect(package.wallColor == "#AABBCC")
         #expect(package.floorColor == "#112233")
         #expect(package.usdzURL?.lastPathComponent == "source.usdz")
         #expect(!observedThreads.isEmpty)
@@ -1444,6 +1504,7 @@ struct RoomScanAssetServiceTests {
           ],
           "doors": [],
           "windows": [],
+          "_spatiumWallColor": "#AABBCC",
           "_spatiumFloorColor": "#112233"
         }
         """

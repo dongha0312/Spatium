@@ -40,9 +40,12 @@ function HomePage() {
   const [session, setSession] = useState(() => getLoginSession());
   const navigate = useNavigate();
   const stepsGridRef = useRef(null);
+  const scanButtonRef = useRef(null);
+  const scanCloseRef = useRef(null);
 
   // 닉네임 클릭 시 열리는 "내 정보" 우측 패널
   const [panelOpen, setPanelOpen] = useState(false);
+  const [scanModalOpen, setScanModalOpen] = useState(false);
 
   // 패널 이용현황에 표시할 통계 (프로젝트 수 / 룸 수)
   const stats = useProjectStats(Boolean(session));
@@ -117,6 +120,26 @@ function HomePage() {
     }
   };
 
+  useEffect(() => {
+    if (!scanModalOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const scanButton = scanButtonRef.current;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") setScanModalOpen(false);
+    };
+
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+    scanCloseRef.current?.focus();
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+      scanButton?.focus();
+    };
+  }, [scanModalOpen]);
+
   return (
     <div className="app-page hp-root">
       {/* 상단 네비게이션 */}
@@ -165,13 +188,23 @@ function HomePage() {
               놓아보고, 다른 가구로 바꿔볼 수 있어요. 직접 가구를 옮기지 않아도
               배치 결과를 미리 확인해 시행착오를 줄입니다.
             </p>
-            <button
-              type="button"
-              className="hp-hero-btn-main"
-              onClick={handleStart}
-            >
-              시작하기 →
-            </button>
+            <div className="hp-hero-actions">
+              <button
+                type="button"
+                className="hp-hero-btn-main"
+                onClick={handleStart}
+              >
+                방 꾸미기 →
+              </button>
+              <button
+                ref={scanButtonRef}
+                type="button"
+                className="hp-hero-btn-scan"
+                onClick={() => setScanModalOpen(true)}
+              >
+                방 스캔하기
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -197,6 +230,53 @@ function HomePage() {
         </div>
       </div>
       <Footer />
+
+      {scanModalOpen && (
+        <div
+          className="hp-scan-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setScanModalOpen(false);
+          }}
+        >
+          <section
+            className="hp-scan-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="hp-scan-modal-title"
+          >
+            <button
+              ref={scanCloseRef}
+              type="button"
+              className="hp-scan-modal-close"
+              aria-label="방 스캔 안내 닫기"
+              onClick={() => setScanModalOpen(false)}
+            />
+
+            <div className="hp-scan-modal-copy">
+              <span className="hp-scan-modal-eyebrow">SPATIUM MOBILE APP</span>
+              <h2 id="hp-scan-modal-title">내 방을 스캔하고 3D 공간으로 옮겨보세요</h2>
+              <p>
+                Spatium 앱은 iPhone의 LiDAR 센서로 실제 공간을 스캔하고,
+                웹에서 꾸밀 수 있는 3D 방 파일로 내보내는 앱입니다.
+              </p>
+              <ol className="hp-scan-modal-steps">
+                <li>휴대폰 카메라로 QR 코드를 스캔해 앱을 열어요.</li>
+                <li>방의 벽과 가구가 잘 보이도록 천천히 둘러보며 스캔해요.</li>
+                <li>완성된 3D 파일을 내보낸 뒤 Spatium에서 새 룸으로 추가해요.</li>
+              </ol>
+            </div>
+
+            <div className="hp-scan-qr-card">
+              <img
+                src="/images/spatium-app-qr.png"
+                alt="Spatium 앱 연결 QR 코드"
+              />
+              <strong>Spatium 앱 열기</strong>
+              <span>iPhone 카메라로 QR 코드를 스캔해주세요.</span>
+            </div>
+          </section>
+        </div>
+      )}
 
       {/* 개발용 바로가기 (배포 전 제거 예정) 일단 주석만 해놓겠습니다~*/}
       {/* <div
