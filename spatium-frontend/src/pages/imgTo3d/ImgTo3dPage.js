@@ -24,7 +24,7 @@ import ViewerStep from "./ViewerStep";
 import SaveStep from "./SaveStep";
 
 const STEP_LABELS = [
-  "사진 업로드",
+  "파일 업로드",
   "객체명 입력",
   "배경 제거",
   "3D 생성",
@@ -49,6 +49,7 @@ function ImgTo3dPage() {
 
   const [step, setStep] = useState(0);
   const [image, setImage] = useState(null);
+  const [uploadedModel, setUploadedModel] = useState(null);
   const [objectName, setObjectName] = useState("");
   const [segmentationProvider, setSegmentationProvider] =
     useState("grounded_sam2");
@@ -65,6 +66,7 @@ function ImgTo3dPage() {
   const [correctedModel, setCorrectedModel] = useState(null);
 
   const imageRef = useRef(null);
+  const uploadedModelRef = useRef(null);
   const segmentationResultRef = useRef(null);
   const generatedAssetRef = useRef(null);
   const segmentationRequestRef = useRef(null);
@@ -102,12 +104,42 @@ function ImgTo3dPage() {
     resetGenerationResult();
   }, [cancelSegmentation, resetGenerationResult]);
 
-  const handleImageChange = useCallback(
+  const handleUploadChange = useCallback(
     (next) => {
-      if (imageRef.current?.url) URL.revokeObjectURL(imageRef.current.url);
-      imageRef.current = next;
-      setImage(next);
+      const previousWasModel = Boolean(uploadedModelRef.current);
+
+      revokeObjectUrl(imageRef.current?.url);
+      revokeObjectUrl(uploadedModelRef.current?.modelUrl);
+      imageRef.current = null;
+      uploadedModelRef.current = null;
+      setImage(null);
+      setUploadedModel(null);
       resetPipelineResults();
+
+      if (next?.kind === "image") {
+        imageRef.current = next;
+        setImage(next);
+        if (previousWasModel) setObjectName("");
+        setStep(0);
+        return;
+      }
+
+      if (next?.kind === "glb") {
+        const model = {
+          kind: "glb",
+          file: next.file,
+          modelUrl: next.url,
+          url: next.url,
+        };
+        uploadedModelRef.current = model;
+        setUploadedModel(model);
+        setObjectName(next.file.name.replace(/\.glb$/i, ""));
+        setStep(4);
+        return;
+      }
+
+      if (previousWasModel) setObjectName("");
+      setStep(0);
     },
     [resetPipelineResults],
   );
@@ -165,6 +197,7 @@ function ImgTo3dPage() {
       cancelSegmentation();
       cancelGeneration();
       if (imageRef.current?.url) URL.revokeObjectURL(imageRef.current.url);
+      revokeObjectUrl(uploadedModelRef.current?.modelUrl);
       revokeObjectUrl(segmentationResultRef.current?.imageUrl);
       revokeObjectUrl(generatedAssetRef.current?.modelUrl);
     };
@@ -306,6 +339,13 @@ function ImgTo3dPage() {
     setStep(5);
   }, []);
 
+  const handleBack = useCallback(() => {
+    setStep((current) => {
+      if (current === 4 && uploadedModelRef.current) return 0;
+      return Math.max(current - 1, 0);
+    });
+  }, []);
+
   const canNext = [
     Boolean(image),
     Boolean(objectName.trim()),
@@ -316,7 +356,10 @@ function ImgTo3dPage() {
   ][step];
 
   const stepViews = [
-    <UploadStep image={image} onImageChange={handleImageChange} />,
+    <UploadStep
+      selectedFile={uploadedModel || image}
+      onFileChange={handleUploadChange}
+    />,
     <ObjectNameStep
       objectName={objectName}
       onObjectNameChange={handleObjectNameChange}
@@ -349,7 +392,8 @@ function ImgTo3dPage() {
       provider={generationProvider}
     />,
     <ViewerStep
-      modelUrl={generatedAsset?.modelUrl}
+      modelUrl={uploadedModel?.modelUrl || generatedAsset?.modelUrl}
+      modelName={uploadedModel?.file?.name}
       objectLabel={objectName.trim()}
       onComplete={handleModelComplete}
     />,
@@ -396,10 +440,14 @@ function ImgTo3dPage() {
 
       <ol className="it3-steps">
         {STEP_LABELS.map((label, i) => {
-          const state = i < step ? "done" : i === step ? "active" : "wait";
+          const directModelStep = Boolean(uploadedModel) && step >= 4;
+          const isDone = directModelStep
+            ? i === 0 || (step === 5 && i === 4)
+            : i < step;
+          const state = isDone ? "done" : i === step ? "active" : "wait";
           return (
             <li key={label} className={`it3-steps-item is-${state}`}>
-              <span className="it3-steps-dot">{i < step ? "✓" : i + 1}</span>
+              <span className="it3-steps-dot">{isDone ? "✓" : i + 1}</span>
               <span className="it3-steps-label">{label}</span>
             </li>
           );
@@ -415,7 +463,7 @@ function ImgTo3dPage() {
               type="button"
               className="it3-btn-ghost"
               disabled={step === 0}
-              onClick={() => setStep((current) => Math.max(current - 1, 0))}
+              onClick={handleBack}
             >
               ← 이전
             </button>

@@ -406,6 +406,88 @@
 }
 
 /* 1단계: 업로드 */
+.it3-upload-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.it3-upload-option {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--bd);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.it3-upload-option-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.it3-upload-option-head h3 {
+  margin: 0 0 5px;
+  font-size: 16px;
+}
+
+.it3-upload-option-head p {
+  margin: 0;
+  color: var(--t2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.it3-upload-option-badge {
+  flex: 0 0 auto;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f7efe5;
+  color: var(--ga);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.it3-upload-option-badge.is-glb {
+  background: #ece8f7;
+  color: #65558f;
+}
+
+.it3-upload-option .it3-dropzone {
+  display: flex;
+  flex: 1;
+  min-height: 190px;
+  padding: 32px 18px;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.it3-upload-option .it3-preview-img {
+  max-height: 220px;
+}
+
+.it3-selected-glb {
+  display: flex;
+  flex: 1;
+  min-height: 190px;
+  padding: 24px 18px;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  overflow-wrap: anywhere;
+  text-align: center;
+  border: 2px solid var(--ga);
+  border-radius: 12px;
+  background: #f7efe5;
+}
+
+.it3-selected-glb .it3-btn-ghost {
+  margin-top: 14px;
+}
+
 .it3-dropzone {
   border: 2px dashed var(--bd);
   border-radius: 12px;
@@ -865,6 +947,10 @@
 }
 
 @media (max-width: 720px) {
+  .it3-upload-options {
+    grid-template-columns: 1fr;
+  }
+
   .it3-viewer-layout {
     grid-template-columns: 1fr;
   }

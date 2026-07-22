@@ -119,10 +119,9 @@ function collectLocalSamples(target) {
   return samples;
 }
 
-function ViewerStep({ modelUrl, objectLabel, onComplete }) {
+function ViewerStep({ modelUrl, modelName, objectLabel, onComplete }) {
   const mountRef = useRef(null);
   const threeRef = useRef(null);
-  const fileRef = useRef(null);
   const floorSnapRef = useRef(false);
   const gizmoModeRef = useRef(null);
   const modelLoadTokenRef = useRef(0);
@@ -776,9 +775,9 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
 
   const loadGeneratedModel = useCallback(() => {
     if (!modelUrl) return;
-    const name = modelUrl.split("/").pop() || "generated-model.glb";
+    const name = modelName || modelUrl.split("/").pop() || "generated-model.glb";
     loadGlb(modelUrl, { displayName: name });
-  }, [loadGlb, modelUrl]);
+  }, [loadGlb, modelName, modelUrl]);
 
   useEffect(() => {
     loadGeneratedModel();
@@ -816,17 +815,6 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
     t.controls.target.set(0, BOX_SIZE.h / 2, 0);
     t.camera.position.set(2.4, 1.8, 2.8);
     t.updateOverlay();
-  };
-
-  // 개발 확인용 로컬 GLB 파일 로드
-  const handleGlbFile = (file) => {
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    loadGlb(url, {
-      displayName: file.name,
-      applyDemoTransform: true,
-      revokeUrl: true,
-    });
   };
 
   // // 플레이스홀더 박스로 복귀
@@ -923,32 +911,7 @@ function ViewerStep({ modelUrl, objectLabel, onComplete }) {
               )}
             </div>
           )}
-          <button
-            type="button"
-            className="it3-btn-ghost"
-            disabled={loadingModel}
-            onClick={() => fileRef.current?.click()}
-          >
-            {loadingModel ? "불러오는 중…" : "GLB 파일 불러오기"}
-          </button>
-          {/* {fileName && (
-            <>
-              <div className="it3-file-meta">{fileName}</div>
-              <button type="button" className="it3-btn-ghost" onClick={restorePlaceholder}>
-                기본 박스로 되돌리기
-              </button>
-            </>
-          )} */}
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".glb"
-            style={{ display: "none" }}
-            onChange={(e) => {
-              handleGlbFile(e.target.files?.[0]);
-              e.target.value = ""; // 같은 파일 재선택 허용
-            }}
-          />
+          {loadingModel && <div className="it3-hint">GLB 불러오는 중…</div>}
 
           <div className="it3-ctrl-group-label">보정</div>
           <button
