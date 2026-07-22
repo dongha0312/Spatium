@@ -7,6 +7,12 @@ extension DateFormatter {
         return formatter
     }()
 
+    static let roomRowDateOnly: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "M.d"
+        return formatter
+    }()
+
     static let apiDateOnly: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"

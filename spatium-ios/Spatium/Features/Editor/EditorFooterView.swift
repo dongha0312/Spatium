@@ -4,6 +4,7 @@ import SwiftUI
 struct EditorFooterView: View {
     let hasUnsavedChanges: Bool
     let draftSaveState: EditorDraftSaveState
+    let needsInitialServerSave: Bool
     let isGuestLocalProject: Bool
     let isOffline: Bool
     let isSaving: Bool
@@ -19,6 +20,10 @@ struct EditorFooterView: View {
         VStack(spacing: 8) {
             if hasUnsavedChanges, let failureMessage = draftSaveState.failureMessage {
                 draftSaveFailureRow(message: failureMessage)
+            }
+
+            if needsInitialServerSave {
+                initialSaveReminder
             }
 
             HStack(spacing: 8) {
@@ -72,6 +77,42 @@ struct EditorFooterView: View {
                 .foregroundStyle(.white.opacity(0.55))
                 .lineLimit(2)
         }
+    }
+
+    private var initialSaveReminder: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "icloud.and.arrow.up.fill")
+                .font(.headline.weight(.bold))
+                .foregroundStyle(SpatiumTheme.accentLight)
+                .frame(width: 34, height: 34)
+                .background(.white.opacity(0.08), in: Circle())
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("웹에서 보려면 먼저 저장해 주세요")
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(.white)
+                Text("편집을 마친 뒤 아래 ‘저장하기’를 누르면 웹에도 반영돼요.")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.68))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+
+            Image(systemName: "arrow.down")
+                .font(.caption.weight(.black))
+                .foregroundStyle(SpatiumTheme.accentLight)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 9)
+        .background(SpatiumTheme.accent.opacity(0.22))
+        .overlay(
+            RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous)
+                .stroke(SpatiumTheme.accentLight.opacity(0.3), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("editor-web-save-reminder")
     }
 
     private var discardButton: some View {

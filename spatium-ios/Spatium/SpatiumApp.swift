@@ -13,7 +13,7 @@ struct SpatiumApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(userFurnitureStore: userFurnitureStore)
                 .environmentObject(userFurnitureStore)
         }
     }

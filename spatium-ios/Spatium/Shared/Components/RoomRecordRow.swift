@@ -3,16 +3,9 @@ import SwiftUI
 struct RoomRecordRow: View {
     let room: RoomRecord
 
-    /// 서버 룸에는 사진이 저장되지 않으므로, 0장일 땐 표기를 생략해 노이즈를 줄인다.
+    /// 목록에서는 방 이름과 서버의 최근 수정 시각만 보여줘 핵심 정보에 집중합니다.
     private var subtitle: String {
-        var parts = [
-            DateFormatter.roomRow.string(from: room.uploadedAt),
-            "항목 \(room.itemCount)개"
-        ]
-        if room.photoCount > 0 {
-            parts.append("사진 \(room.photoCount)장")
-        }
-        return parts.joined(separator: " · ")
+        "마지막 수정 \(DateFormatter.roomRowDateOnly.string(from: room.uploadedAt))"
     }
 
     var body: some View {

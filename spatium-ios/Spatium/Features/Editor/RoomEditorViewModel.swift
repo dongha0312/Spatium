@@ -377,6 +377,12 @@ final class RoomEditorViewModel: ObservableObject {
         projectID?.hasPrefix("local-") == true
     }
 
+    /// 스캔 직후 아직 서버 룸이 만들어지지 않은 편집기인지. 이 상태에서는 사용자가
+    /// 하단의 저장 버튼을 눌러야 업로드가 일어나고 웹에서도 공간을 볼 수 있다.
+    var needsInitialServerSave: Bool {
+        projectID != nil && !isGuestLocalProject && !isServerRoom
+    }
+
     func save() async {
         isSaving = true
         defer { isSaving = false }
@@ -501,10 +507,7 @@ final class RoomEditorViewModel: ObservableObject {
 
     private static func isWindowFurniture(_ furniture: PlacedFurniture) -> Bool {
         [furniture.furnitureName, furniture.modelName].compactMap { $0 }
-            .contains { value in
-                value.localizedCaseInsensitiveContains("window")
-                    || value.localizedCaseInsensitiveContains("창문")
-            }
+            .contains(where: FurnitureCatalog.isWindowName)
     }
 
 }

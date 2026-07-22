@@ -5,7 +5,7 @@ import SwiftUI
 struct LoginView: View {
     var onLoggedIn: () -> Void
     /// 앱 진입 게이트로 쓰일 때만 전달됩니다. 전달되면 닫기 버튼 대신
-    /// "로그인 없이 둘러보기"가 노출되어 게스트로 계속할 수 있습니다.
+    /// "게스트로 둘러보기"가 노출되어 제한 사항을 확인한 뒤 계속할 수 있습니다.
     var onContinueAsGuest: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
@@ -53,7 +53,7 @@ struct LoginView: View {
 
                     dividerWithLabel
 
-                    socialButtons
+                    continueOptions
 
                     Button {
                         showSignUp = true
@@ -62,17 +62,7 @@ struct LoginView: View {
                             .font(.footnote.weight(.bold))
                             .foregroundStyle(SpatiumTheme.accent)
                     }
-                    .padding(.top, 4)
-
-                    if let onContinueAsGuest {
-                        Button(action: onContinueAsGuest) {
-                            Text("로그인 없이 둘러보기")
-                                .font(.footnote)
-                                .foregroundStyle(SpatiumTheme.soft)
-                                .underline()
-                        }
-                        .padding(.top, 2)
-                    }
+                    .padding(.top, 2)
                 }
                 .padding(20)
             }
@@ -122,12 +112,50 @@ struct LoginView: View {
             Text("Spatium에 로그인")
                 .font(.title3.weight(.black))
                 .foregroundStyle(SpatiumTheme.text)
-            Text("로그인하면 프로젝트가 기기 간에 동기화됩니다.")
+            Text("로그인한 프로젝트는 웹에서도 확인하고 기기 간에 동기화할 수 있어요.")
                 .font(.footnote)
                 .foregroundStyle(SpatiumTheme.soft)
                 .multilineTextAlignment(.center)
         }
         .padding(.bottom, 8)
+    }
+
+    private var continueOptions: some View {
+        VStack(spacing: 10) {
+            socialButtons
+
+            if let onContinueAsGuest {
+                guestContinueButton(action: onContinueAsGuest)
+            }
+        }
+    }
+
+    private func guestContinueButton(action: @escaping () -> Void) -> some View {
+        VStack(spacing: 6) {
+            Button(action: action) {
+                Label("게스트로 둘러보기", systemImage: "person.crop.circle")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(SpatiumTheme.muted)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(SpatiumTheme.warmPanel)
+                    .overlay(
+                        Capsule()
+                            .stroke(SpatiumTheme.border, lineWidth: 1)
+                    )
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityHint("게스트 공간은 이 기기에만 보관되며 웹과 AI 기능을 사용할 수 없습니다")
+            .accessibilityIdentifier("continue-as-guest")
+
+            Text("공간은 이 기기에만 보관돼요 · 웹 연동과 AI 가구 만들기는 사용할 수 없어요")
+                .font(.caption2)
+                .foregroundStyle(SpatiumTheme.soft)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 12)
+        }
     }
 
     /// 게스트 로컬 프로젝트가 로그인으로 사라지기 전에 보여주는 경고 배너.

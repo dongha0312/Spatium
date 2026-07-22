@@ -57,8 +57,12 @@ struct ImgTo3DView: View {
     @State private var floorSnap = false
     @State private var importedModelURL: URL?
     @State private var importedModelName: String?
+    @State private var stagedImportedModel: PreparedUploadFile?
     @State private var modelSize = ImgTo3DModelSize()
     @State private var showModelImporter = false
+    @State private var isImportingModel = false
+    @State private var modelImportPurpose: ModelImportPurpose = .replaceCurrentModel
+    @State private var modelImportTask: Task<Void, Never>?
 
     @State private var saveName = ""
     @State private var category: ImgTo3DCategory = .bathtub
@@ -67,6 +71,11 @@ struct ImgTo3DView: View {
     @State private var saveNotice: String?
     @State private var alertMessage: String?
     @FocusState private var focusedField: ImgTo3DFocusField?
+
+    private enum ModelImportPurpose {
+        case startFromGLB
+        case replaceCurrentModel
+    }
 
     private var generationStages: [String] {
         ["이미지 전처리", "\(generationProvider.title) 메시 생성", "텍스처 베이킹", "GLB 내보내기"]
@@ -159,7 +168,8 @@ struct ImgTo3DView: View {
         ) { result in
             switch result {
             case .success(let urls):
-                importedModelURL = urls.first
+                guard let sourceURL = urls.first else { return }
+                beginImportingGLB(sourceURL)
             case .failure:
                 alertMessage = "GLB 파일을 불러오지 못했어요. 파일을 확인해주세요."
             }
@@ -247,10 +257,15 @@ struct ImgTo3DView: View {
             ImgTo3DUploadStep(
                 image: image,
                 isPreparingImage: isPreparingImage || isRestoringImages,
+                isImportingModel: isImportingModel,
                 convertedFromIncompatibleFormat: uploadImage?.convertedFromIncompatibleFormat == true,
                 canUseCamera: UIImagePickerController.isSourceTypeAvailable(.camera),
                 onChoosePhoto: openGalleryWithPermission,
-                onOpenCamera: { showCamera = true }
+                onOpenCamera: { showCamera = true },
+                onChooseGLB: {
+                    modelImportPurpose = .startFromGLB
+                    showModelImporter = true
+                }
             )
         case .name:
             ImgTo3DNameStep(
@@ -298,7 +313,15 @@ struct ImgTo3DView: View {
                     importedModelURL: $importedModelURL,
                     importedModelName: $importedModelName,
                     modelSize: $modelSize,
-                    showModelImporter: $showModelImporter,
+                    showModelImporter: Binding(
+                        get: { showModelImporter },
+                        set: { isPresented in
+                            if isPresented {
+                                modelImportPurpose = .replaceCurrentModel
+                            }
+                            showModelImporter = isPresented
+                        }
+                    ),
                     autoAlignToken: autoAlignToken,
                     canUndo: !undoHistory.isEmpty,
                     canRedo: !redoHistory.isEmpty,
@@ -385,6 +408,57 @@ struct ImgTo3DView: View {
         formatter.allowedUnits = [.useKB, .useMB]
         formatter.countStyle = .file
         return formatter.string(fromByteCount: Int64(size))
+    }
+
+    /// 파일 앱에서 고른 보안 범위 URL을 검증·복사한 뒤, 사진/AI 단계를 건너뛰고
+    /// 기존 보정 → 이름·카테고리 → 서버 저장 흐름을 그대로 사용합니다.
+    private func beginImportingGLB(_ sourceURL: URL) {
+        guard !isImportingModel else { return }
+        let purpose = modelImportPurpose
+        isImportingModel = true
+        alertMessage = nil
+        modelImportTask?.cancel()
+        modelImportTask = Task {
+            var preparedFile: PreparedUploadFile?
+            do {
+                preparedFile = try await UploadFilePreparation.prepare(
+                    sourceURL: sourceURL,
+                    kind: .furnitureGLB
+                )
+                try Task.checkCancellation()
+                guard let preparedFile else { return }
+
+                if purpose == .startFromGLB {
+                    resetGeneratedModelState()
+                    let suggestedName = preparedFile.originalFileName
+                        .split(separator: ".", omittingEmptySubsequences: false)
+                        .dropLast()
+                        .joined(separator: ".")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    objectName = suggestedName.isEmpty ? "새 가구" : suggestedName
+                    saveName = objectName
+                    normalizedName = nil
+                } else {
+                    UploadFilePreparation.remove(stagedImportedModel)
+                }
+
+                stagedImportedModel = preparedFile
+                importedModelURL = preparedFile.url
+                importedModelName = preparedFile.originalFileName
+                if purpose == .startFromGLB {
+                    step = .correction
+                }
+                Haptics.success()
+            } catch is CancellationError {
+                UploadFilePreparation.remove(preparedFile)
+            } catch {
+                UploadFilePreparation.remove(preparedFile)
+                alertMessage = error.localizedDescription
+                Haptics.error()
+            }
+            isImportingModel = false
+            modelImportTask = nil
+        }
     }
 
     /// 사진 보관함 접근 권한을 확인/요청한 뒤 갤러리 선택 시트를 연다.
@@ -569,6 +643,8 @@ struct ImgTo3DView: View {
         generationProgress = 0
         isGenerating = false
         generationError = nil
+        UploadFilePreparation.remove(stagedImportedModel)
+        stagedImportedModel = nil
         importedModelURL = nil
         importedModelName = nil
         modelSize = .init()
@@ -827,6 +903,9 @@ struct ImgTo3DView: View {
 
     private func resetWizard() {
         imagePreparationTask?.cancel()
+        modelImportTask?.cancel()
+        modelImportTask = nil
+        isImportingModel = false
         imagePreparationTask = nil
         imagePreparationID = nil
         isPreparingImage = false
@@ -854,6 +933,8 @@ struct ImgTo3DView: View {
         mcResolution = 256
         textureResolution = 1024
         remesh = .none
+        UploadFilePreparation.remove(stagedImportedModel)
+        stagedImportedModel = nil
         importedModelURL = nil
         importedModelName = nil
         modelTransform = .initial
