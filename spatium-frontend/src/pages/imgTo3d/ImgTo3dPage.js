@@ -134,7 +134,7 @@ function ImgTo3dPage() {
         uploadedModelRef.current = model;
         setUploadedModel(model);
         setObjectName(next.file.name.replace(/\.glb$/i, ""));
-        setStep(4);
+        setStep(0);
         return;
       }
 
@@ -346,8 +346,15 @@ function ImgTo3dPage() {
     });
   }, []);
 
+  const handleNext = useCallback(() => {
+    setStep((current) => {
+      if (current === 0 && uploadedModelRef.current) return 4;
+      return current + 1;
+    });
+  }, []);
+
   const canNext = [
-    Boolean(image),
+    Boolean(image || uploadedModel),
     Boolean(objectName.trim()),
     segmentationStatus === "success",
     generationStatus === "success",
@@ -472,7 +479,7 @@ function ImgTo3dPage() {
                 type="button"
                 className="it3-btn-prim"
                 disabled={!canNext}
-                onClick={() => setStep((current) => current + 1)}
+                onClick={handleNext}
               >
                 다음 →
               </button>

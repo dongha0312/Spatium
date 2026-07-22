@@ -14,6 +14,11 @@ function UploadStep({ selectedFile, onFileChange }) {
   const handleFile = (file, expectedKind) => {
     if (!file) return;
 
+    if (selectedFile && selectedFile.kind !== expectedKind) {
+      setValidationError("사진과 GLB 파일은 동시에 업로드할 수 없어요. 선택한 파일을 먼저 제거해주세요.");
+      return;
+    }
+
     const isGlb = file.name.toLowerCase().endsWith(".glb");
     const isImage = ALLOWED_IMAGE_TYPES.has(file.type);
 
@@ -58,16 +63,30 @@ function UploadStep({ selectedFile, onFileChange }) {
     if (glbInputRef.current) glbInputRef.current.value = "";
   };
 
-  const renderDropzone = ({ kind, icon, main, sub, inputRef }) => (
+  const renderDropzone = ({ kind, icon, main, sub, inputRef, disabled }) => (
     <div
-      className={`it3-dropzone${dragOver === kind ? " is-over" : ""}`}
-      onClick={() => inputRef.current?.click()}
+      className={`it3-dropzone${dragOver === kind ? " is-over" : ""}${disabled ? " is-disabled" : ""}`}
+      role="button"
+      aria-disabled={disabled}
+      tabIndex={disabled ? -1 : 0}
+      onClick={() => {
+        if (!disabled) inputRef.current?.click();
+      }}
+      onKeyDown={(event) => {
+        if (!disabled && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          inputRef.current?.click();
+        }
+      }}
       onDragOver={(event) => {
         event.preventDefault();
-        setDragOver(kind);
+        if (!disabled) setDragOver(kind);
       }}
       onDragLeave={() => setDragOver(null)}
-      onDrop={(event) => handleDrop(event, kind)}
+      onDrop={(event) => {
+        event.preventDefault();
+        if (!disabled) handleDrop(event, kind);
+      }}
     >
       <div className="it3-dropzone-icon">{icon}</div>
       <div className="it3-dropzone-main">{main}</div>
@@ -111,9 +130,12 @@ function UploadStep({ selectedFile, onFileChange }) {
             renderDropzone({
               kind: "image",
               icon: "🖼️",
-              main: "사진 선택",
-              sub: "JPG · PNG · WEBP / 최대 10MB",
+              main: selectedFile?.kind === "glb" ? "GLB가 선택되어 있어요" : "사진 선택",
+              sub: selectedFile?.kind === "glb"
+                ? "GLB를 제거한 후 사진을 선택할 수 있어요."
+                : "JPG · PNG · WEBP / 최대 10MB",
               inputRef: imageInputRef,
+              disabled: selectedFile?.kind === "glb",
             })
           )}
         </section>
@@ -147,9 +169,12 @@ function UploadStep({ selectedFile, onFileChange }) {
             renderDropzone({
               kind: "glb",
               icon: "🧊",
-              main: "GLB 파일 선택",
-              sub: ".GLB / 최대 100MB",
+              main: selectedFile?.kind === "image" ? "사진이 선택되어 있어요" : "GLB 파일 선택",
+              sub: selectedFile?.kind === "image"
+                ? "사진을 제거한 후 GLB를 선택할 수 있어요."
+                : ".GLB / 최대 100MB",
               inputRef: glbInputRef,
+              disabled: selectedFile?.kind === "image",
             })
           )}
         </section>

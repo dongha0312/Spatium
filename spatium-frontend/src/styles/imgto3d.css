@@ -504,6 +504,14 @@
   background: #f7efe5;
 }
 
+.it3-dropzone.is-disabled,
+.it3-dropzone.is-disabled:hover {
+  border-color: var(--bd);
+  background: #f1efec;
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .it3-dropzone-icon {
   font-size: 34px;
   margin-bottom: 10px;
