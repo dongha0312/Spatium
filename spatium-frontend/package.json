@@ -16,6 +16,9 @@
     "three": "^0.185.0",
     "web-vitals": "^2.1.4"
   },
+  "devDependencies": {
+    "@babel/plugin-transform-class-static-block": "^7.29.7"
+  },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
@@ -27,6 +30,15 @@
       "react-app",
       "react-app/jest"
     ]
+  },
+  "jest": {
+    "transformIgnorePatterns": [
+      "[/\\\\]node_modules[/\\\\](?!(three)[/\\\\]).+\\.(js|jsx|mjs|cjs|ts|tsx)$",
+      "^.+\\.module\\.(css|sass|scss)$"
+    ],
+    "transform": {
+      "^.+\\.(js|jsx|mjs|cjs|ts|tsx)$": "<rootDir>/config/jest/babelTransformWithStaticBlock.js"
+    }
   },
   "browserslist": {
     "production": [

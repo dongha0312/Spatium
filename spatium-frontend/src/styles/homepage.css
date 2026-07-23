@@ -684,11 +684,12 @@
   background: #fff;
 }
 
-.hp-step-shot img {
+.hp-step-shot video {
   width: 100%;
   display: block;
   aspect-ratio: 16 / 10;
-  object-fit: cover;
+  object-fit: contain;
+  background: #f4eee6;
 }
 
 .hp-step-meta {

@@ -13,22 +13,22 @@ import useProjectStats from "../hooks/useProjectStats";
 // 이용 순서 소개 (4단계)
 const STEPS = [
   {
-    img: "/images/steps/step1.gif",
+    img: "/images/steps/step1.mp4",
     title: "앱으로 방 스캔해서 내보내기",
     desc: "앱으로 내 방을 LiDAR 스캔하고 3D 파일로 내보내요",
   },
   {
-    img: "/images/steps/step2.gif",
+    img: "/images/steps/step2.mp4",
     title: "새 프로젝트 생성",
     desc: "프로젝트를 만들어 공간 작업을 시작해요",
   },
   {
-    img: "/images/steps/step3.gif",
+    img: "/images/steps/step3.mp4",
     title: "새 룸 만들기",
     desc: "스캔한 3D 파일을 업로드해 룸을 추가해요",
   },
   {
-    img: "/images/steps/step4.gif",
+    img: "/images/steps/step4.mp4",
     title: "가구 배치 · 교체",
     desc: "가구를 옮기고 다른 가구로 바꿔봐요",
   },
@@ -217,7 +217,15 @@ function HomePage() {
           {STEPS.map((step, i) => (
             <div className="hp-step-card" key={step.title}>
               <div className="hp-step-shot">
-                <img src={step.img} alt={step.title} />
+                <video
+                  src={step.img}
+                  aria-label={step.title}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  preload="metadata"
+                />
               </div>
               <div className="hp-step-meta">
                 <div className="hp-step-badge">{i + 1}</div>
@@ -254,15 +262,19 @@ function HomePage() {
 
             <div className="hp-scan-modal-copy">
               <span className="hp-scan-modal-eyebrow">SPATIUM MOBILE APP</span>
-              <h2 id="hp-scan-modal-title">내 방을 스캔하고 3D 공간으로 옮겨보세요</h2>
+              <h2 id="hp-scan-modal-title">
+                내 방을 스캔하고 3D 공간으로 옮겨보세요
+              </h2>
               <p>
-                Spatium 앱은 iPhone의 LiDAR 센서로 실제 공간을 스캔하고,
-                웹에서 꾸밀 수 있는 3D 방 파일로 내보내는 앱입니다.
+                Spatium 앱은 iPhone의 LiDAR 센서로 실제 공간을 스캔하고, 웹에서
+                꾸밀 수 있는 3D 방 파일로 내보내는 앱입니다.
               </p>
               <ol className="hp-scan-modal-steps">
                 <li>휴대폰 카메라로 QR 코드를 스캔해 앱을 열어요.</li>
                 <li>방의 벽과 가구가 잘 보이도록 천천히 둘러보며 스캔해요.</li>
-                <li>완성된 3D 파일을 내보낸 뒤 Spatium에서 새 룸으로 추가해요.</li>
+                <li>
+                  완성된 3D 파일을 내보낸 뒤 Spatium에서 새 룸으로 추가해요.
+                </li>
               </ol>
             </div>
 
