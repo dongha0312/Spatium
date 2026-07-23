@@ -209,16 +209,32 @@ uv run uvicorn app.main:app --reload --port 8000 --env-file .env
 
 <table>
   <tr>
-    <td align="center"><img src="spatium-frontend/public/images/steps/step1.gif" alt="Spatium step 1" /></td>
-    <td align="center"><img src="spatium-frontend/public/images/steps/step2.gif" alt="Spatium step 2" /></td>
+    <td align="center">
+      <video src="spatium-frontend/public/images/steps/step1.mp4" aria-label="Spatium step 1" autoplay loop muted playsinline controls width="100%">
+        <a href="spatium-frontend/public/images/steps/step1.mp4">Spatium step 1 영상 보기</a>
+      </video>
+    </td>
+    <td align="center">
+      <video src="spatium-frontend/public/images/steps/step2.mp4" aria-label="Spatium step 2" autoplay loop muted playsinline controls width="100%">
+        <a href="spatium-frontend/public/images/steps/step2.mp4">Spatium step 2 영상 보기</a>
+      </video>
+    </td>
   </tr>
   <tr>
     <td align="center"><strong>1. 공간 준비</strong></td>
     <td align="center"><strong>2. 방 불러오기</strong></td>
   </tr>
   <tr>
-    <td align="center"><img src="spatium-frontend/public/images/steps/step3.gif" alt="Spatium step 3" /></td>
-    <td align="center"><img src="spatium-frontend/public/images/steps/step4.gif" alt="Spatium step 4" /></td>
+    <td align="center">
+      <video src="spatium-frontend/public/images/steps/step3.mp4" aria-label="Spatium step 3" autoplay loop muted playsinline controls width="100%">
+        <a href="spatium-frontend/public/images/steps/step3.mp4">Spatium step 3 영상 보기</a>
+      </video>
+    </td>
+    <td align="center">
+      <video src="spatium-frontend/public/images/steps/step4.mp4" aria-label="Spatium step 4" autoplay loop muted playsinline controls width="100%">
+        <a href="spatium-frontend/public/images/steps/step4.mp4">Spatium step 4 영상 보기</a>
+      </video>
+    </td>
   </tr>
   <tr>
     <td align="center"><strong>3. 가구 배치·편집</strong></td>
