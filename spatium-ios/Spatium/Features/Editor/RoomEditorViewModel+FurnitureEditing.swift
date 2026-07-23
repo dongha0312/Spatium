@@ -115,11 +115,7 @@ extension RoomEditorViewModel {
     }
 
     static func isDoorOrWindowName(_ name: String?) -> Bool {
-        guard let name else { return false }
-        return name.localizedCaseInsensitiveContains("door") ||
-            name.localizedCaseInsensitiveContains("window") ||
-            name.localizedCaseInsensitiveContains("문") ||
-            name.localizedCaseInsensitiveContains("창문")
+        FurnitureCatalog.isReferenceName(name)
     }
 
     var selectedIsReference: Bool {

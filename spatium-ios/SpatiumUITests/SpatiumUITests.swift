@@ -84,6 +84,42 @@ final class SpatiumUITests: XCTestCase {
     }
 
     @MainActor
+    func testFurnitureCreationOffersDirectGLBImport() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestImgTo3D"]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["사진이나 GLB로 시작하세요"].waitForExistence(timeout: 8))
+        let glbImportButton = app.buttons["img-to-3d-glb-import-button"]
+        XCTAssertTrue(glbImportButton.waitForExistence(timeout: 5))
+        XCTAssertTrue(glbImportButton.isHittable)
+        XCTAssertTrue(app.staticTexts["GLB 2.0 · 최대 100MB"].exists)
+    }
+
+    @MainActor
+    func testRoomAdditionOffersScanAndUSDZJSONUpload() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestRoomAddFlow"]
+        app.launch()
+
+        let scanOption = app.buttons["room-add-scan-option"]
+        let fileOption = app.buttons["room-add-file-option"]
+        XCTAssertTrue(scanOption.waitForExistence(timeout: 8))
+        XCTAssertTrue(fileOption.exists)
+        XCTAssertTrue(scanOption.isHittable)
+        XCTAssertTrue(fileOption.isHittable)
+
+        fileOption.tap()
+
+        XCTAssertTrue(app.textFields["room-upload-name-field"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["room-usdz-file-picker"].exists)
+        XCTAssertTrue(app.buttons["room-json-file-picker"].exists)
+        let uploadButton = app.buttons["room-file-upload-button"]
+        XCTAssertTrue(uploadButton.exists)
+        XCTAssertFalse(uploadButton.isEnabled)
+    }
+
+    @MainActor
     func testGuestModeExplainsImgTo3DRestrictionBeforeStarting() throws {
         let app = XCUIApplication()
         app.launchArguments = ["-UITestGuestRestrictions"]
@@ -452,6 +488,87 @@ final class SpatiumUITests: XCTestCase {
 
         nextButton.tap()
         XCTAssertTrue(app.staticTexts["가구를 자유롭게 배치"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testOnboardingEndsAtExplicitLoginOrGuestChoice() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestOnboardingFlow", "-UITestOnboardingPage", "3"]
+        app.launch()
+
+        let startButton = app.buttons["시작 방법 선택하기"]
+        XCTAssertTrue(startButton.waitForExistence(timeout: 8))
+        let guestWebNotice = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "게스트 공간은 웹에 표시되지 않아요")
+        ).firstMatch
+        XCTAssertTrue(guestWebNotice.exists)
+        startButton.tap()
+
+        XCTAssertTrue(app.staticTexts["Spatium에 로그인"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["continue-as-guest"].waitForExistence(timeout: 5))
+        let guestLimits = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "웹 연동과 AI 가구 만들기는 사용할 수 없어요")
+        ).firstMatch
+        XCTAssertTrue(guestLimits.waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    func testDetectedItemsShowsThreeThenExpandsAndCollapses() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestDetectedItems"]
+        app.launch()
+
+        XCTAssertTrue(app.staticTexts["감지 요소 3"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.staticTexts["감지 요소 4"].exists)
+
+        let showMoreButton = app.buttons["detected-items-toggle"]
+        XCTAssertTrue(showMoreButton.exists)
+        XCTAssertTrue(showMoreButton.label.contains("5개 더 보기"))
+        showMoreButton.tap()
+
+        XCTAssertTrue(app.staticTexts["감지 요소 4"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["detected-items-toggle"].label.contains("접기"))
+        app.buttons["detected-items-toggle"].tap()
+
+        XCTAssertFalse(app.staticTexts["감지 요소 4"].waitForExistence(timeout: 1))
+    }
+
+    @MainActor
+    func testPortraitKeyboardKeepsMainHeaderBelowStatusBar() throws {
+        XCUIDevice.shared.orientation = .portrait
+
+        let app = XCUIApplication()
+        app.launchArguments = ["-UITestScanKeyboardHeader"]
+        app.launch()
+
+        let header = app.otherElements["app-header"]
+        let roomNameField = app.textFields["scan-room-name-field"]
+        XCTAssertTrue(header.waitForExistence(timeout: 8))
+        XCTAssertTrue(roomNameField.waitForExistence(timeout: 5))
+
+        let headerFrameBeforeKeyboard = header.frame
+        roomNameField.tap()
+
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5))
+
+        let headerFrameWithKeyboard = header.frame
+        let windowFrame = app.windows.firstMatch.frame
+        XCTAssertGreaterThanOrEqual(
+            headerFrameWithKeyboard.minY,
+            windowFrame.minY + 40
+        )
+        XCTAssertEqual(
+            headerFrameWithKeyboard.minY,
+            headerFrameBeforeKeyboard.minY,
+            accuracy: 2
+        )
+        XCTAssertEqual(
+            headerFrameWithKeyboard.height,
+            headerFrameBeforeKeyboard.height,
+            accuracy: 2
+        )
+        XCTAssertLessThanOrEqual(roomNameField.frame.maxY, keyboard.frame.minY + 1)
     }
 
     @MainActor

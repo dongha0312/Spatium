@@ -293,7 +293,7 @@ private struct ProjectRow: View {
                     Text(project.resolvedName)
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(SpatiumTheme.text)
-                    Text("방 \(project.displayRoomCount)개 · \(project.lastUpdatedAt, formatter: DateFormatter.roomRow) 업데이트")
+                    Text("방 \(project.displayRoomCount)개 · \(project.lastUpdatedAt, formatter: DateFormatter.roomRowDateOnly) 업데이트")
                         .font(.caption)
                         .foregroundStyle(SpatiumTheme.soft)
                 }

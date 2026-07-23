@@ -2,17 +2,19 @@ import SwiftUI
 
 struct HomeDashboardView: View {
     let projects: [SpatiumProject]
+    let isLoggedIn: Bool
     /// 홈 탭이 실제로 보이는지 여부. 가구 만들기 탭 전환 시 홈은 opacity 0으로
     /// 뷰 계층에 남아 있으므로, 숨겨진 동안 반복 애니메이션이 CPU/GPU를 쓰지 않게 정지한다.
     var isActive: Bool = true
     var onStartScan: () -> Void
     var onOpenRooms: () -> Void
     var onOpenSettings: () -> Void
+    var onLogin: () -> Void
     var onOpenProject: (SpatiumProject) -> Void
 
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var animateItems = false
+    @State private var ambientAnimationsReady = false
 
     private var totalRooms: Int {
         projects.reduce(0) { $0 + $1.displayRoomCount }
@@ -29,6 +31,14 @@ struct HomeDashboardView: View {
     }
 
     private var ambientAnimationsActive: Bool {
+        ambientAnimationsReady && Self.shouldRunAmbientAnimations(
+            isActive: isActive,
+            scenePhase: scenePhase,
+            reduceMotion: reduceMotion
+        )
+    }
+
+    private var ambientAnimationEligibility: Bool {
         Self.shouldRunAmbientAnimations(
             isActive: isActive,
             scenePhase: scenePhase,
@@ -59,8 +69,6 @@ struct HomeDashboardView: View {
                     .foregroundStyle(SpatiumTheme.text)
             }
             .padding(.bottom, 2)
-            .offset(y: animateItems ? 0 : 12)
-            .opacity(animateItems ? 1.0 : 0.0)
 
             // Main Scan Banner (ScanCommandCard)
             ScanCommandCard(
@@ -84,8 +92,8 @@ struct HomeDashboardView: View {
                             anchor: .top
                         )
                 }
-                .offset(y: animateItems ? 0 : 16)
-                .opacity(animateItems ? 1.0 : 0.0)
+
+            HomeWebSpaceCard(isLoggedIn: isLoggedIn, onLogin: onLogin)
 
             // Status Dashboard Widgets (Tiles)
             HStack(spacing: 12) {
@@ -102,13 +110,9 @@ struct HomeDashboardView: View {
                     tint: SpatiumTheme.sky
                 )
             }
-            .offset(y: animateItems ? 0 : 20)
-            .opacity(animateItems ? 1.0 : 0.0)
 
             // 3D Scan Guide Cards Carousel
             HomeScanGuideSection()
-                .offset(y: animateItems ? 0 : 24)
-                .opacity(animateItems ? 1.0 : 0.0)
 
             // Recent Space Records
             VStack(alignment: .leading, spacing: 12) {
@@ -133,14 +137,88 @@ struct HomeDashboardView: View {
                     }
                 }
             }
-            .offset(y: animateItems ? 0 : 28)
-            .opacity(animateItems ? 1.0 : 0.0)
         }
-        .onAppear {
-            // Reduce Motion이 켜져 있으면 진입 슬라이드 없이 즉시 최종 상태로 보여준다.
-            withAnimation(reduceMotion ? nil : .spring(response: 0.52, dampingFraction: 0.82)) {
-                animateItems = true
+        .task(id: ambientAnimationEligibility) {
+            ambientAnimationsReady = false
+            guard ambientAnimationEligibility else { return }
+            // 데이터 캐시와 첫 화면 레이아웃이 안정된 다음 장식 애니메이션을 시작해
+            // 앱 재실행 직후 여러 애니메이션과 목록 갱신이 같은 프레임에 몰리지 않게 한다.
+            do {
+                try await Task.sleep(for: .milliseconds(700))
+            } catch {
+                return
             }
+            guard !Task.isCancelled, ambientAnimationEligibility else { return }
+            ambientAnimationsReady = true
+        }
+    }
+}
+
+private struct HomeWebSpaceCard: View {
+    private static let websiteURL = URL(string: "https://spatium.kro.kr/")!
+    let isLoggedIn: Bool
+    var onLogin: () -> Void
+
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Button(action: openDestination) {
+            HStack(spacing: 13) {
+                Image(systemName: isLoggedIn ? "display" : "person.crop.circle.badge.checkmark")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(SpatiumTheme.sky)
+                    .frame(width: 44, height: 44)
+                    .background(SpatiumTheme.sky.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.md, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(isLoggedIn ? "내 3D 공간, 웹에서도 확인해요" : "로그인하면 웹에서도 확인해요")
+                        .font(.subheadline.weight(.black))
+                        .foregroundStyle(SpatiumTheme.text)
+                    Text(
+                        isLoggedIn
+                            ? "앱에서 저장한 공간을 PC에서도 둘러보고 이어서 편집할 수 있어요"
+                            : "게스트 공간은 이 기기에만 보관돼요. 웹 연동은 로그인 후 사용할 수 있어요"
+                    )
+                        .font(.caption)
+                        .foregroundStyle(SpatiumTheme.soft)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 4)
+
+                Image(systemName: isLoggedIn ? "arrow.up.right" : "arrow.right")
+                    .font(.caption.weight(.black))
+                    .foregroundStyle(SpatiumTheme.onCta)
+                    .frame(width: 30, height: 30)
+                    .background(SpatiumTheme.sky, in: Circle())
+            }
+            .padding(14)
+            .background(
+                LinearGradient(
+                    colors: [SpatiumTheme.surface, SpatiumTheme.sky.opacity(0.08)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous)
+                    .stroke(SpatiumTheme.sky.opacity(0.24), lineWidth: 1)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.lg, style: .continuous))
+            .shadow(color: SpatiumTheme.sky.opacity(0.08), radius: 10, y: 5)
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(isLoggedIn ? "내 3D 공간을 웹에서 확인하기" : "로그인하고 웹 연동 사용하기")
+        .accessibilityHint(isLoggedIn ? "Safari에서 Spatium 웹사이트를 엽니다" : "로그인 화면을 엽니다")
+        .accessibilityIdentifier("home-web-space-link")
+    }
+
+    private func openDestination() {
+        if isLoggedIn {
+            openURL(Self.websiteURL)
+        } else {
+            onLogin()
         }
     }
 }

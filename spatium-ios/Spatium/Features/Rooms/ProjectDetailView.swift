@@ -4,6 +4,9 @@ struct ProjectDetailView: View {
     let project: SpatiumProject
     var onBack: () -> Void
     var onAddRoom: () -> Void
+    var onUploadRoom: (_ roomName: String, _ jsonURL: URL, _ usdzURL: URL) async throws -> Void
+    var canUploadRoomFiles: Bool
+    var onRequestLogin: () -> Void
     var onRenameProject: (String) -> Void
     var onRenameRoom: (RoomRecord, String) -> Void
     var onDeleteProject: () -> Void
@@ -14,7 +17,14 @@ struct ProjectDetailView: View {
     @State private var editingRoom: RoomRecord?
     @State private var pendingRoomDeletion: RoomRecord?
     @State private var showProjectDeletion = false
+    @State private var showRoomAddFlow = false
+    @State private var roomAddDismissAction: RoomAddDismissAction?
     @GestureState private var backSwipeOffset: CGFloat = 0
+
+    private enum RoomAddDismissAction {
+        case scan
+        case login
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -27,13 +37,17 @@ struct ProjectDetailView: View {
                 onDelete: { showProjectDeletion = true }
             )
 
-            PrimaryButton(title: "이 프로젝트에 방 추가", systemImage: "camera.viewfinder", action: onAddRoom)
+            PrimaryButton(
+                title: "이 프로젝트에 방 추가",
+                systemImage: "plus.square.on.square",
+                action: { showRoomAddFlow = true }
+            )
 
             if project.rooms.isEmpty {
                 EmptyStateCard(
                     systemImage: "square.grid.2x2",
                     title: "아직 스캔한 방이 없습니다",
-                    message: "위 버튼을 눌러 이 프로젝트의 첫 방을 스캔해 보세요."
+                    message: "위 버튼을 눌러 첫 방을 스캔하거나 USDZ와 JSON 파일을 가져오세요."
                 )
             } else {
                 VStack(alignment: .leading, spacing: 10) {
@@ -68,6 +82,21 @@ struct ProjectDetailView: View {
         }
         .fullScreenCover(item: $renderingRoom) { room in
             RoomRenderLoaderView(room: room, projectID: project.id, projectName: project.resolvedName, rooms: project.rooms)
+        }
+        .sheet(isPresented: $showRoomAddFlow, onDismiss: handleRoomAddDismissal) {
+            RoomAddFlowSheet(
+                projectName: project.resolvedName,
+                canUploadFiles: canUploadRoomFiles,
+                onChooseScan: {
+                    roomAddDismissAction = .scan
+                    showRoomAddFlow = false
+                },
+                onRequestLogin: {
+                    roomAddDismissAction = .login
+                    showRoomAddFlow = false
+                },
+                onUpload: onUploadRoom
+            )
         }
         .sheet(isPresented: $isEditingProjectName) {
             NameEditSheet(
@@ -106,6 +135,19 @@ struct ProjectDetailView: View {
         .offset(x: backSwipeOffset)
         .animation(.spring(response: 0.3, dampingFraction: 0.9), value: backSwipeOffset)
         .simultaneousGesture(edgeBackSwipeGesture)
+    }
+
+    private func handleRoomAddDismissal() {
+        let action = roomAddDismissAction
+        roomAddDismissAction = nil
+        switch action {
+        case .scan:
+            onAddRoom()
+        case .login:
+            onRequestLogin()
+        case nil:
+            break
+        }
     }
 
     /// 시스템 내비게이션 pop 관례처럼 왼쪽 가장자리에서 오른쪽 스와이프로 목록에 복귀.
@@ -362,7 +404,7 @@ private struct ProjectDetailHeader: View {
                 Text(project.resolvedName)
                     .font(.title3.weight(.black))
                     .foregroundStyle(SpatiumTheme.text)
-                Text("방 \(project.displayRoomCount)개 · \(project.createdAt, formatter: DateFormatter.roomRow) 생성")
+                Text("방 \(project.displayRoomCount)개 · \(project.createdAt, formatter: DateFormatter.roomRowDateOnly) 생성")
                     .font(.subheadline)
                     .foregroundStyle(SpatiumTheme.soft)
             }

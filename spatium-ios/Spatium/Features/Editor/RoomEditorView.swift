@@ -100,6 +100,7 @@ struct RoomEditorView: View {
                 EditorFooterView(
                     hasUnsavedChanges: viewModel.hasUnsavedChanges,
                     draftSaveState: viewModel.draftSaveState,
+                    needsInitialServerSave: viewModel.needsInitialServerSave,
                     isGuestLocalProject: viewModel.isGuestLocalProject,
                     isOffline: viewModel.isOffline,
                     isSaving: viewModel.isSaving,

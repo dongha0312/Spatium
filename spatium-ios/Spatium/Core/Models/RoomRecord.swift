@@ -2,7 +2,7 @@ import Foundation
 
 /// A room within a project. `id` is the server's `roomId` (UUID string) once
 /// synced; locally-created (not-yet-synced) rooms use a `"local-…"` placeholder id.
-nonisolated struct RoomRecord: Identifiable, Codable, Sendable {
+nonisolated struct RoomRecord: Identifiable, Codable, Equatable, Sendable {
     var id: String
     var roomType: String
     var itemCount: Int

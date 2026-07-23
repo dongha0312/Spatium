@@ -215,7 +215,9 @@ final class ProjectStore: ObservableObject {
             guard !Task.isCancelled else { return }
 
             // 로드 중 로그아웃·로컬 편집·새 저장이 발생했다면 이전 파일 스냅샷을 적용하지 않는다.
-            if authenticationStateProvider(), revisionBeforeLoad == cacheRevision {
+            if authenticationStateProvider(),
+               revisionBeforeLoad == cacheRevision,
+               projects != cachedProjects {
                 projects = cachedProjects
             }
         }
@@ -237,16 +239,23 @@ final class ProjectStore: ObservableObject {
             // uniqueKeysWithValues는 중복 키에서 크래시한다. 서버가 같은 ID를 두 번 내려줘도
             // (백엔드 버그) 앱이 죽지 않도록 첫 항목을 유지하는 병합을 쓴다.
             let existingByID = Dictionary(projects.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-            projects = try await service.fetchProjects().map { remote in
+            let refreshedProjects = try await service.fetchProjects().map { remote in
                 guard let existing = existingByID[remote.id] else { return remote }
                 var merged = remote
                 merged.rooms = existing.rooms
                 merged.roomCount = max(remote.roomCount, existing.rooms.count)
                 return merged
             }
-            lastErrorMessage = nil
-            await refreshRoomCounts(silently: silently)
-            _ = await persistCurrentCache()
+            // 목록 API가 DB 집계 roomCount를 함께 내려주므로 프로젝트별 방 개수 API를
+            // 다시 호출하지 않는다. 캐시와 값이 같으면 Published 갱신과 디스크 재기록도
+            // 생략해 콜드 실행 중 홈 전체가 불필요하게 다시 그려지지 않게 한다.
+            if refreshedProjects != projects {
+                projects = refreshedProjects
+                _ = await persistCurrentCache()
+            }
+            if lastErrorMessage != nil {
+                lastErrorMessage = nil
+            }
         } catch is CancellationError {
             return
         } catch {
@@ -372,7 +381,7 @@ final class ProjectStore: ObservableObject {
     }
 
     /// 방·프로젝트 수만큼 네트워크 요청을 한꺼번에 실행하지 않기 위한 개수 집계 동시성 상한.
-    static let maxConcurrentCountRequests = 5
+    nonisolated static let maxConcurrentCountRequests = 5
 
     /// 제한된 동시성의 병렬 처리. 처음 `limit`개만 시작하고 하나가 끝날 때마다
     /// 다음 요소를 이어 실행하는 슬라이딩 윈도 방식이라, 데이터 규모가 커져도
@@ -546,47 +555,6 @@ final class ProjectStore: ObservableObject {
     func project(withID id: String?) -> SpatiumProject? {
         guard let id else { return nil }
         return projects.first { $0.id == id }
-    }
-
-    /// 프로젝트별 방 개수를 병렬로 갱신합니다. (순차 N+1 요청 + 건마다 디스크 저장이었던 것을
-    /// 동시 요청 + 마지막 1회 저장으로 줄임)
-    private func refreshRoomCounts(silently: Bool) async {
-        let projectIDs = projects
-            .map(\.id)
-            .filter { !$0.hasPrefix("local-") }
-        guard !projectIDs.isEmpty else { return }
-
-        var firstErrorMessage: String?
-        await Self.withBoundedConcurrency(
-            elements: projectIDs,
-            operation: { [service] projectID -> (String, Result<Int, Error>) in
-                do {
-                    return (projectID, .success(try await service.fetchRoomCount(projectID: projectID)))
-                } catch {
-                    return (projectID, .failure(error))
-                }
-            },
-            process: { entry in
-                let (projectID, result) = entry
-                switch result {
-                case let .success(count):
-                    guard let index = projects.firstIndex(where: { $0.id == projectID }),
-                          projects[index].roomCount != count else { return }
-                    projects[index].roomCount = count
-                case let .failure(error):
-                    if firstErrorMessage == nil, !(error is CancellationError) {
-                        firstErrorMessage = error.localizedDescription
-                    }
-                }
-            }
-        )
-        if let firstErrorMessage {
-            if !silently {
-                lastErrorMessage = firstErrorMessage
-            }
-        } else {
-            lastErrorMessage = nil
-        }
     }
 
     private func insertRoom(_ room: RoomRecord, projectID: String) {

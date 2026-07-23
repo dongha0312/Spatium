@@ -5,6 +5,7 @@ import UIKit
 /// 앱 진입 게이트. 로그인 상태(또는 게스트 선택) 전에는 로그인 화면을 먼저 보여주고,
 /// 통과하면 메인 탭 화면으로 전환합니다. 로그아웃하면 다시 로그인 화면으로 돌아옵니다.
 struct ContentView: View {
+    let userFurnitureStore: UserFurnitureStore
     @ObservedObject private var tokenStore = AuthTokenStore.shared
     @State private var isGuestSession = false
     /// 첫 실행 온보딩을 봤는지 여부. 한 번 완료(또는 건너뛰기)하면 다시 보여주지 않는다.
@@ -23,12 +24,26 @@ struct ContentView: View {
         let testScan = TestRoomData.scans.first(where: { $0.id == requestedScanID })
             ?? TestRoomData.scans.first
 
-        if arguments.contains("-UITestScanPreparation") {
+        if arguments.contains("-UITestScanKeyboardHeader") {
+            ScanKeyboardHeaderUITestHost()
+        } else if arguments.contains("-UITestRoomAddFlow") {
+            RoomAddFlowUITestHost()
+        } else if arguments.contains("-UITestDetectedItems") {
+            DetectedItemsUITestHost()
+        } else if arguments.contains("-UITestScanSaveReminder") {
+            ScanEditorSaveReminderUITestHost(
+                isGuestMode: arguments.contains("-UITestGuestMode")
+            )
+        } else if arguments.contains("-UITestScanPreparation") {
             // 실제 하단 시트 높이와 고정 CTA까지 RoomPlan 지원 여부와 무관하게 검증한다.
             ScanPreparationUITestHost()
+        } else if arguments.contains("-UITestOnboardingFlow") {
+            OnboardingFlowUITestHost()
         } else if arguments.contains("-UITestOnboarding") {
             // 가로모드·큰 글씨 검증용: 저장된 첫 실행 여부와 무관하게 온보딩을 바로 연다.
             OnboardingView(onFinished: {})
+        } else if arguments.contains("-UITestLogin") {
+            LoginView(onLoggedIn: {}, onContinueAsGuest: {})
         } else if arguments.contains("-UITestEditor"),
            let scan = testScan,
            let test = scan.load() {
@@ -38,7 +53,9 @@ struct ContentView: View {
                 roomName: scan.roomName,
                 usdzURL: test.usdzURL,
                 area: scan.area,
-                ceilingHeight: scan.ceilingHeight
+                ceilingHeight: scan.ceilingHeight,
+                projectID: arguments.contains("-UITestEditorInitialSave") ? "project-ui-test" : nil,
+                projectName: arguments.contains("-UITestEditorInitialSave") ? "UI 테스트 프로젝트" : nil
             )
         } else if ProcessInfo.processInfo.arguments.contains("-UITestSettings")
                     || ProcessInfo.processInfo.arguments.contains("-UITestHome")
@@ -46,7 +63,7 @@ struct ContentView: View {
                     || ProcessInfo.processInfo.arguments.contains("-UITestGuestRestrictions")
                     || ProcessInfo.processInfo.arguments.contains("-UITestGuestCreate") {
             // 스크린샷 검증용: 로그인 게이트를 건너뛰고 메인 탭(설정·홈·가구만들기)으로 바로 진입.
-            MainTabView()
+            MainTabView(userFurnitureStore: userFurnitureStore)
         } else {
             gate
         }
@@ -67,7 +84,7 @@ struct ContentView: View {
                 }
                 .transition(.opacity)
             } else if tokenStore.isLoggedIn || isGuestSession {
-                MainTabView()
+                MainTabView(userFurnitureStore: userFurnitureStore)
                     .transition(.opacity)
             } else {
                 LoginView(
@@ -101,11 +118,140 @@ private struct ScanPreparationUITestHost: View {
             }
     }
 }
+
+private struct RoomAddFlowUITestHost: View {
+    @State private var showsFlow = false
+
+    var body: some View {
+        SpatiumTheme.background
+            .ignoresSafeArea()
+            .task { showsFlow = true }
+            .sheet(isPresented: $showsFlow) {
+                RoomAddFlowSheet(
+                    projectName: "UI 테스트 프로젝트",
+                    canUploadFiles: true,
+                    onChooseScan: {},
+                    onRequestLogin: {},
+                    onUpload: { _, _, _ in }
+                )
+            }
+    }
+}
+
+private struct ScanEditorSaveReminderUITestHost: View {
+    let isGuestMode: Bool
+    @State private var showsReminder = false
+
+    var body: some View {
+        SpatiumTheme.background
+            .ignoresSafeArea()
+            .task { showsReminder = true }
+            .sheet(isPresented: $showsReminder) {
+                ScanEditorSaveReminderSheet(isGuestMode: isGuestMode, onContinue: {})
+            }
+    }
+}
+
+private struct DetectedItemsUITestHost: View {
+    @State private var items = (1...8).map { index in
+        EditableScanItem(
+            userAddedNamed: "감지 요소 \(index)",
+            width: Double(index) * 0.1,
+            height: 0.8,
+            depth: 0.5
+        )
+    }
+
+    var body: some View {
+        ScrollView {
+            DetectedItemsCard(items: $items)
+                .padding(18)
+        }
+        .background(SpatiumTheme.background.ignoresSafeArea())
+    }
+}
+
+/// 키보드가 올라온 세로 화면에서도 iOS 26 safe-area bar가 상태바 위로 밀리지 않는지 검증한다.
+private struct ScanKeyboardHeaderUITestHost: View {
+    @State private var selectedTab: AppTab = .scan
+    @State private var roomName = ""
+    @FocusState private var roomNameFocused: Bool
+
+    var body: some View {
+        ZStack {
+            ModernBackground().ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("이름 없는 공간")
+                            .font(.title2.weight(.black))
+                        Text("15개 요소")
+                            .foregroundStyle(SpatiumTheme.soft)
+                    }
+
+                    Card {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("방 정보")
+                                .font(.headline)
+
+                            TextField("예: 침실, 거실, 주방, 서재", text: $roomName)
+                                .focused($roomNameFocused)
+                                .padding(12)
+                                .background(SpatiumTheme.elevatedSurface)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: SpatiumRadius.sm)
+                                        .stroke(SpatiumTheme.border, lineWidth: 1.5)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: SpatiumRadius.sm, style: .continuous))
+                                .accessibilityIdentifier("scan-room-name-field")
+
+                            Text("입력한 값은 metadata JSON 파일의 roomType으로 함께 전송됩니다.")
+                                .font(.footnote)
+                                .foregroundStyle(SpatiumTheme.soft)
+                        }
+                    }
+
+                    ForEach(0..<5, id: \.self) { index in
+                        Text("감지 요소 \(index + 1)")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(18)
+                            .background(SpatiumTheme.surface, in: RoundedRectangle(cornerRadius: SpatiumRadius.md))
+                    }
+                }
+                .padding(18)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .spatiumHeaderBar(selectedTab: selectedTab)
+            .spatiumFooterBar(selectedTab: $selectedTab)
+            .ignoresSafeArea(.keyboard, edges: .bottom)
+        }
+        .task {
+            guard ProcessInfo.processInfo.arguments.contains("-UITestAutoKeyboard") else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            roomNameFocused = true
+        }
+    }
+}
+
+private struct OnboardingFlowUITestHost: View {
+    @State private var finishedOnboarding = false
+
+    var body: some View {
+        if finishedOnboarding {
+            LoginView(onLoggedIn: {}, onContinueAsGuest: {})
+        } else {
+            OnboardingView {
+                finishedOnboarding = true
+            }
+        }
+    }
+}
 #endif
 
 struct MainTabView: View {
     @StateObject private var projectStore = ProjectStore()
-    @EnvironmentObject private var userFurnitureStore: UserFurnitureStore
+    let userFurnitureStore: UserFurnitureStore
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var tokenStore = AuthTokenStore.shared
@@ -161,6 +307,7 @@ struct MainTabView: View {
                     .padding(.bottom, usesCompactHeight ? 16 : 28)
                 }
                 .scrollIndicators(.hidden)
+                .scrollDismissesKeyboard(.interactively)
                 .refreshable {
                     await refreshVisibleContent()
                 }
@@ -212,10 +359,10 @@ struct MainTabView: View {
             }
             .spatiumHeaderBar(selectedTab: selectedTab)
             .spatiumFooterBar(selectedTab: $selectedTab)
-            // 가구 만들기 탭은 입력 필드가 화면 위쪽에 있어 키보드에 맞춰
-            // 전체 화면과 푸터를 압축하지 않는다. 입력 모달은 fullScreenCover가
-            // 자체 안전영역을 관리한다.
-            .ignoresSafeArea(.keyboard, edges: selectedTab == .imgTo3D ? .bottom : [])
+            // 키보드 안전영역이 iOS 26 safeAreaBar까지 압축하면 상단 헤더가 상태바와
+            // 겹친다. 메인 크롬은 기기 안전영역에 고정하고, 입력 화면은 ScrollView로
+            // 키보드 위 콘텐츠 접근과 대화형 닫기를 처리한다.
+            .ignoresSafeArea(.keyboard, edges: .bottom)
         }
         .fullScreenCover(isPresented: $showNewProjectSheet, onDismiss: {
             if shouldStartScanAfterProjectSheetDismiss {
@@ -270,7 +417,16 @@ struct MainTabView: View {
             })
         }
         .tint(SpatiumTheme.accent)
-        .task(id: tokenStore.accessToken) {
+        .task(id: tokenStore.accessToken, priority: .utility) {
+            guard tokenStore.accessToken != nil else { return }
+            // 콜드 실행 첫 프레임에서 프로젝트·프로필 복원과 가구 카탈로그 동기화가
+            // 한꺼번에 화면을 갱신하지 않도록, 홈이 안정된 뒤 서버 동기화를 시작한다.
+            do {
+                try await Task.sleep(for: .milliseconds(700))
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
             await userFurnitureStore.refreshFromBackend()
         }
         .alert(
@@ -388,12 +544,14 @@ struct MainTabView: View {
         case .home:
             HomeDashboardView(
                 projects: projectStore.projects,
+                isLoggedIn: tokenStore.isLoggedIn,
                 // 가구 만들기 탭에서는 홈이 opacity 0으로 계층에 남는다. 숨겨진 동안
                 // 반복 애니메이션이 CPU/GPU를 계속 쓰지 않도록 실제 표시 여부를 내려준다.
                 isActive: selectedTab == .home,
                 onStartScan: startNewProjectFlow,
                 onOpenRooms: { selectedTab = .rooms },
                 onOpenSettings: { selectedTab = .settings },
+                onLogin: { showGuestLogin = true },
                 onOpenProject: { project in
                     openProject(project)
                     selectedTab = .rooms
@@ -450,6 +608,33 @@ struct MainTabView: View {
                     project: project,
                     onBack: closeProject,
                     onAddRoom: { startScan(for: project) },
+                    onUploadRoom: { roomName, jsonURL, usdzURL in
+                        guard tokenStore.isLoggedIn else {
+                            throw RoomFileUploadFlowError.loginRequired
+                        }
+                        guard !project.id.hasPrefix("local-") else {
+                            throw RoomFileUploadFlowError.localProject
+                        }
+                        let itemCount = await UploadFilePreparation.roomItemCount(at: jsonURL)
+                        _ = try await projectStore.uploadRoom(
+                            projectID: project.id,
+                            replacingLocalRoomID: nil,
+                            roomName: roomName,
+                            metadataURL: jsonURL,
+                            usdzURL: usdzURL,
+                            itemCount: itemCount,
+                            photoCount: 0
+                        )
+                        activeProjectID = project.id
+                    },
+                    canUploadRoomFiles: tokenStore.isLoggedIn && !project.id.hasPrefix("local-"),
+                    onRequestLogin: {
+                        if tokenStore.isLoggedIn {
+                            flowErrorMessage = RoomFileUploadFlowError.localProject.localizedDescription
+                        } else {
+                            showGuestLogin = true
+                        }
+                    },
                     onRenameProject: { newName in
                         Task { await projectStore.renameProject(projectID: project.id, newName: newName) }
                     },
@@ -477,14 +662,11 @@ struct MainTabView: View {
                 .transition(projectDetailTransition)
                 .zIndex(1)
             } else {
-                ProjectListView(
+                ProjectListWithUserFurniture(
                     projects: projectStore.projects,
-                    userFurniture: userFurnitureStore.items,
+                    userFurnitureStore: userFurnitureStore,
                     onCreateProject: startNewProjectFlow,
-                    onOpenProject: openProject,
-                    onDeleteFurniture: { furniture in
-                        try await userFurnitureStore.delete(furniture)
-                    }
+                    onOpenProject: openProject
                 )
                 .id("project-list")
                 .transition(projectListTransition)
@@ -703,6 +885,27 @@ struct MainTabView: View {
     }
 }
 
+/// 가구 스토어의 변경 구독을 실제로 가구 목록을 표시하는 프로젝트 탭에만 한정합니다.
+/// 서버 카탈로그가 갱신돼도 홈 전체가 다시 계산되지 않고 이 작은 경계만 갱신됩니다.
+private struct ProjectListWithUserFurniture: View {
+    let projects: [SpatiumProject]
+    @ObservedObject var userFurnitureStore: UserFurnitureStore
+    var onCreateProject: () -> Void
+    var onOpenProject: (SpatiumProject) -> Void
+
+    var body: some View {
+        ProjectListView(
+            projects: projects,
+            userFurniture: userFurnitureStore.items,
+            onCreateProject: onCreateProject,
+            onOpenProject: onOpenProject,
+            onDeleteFurniture: { furniture in
+                try await userFurnitureStore.delete(furniture)
+            }
+        )
+    }
+}
+
 private extension View {
     /// iOS 26은 상단 크롬을 네이티브 safe-area bar로 등록해 스크롤 콘텐츠의
     /// 배치·굴절·soft edge를 시스템에 맡긴다. 이전 버전은 Material 헤더를
@@ -754,6 +957,20 @@ private enum GuestRestrictedAction: String, Identifiable {
     var message: String {
         switch self {
         case .scanUpload: "스캔 파일을 서버 프로젝트에 저장하려면 로그인이 필요해요. 파일 공유와 로컬 편집은 게스트 모드에서도 사용할 수 있습니다."
+        }
+    }
+}
+
+private enum RoomFileUploadFlowError: LocalizedError {
+    case loginRequired
+    case localProject
+
+    var errorDescription: String? {
+        switch self {
+        case .loginRequired:
+            "USDZ와 JSON을 서버에 저장하려면 로그인이 필요해요."
+        case .localProject:
+            "게스트로 만든 로컬 프로젝트에는 파일을 업로드할 수 없어요. 로그인 후 서버 프로젝트를 새로 만들어주세요."
         }
     }
 }
@@ -818,6 +1035,7 @@ private struct ModernBackground: View {
 }
 
 #Preview {
-    ContentView()
-        .environmentObject(UserFurnitureStore())
+    let userFurnitureStore = UserFurnitureStore()
+    ContentView(userFurnitureStore: userFurnitureStore)
+        .environmentObject(userFurnitureStore)
 }
