@@ -13,6 +13,12 @@ import { springApi } from "../../../config/axiosInstance";
 // Callers always clone the returned scene before attaching it to the editor.
 const gltfPromiseCache = new Map();
 
+// 편집 페이지가 완전히 닫히면 파싱된 GLTF와 texture source를 더 이상 붙잡지 않도록
+// 모듈 캐시를 비운다. 진행 중인 요청은 호출부의 isMounted 가드가 완료 결과를 정리한다.
+export function clearGltfModelCache() {
+  gltfPromiseCache.clear();
+}
+
 // USD/USDZ 방 모델을 로드한다. blob: URL은 그대로, 일반 URL은 캐시 무효화용 timestamp를
 // 붙여서 로드한다. 로드에 실패해도 예외를 던지지 않고 null을 반환한다(呼출부가 fallback 처리).
 export function loadUsdRoomModel(url) {
