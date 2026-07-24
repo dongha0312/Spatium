@@ -10,11 +10,13 @@ import {
   wallConfigBoolean,
 } from "../scene/sceneConfig";
 import {
+  clearGltfModelCache,
   fetchJson,
   findModelTemplate,
   loadGltfModel,
   loadModelTemplates,
   loadUsdRoomModel,
+  modelCategoriesFromMetadata,
   saveMetadataJson,
 } from "../scene/sceneLoaders";
 import {
@@ -697,6 +699,37 @@ export function useRoomSceneEditor({
     let isMounted = true;
 
     if (!isSceneConfigReady) return undefined;
+
+    // 설정/방 데이터 검증은 WebGLRenderer를 만들기 전에 끝낸다. 여기서 예외가 나도
+    // 아직 GPU context가 없으므로 effect cleanup 등록 전 누수가 발생하지 않는다.
+    let roomModelObjectUrl = null;
+    let roomModelUrl = null;
+    let metadataPromise = null;
+    try {
+      roomModelUrl = roomScene?.model?.dataBase64
+        ? (() => {
+            roomModelObjectUrl = base64ToObjectUrl(
+              roomScene.model.dataBase64,
+              roomScene.model.contentType,
+            );
+            return roomModelObjectUrl;
+          })()
+        : getRoomModelUrl();
+      metadataPromise = metadataOverrideRef.current
+        ? Promise.resolve(metadataOverrideRef.current)
+        : roomScene?.metadata
+          ? Promise.resolve(roomScene.metadata)
+          : fetchJson(getRoomMetadataUrl(), "room metadata");
+    } catch (caughtError) {
+      if (roomModelObjectUrl) {
+        URL.revokeObjectURL(roomModelObjectUrl);
+      }
+      setStatus("");
+      setError(
+        caughtError instanceof Error ? caughtError.message : String(caughtError),
+      );
+      return undefined;
+    }
 
     let frameId = 0;
     let nextObjectIndex = 0;
@@ -2062,28 +2095,16 @@ export function useRoomSceneEditor({
     // 여기서부터 방 모델/metadata를 실제로 로드해서 씬을 채우는 비동기 파이프라인이 시작된다.
     // roomScene(API 응답)이 있으면 그 안의 base64 모델/metadata를 우선 쓰고, 없으면
     // scene config에 설정된 기본 URL로 fallback한다.
-    let roomModelObjectUrl = null;
-    const roomModelUrl = roomScene?.model?.dataBase64
-      ? (() => {
-          roomModelObjectUrl = base64ToObjectUrl(
-            roomScene.model.dataBase64,
-            roomScene.model.contentType,
-          );
-          return roomModelObjectUrl;
-        })()
-      : getRoomModelUrl();
-    const metadataPromise = metadataOverrideRef.current
-      ? Promise.resolve(metadataOverrideRef.current)
-      : roomScene?.metadata
-        ? Promise.resolve(roomScene.metadata)
-      : fetchJson(getRoomMetadataUrl(), "room metadata");
-
     // 1) USD 방 모델 + metadata를 동시에 로드 → 2) 가구 카탈로그가 필요로 하는 모델
     // 템플릿들도 로드 → 3) 아래 async 콜백에서 실제로 씬을 채운다(방 모델 배치, 벽
     // 콜라이더 생성, 가구/문/창문 복원, 이벤트 핸들러가 참조할 sceneActionsRef 조립).
     Promise.all([loadUsdRoomModel(roomModelUrl), metadataPromise])
       .then(([model, metadata]) =>
-        Promise.all([model, loadModelTemplates(), metadata]),
+        Promise.all([
+          model,
+          loadModelTemplates(modelCategoriesFromMetadata(metadata)),
+          metadata,
+        ]),
       )
       .then(async ([model, modelTemplates, metadata]) => {
         if (!isMounted) {
@@ -3467,8 +3488,15 @@ export function useRoomSceneEditor({
       setCollisionSummary({ hasCollision: false, with: [] });
       setDecorModeState({ active: false, targetName: "" });
       controls.dispose();
-      disposeScene(scene);
+      // 캐시 템플릿과 공유하던 texture도 이 렌더러 세션에서는 반드시 dispose해야
+      // Three.js가 등록한 texture dispose listener와 WebGLTexture가 함께 해제된다.
+      disposeScene(scene, { disposeSharedTextures: true });
       renderer.dispose();
+      // renderer.dispose()만으로는 브라우저가 WebGL context를 계속 보관할 수 있다.
+      // 페이지 재진입 때 새 context가 누적되지 않도록 명시적으로 context를 잃게 한다.
+      renderer.forceContextLoss();
+      renderer.domElement.width = 1;
+      renderer.domElement.height = 1;
       root.replaceChildren();
       if (roomModelObjectUrl) {
         URL.revokeObjectURL(roomModelObjectUrl);
@@ -3493,6 +3521,15 @@ export function useRoomSceneEditor({
     setSelectedSizeCmState,
     setStatus,
   ]);
+
+  // sceneRevision 기반 재구성 중에는 GLTF를 재사용하고, 편집 페이지 자체가 닫힐 때만
+  // 모듈 캐시를 비워 다른 방/사용자 모델이 탭 수명 동안 계속 누적되지 않게 한다.
+  useEffect(
+    () => () => {
+      clearGltfModelCache();
+    },
+    [],
+  );
 
   return {
     containerRef,
