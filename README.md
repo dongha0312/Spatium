@@ -69,7 +69,7 @@ Spatium은 **공간 스캔 → 웹 편집 → Image-to-3D → 저장과 복원**
 ## 시스템 구성 <a id="architecture"></a>
 
 <p align="center">
-  <img src="docs/images/system-architecture.svg" alt="Spatium 시스템 구성" width="100%" />
+  <img src="docs/images/total_architecture.png" alt="Spatium 시스템 구성" width="100%" />
 </p>
 
 | 애플리케이션 | 역할 | 기본 포트 |
