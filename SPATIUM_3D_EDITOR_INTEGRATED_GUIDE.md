@@ -824,6 +824,9 @@ spatium-frontend/public/config/room-scene-config.json
 | 벽 infill 색이 주변과 다름 | 기본 재질로 새 Mesh 생성 | 소속 벽 material clone 사용 |
 | 벽을 메운 뒤 기존 가구가 파묻힘 | Collider 변경 후 재검사 누락 | Collider 재생성 후 전체 penetration resolve |
 | 앱 종료 후 미저장 편집 소실 | 서버 저장 전 프로세스 종료 | 로컬 Draft 저장·복구 |
+| 초기 카메라가 방에서 지나치게 멀고 가구가 엉뚱한 위치에 렌더링 | 스캔 아티팩트 mesh 하나가 raw bounding box를 과도하게 부풀림 | 바닥 폴리곤 기준 framing bounds 사용·높이 clamp, 방 경계 밖 mesh 숨김 후 저장에서 제외 |
+| 조작하지 않아도 GPU를 계속 점유 | 렌더 루프가 매 프레임 무조건 render 호출 | 씬·카메라가 실제로 바뀐 프레임만 그리는 on-demand 렌더링 |
+| 편집기 재진입 시 texture·WebGL context 누적 | 공유 texture dispose 제외, context 미파기, GLTF 모듈 캐시 상주 | 세션 종료 시 공유 texture까지 dispose, `forceContextLoss()`, 페이지 언마운트 시 모델 캐시 비우기 |
 
 이 문제 해결 과정에서 나온 핵심 원칙은 다음과 같다.
 

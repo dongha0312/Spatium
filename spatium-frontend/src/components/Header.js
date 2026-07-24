@@ -15,8 +15,16 @@ const DEFAULT_NAVIGATION = [
     items: [
       // 추후 QR코드가 나오면 이 부분 수정하기
       // { label: "나의 방 스캔하기", to: "" },
-      { label: "방 꾸미기", to: "/member/mypage" },
-      { label: "이미지로 3D 가구 만들기", to: "/member/imgto3d" },
+      {
+        label: "방 꾸미기",
+        to: "/member/mypage",
+        requiresAuth: true,
+      },
+      {
+        label: "이미지로 3D 가구 만들기",
+        to: "/member/imgto3d",
+        requiresAuth: true,
+      },
     ],
   },
   {
@@ -89,8 +97,11 @@ function Header({
     };
 
     if (item.to) {
+      const destination =
+        item.requiresAuth && !session ? "/auth/login" : item.to;
+
       return (
-        <Link to={item.to} className={className} onClick={handleClick}>
+        <Link to={destination} className={className} onClick={handleClick}>
           {item.label}
         </Link>
       );
